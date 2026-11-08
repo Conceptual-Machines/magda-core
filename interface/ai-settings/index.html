@@ -10,21 +10,21 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/interface/ai-settings/">
+        <link rel="canonical" href="https://docs.magda.land/interface/ai-settings/">
       
       
         <link rel="prev" href="../plugin-settings/">
       
       
-        <link rel="next" href="../controllers/">
+        <link rel="next" href="../../tracks/">
       
       
-      <link rel="icon" href="../../assets/images/magda-lisa.svg">
+      <link rel="icon" href="../../assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
       
-        <title>AI Settings - MAGDA Manual</title>
+        <title>AI - MAGDA Manual</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#ai-settings" class="md-skip">
+        <a href="#ai" class="md-skip">
           Skip to content
         </a>
       
@@ -88,71 +88,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="../../assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              AI Settings
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -190,22 +133,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -504,7 +462,7 @@
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -526,7 +484,51 @@
         
   
   <span class="md-ellipsis">
-    Audio Settings
+    Audio & MIDI
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../controllers/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Controllers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../connections/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Connections
     
   </span>
   
@@ -548,7 +550,7 @@
         
   
   <span class="md-ellipsis">
-    Plugin Settings
+    Plugins
     
   </span>
   
@@ -579,7 +581,7 @@
           
   
   <span class="md-ellipsis">
-    AI Settings
+    AI
     
   </span>
   
@@ -591,7 +593,7 @@
         
   
   <span class="md-ellipsis">
-    AI Settings
+    AI
     
   </span>
   
@@ -614,22 +616,13 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#cloud" class="md-nav__link">
+  <a href="#assistant" class="md-nav__link">
     <span class="md-ellipsis">
-      Cloud
+      Assistant
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#config" class="md-nav__link">
-    <span class="md-ellipsis">
-      Config
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Config">
+    <nav class="md-nav" aria-label="Assistant">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -675,9 +668,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#mcp-tools" class="md-nav__link">
+  <a href="#tools" class="md-nav__link">
     <span class="md-ellipsis">
-      MCP Tools
+      Tools
     </span>
   </a>
   
@@ -689,13 +682,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#models" class="md-nav__link">
+  <a href="#providers" class="md-nav__link">
     <span class="md-ellipsis">
-      Models
+      Providers
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Models">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#local-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      Local models
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Local models">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -711,6 +713,15 @@
   <a href="#sample-analysis" class="md-nav__link">
     <span class="md-ellipsis">
       Sample analysis
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tempo-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tempo detection
     </span>
   </a>
   
@@ -743,50 +754,6 @@
   
 </nav>
       
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../controllers/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Controllers
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../connections/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Connections
-    
-  </span>
-  
-
-      </a>
     </li>
   
 
@@ -911,6 +878,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../arrangement-view/" class="md-nav__link">
         
   
@@ -995,6 +983,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../chord-track/" class="md-nav__link">
         
   
@@ -1049,10 +1058,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1064,8 +1073,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -1175,10 +1184,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" >
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1190,8 +1199,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1363,10 +1372,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" >
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1378,8 +1387,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1423,10 +1432,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" >
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1438,8 +1447,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1457,6 +1466,28 @@
   
   <span class="md-ellipsis">
     Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
     
   </span>
   
@@ -1557,10 +1588,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" >
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1572,8 +1603,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1833,10 +1864,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1848,8 +1879,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -2032,10 +2063,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" >
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -2047,8 +2078,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -2237,6 +2268,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/troubleshooting/" class="md-nav__link">
         
   
@@ -2286,22 +2339,13 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#cloud" class="md-nav__link">
+  <a href="#assistant" class="md-nav__link">
     <span class="md-ellipsis">
-      Cloud
+      Assistant
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#config" class="md-nav__link">
-    <span class="md-ellipsis">
-      Config
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Config">
+    <nav class="md-nav" aria-label="Assistant">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2347,9 +2391,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#mcp-tools" class="md-nav__link">
+  <a href="#tools" class="md-nav__link">
     <span class="md-ellipsis">
-      MCP Tools
+      Tools
     </span>
   </a>
   
@@ -2361,13 +2405,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#models" class="md-nav__link">
+  <a href="#providers" class="md-nav__link">
     <span class="md-ellipsis">
-      Models
+      Providers
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Models">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#local-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      Local models
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Local models">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2383,6 +2436,15 @@
   <a href="#sample-analysis" class="md-nav__link">
     <span class="md-ellipsis">
       Sample analysis
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tempo-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tempo detection
     </span>
   </a>
   
@@ -2430,9 +2492,8 @@
   
 
 
-<h1 id="ai-settings">AI Settings<a class="headerlink" href="#ai-settings" title="Permanent link">&para;</a></h1>
-<p>The <strong>AI Settings</strong> dialog is where you configure the providers and models that power MAGDA's AI features: the <a href="../../panels/ai-assistant/">AI Assistant</a> chat, the per-device sound-design panels, the <a href="../../panels/media-library/">Media Library</a>'s Sample Analyzer, and <a href="../../stem-separation/">Stem Separation</a>.</p>
-<p>Open it from <strong>Settings &gt; AI Settings</strong>. The dialog has three tabs.</p>
+<h1 id="ai">AI<a class="headerlink" href="#ai" title="Permanent link">&para;</a></h1>
+<p>The <strong>AI</strong> section of <a href="../preferences/">Settings</a> configures the providers and models behind MAGDA's AI features: the <a href="../../panels/ai-assistant/">AI Assistant</a> chat, the per-device sound-design panels, the <a href="../../panels/media-library/">Media Library</a>'s Sample Analyzer, and <a href="../../stem-separation/">Stem Separation</a>. It has three tabs.</p>
 <table>
 <thead>
 <tr>
@@ -2442,34 +2503,22 @@
 </thead>
 <tbody>
 <tr>
-<td><strong>Cloud</strong></td>
-<td>Register cloud API providers (OpenAI, Anthropic, Gemini, DeepSeek, OpenRouter)</td>
+<td><strong>Assistant</strong></td>
+<td>Choose which providers the AI agents use, and how they trade off quality, speed, and cost</td>
 </tr>
 <tr>
-<td><strong>Config</strong></td>
-<td>Choose which providers each agent uses, and how they trade off quality, speed, and cost</td>
+<td><strong>Providers</strong></td>
+<td>Add API keys for cloud providers (OpenAI, Anthropic, Gemini, DeepSeek, OpenRouter)</td>
 </tr>
 <tr>
-<td><strong>Models</strong></td>
-<td>Download and manage every optional local model, grouped by category</td>
+<td><strong>Local models</strong></td>
+<td>Set up the embedded local model, and download every optional model</td>
 </tr>
 </tbody>
 </table>
-<h2 id="cloud">Cloud<a class="headerlink" href="#cloud" title="Permanent link">&para;</a></h2>
-<p>The Cloud tab registers API keys for hosted LLM providers.</p>
-<p>To add a provider:</p>
-<ol>
-<li>Pick the <strong>Provider</strong> from the dropdown (OpenAI, Anthropic, Gemini, DeepSeek, or OpenRouter).</li>
-<li>Enter your <strong>API Key</strong>.</li>
-<li>Click <strong>Test</strong> to verify the key, then <strong>Add</strong> to register it.</li>
-</ol>
-<p>Registered providers appear in the list below. You can register several and switch between them from the <a href="#config">Config</a> tab. Click <strong>Remove</strong> to delete a provider. A provider already in the list is greyed out in the dropdown so you do not add it twice.</p>
-<div class="admonition note">
-<p class="admonition-title">Keys stay on your machine</p>
-<p>API keys are stored locally in your MAGDA configuration and used only to call the provider you entered them for.</p>
-</div>
-<h2 id="config">Config<a class="headerlink" href="#config" title="Permanent link">&para;</a></h2>
-<p>The Config tab decides which providers the AI agents actually use. The <strong>Setup</strong> dropdown at the top picks how much control you want:</p>
+<p>Changes wait for <strong>Apply</strong>, except downloads, removals and model folders on the <strong>Local models</strong> tab, which take effect straight away.</p>
+<h2 id="assistant">Assistant<a class="headerlink" href="#assistant" title="Permanent link">&para;</a></h2>
+<p>The Assistant tab decides which providers the AI agents actually use. A status in the tab row sums up the current choice. <strong>Setup</strong> picks how much control you want:</p>
 <ul>
 <li><strong>Simple</strong> — one decision that applies to every agent.</li>
 <li><strong>Advanced</strong> — a provider and model per agent role.</li>
@@ -2484,33 +2533,33 @@
 </thead>
 <tbody>
 <tr>
-<td><strong>Mode</strong></td>
+<td><strong>Run on</strong></td>
 <td><strong>Local</strong> (every agent uses a local model), <strong>Cloud</strong> (every agent uses a cloud provider), or <strong>Hybrid</strong> (a mix)</td>
 </tr>
 <tr>
 <td><strong>Source</strong></td>
-<td>In Local mode: <strong>Embedded</strong> (the built-in llama.cpp engine, configured under <a href="#local-llm">Models &gt; Local LLM</a>) or <strong>Local server</strong> (an OpenAI-compatible server you run yourself)</td>
+<td>In Local mode: <strong>Embedded</strong> (the built-in llama.cpp engine, set up under <a href="#local-llm">Local models &gt; Local LLM</a>) or <strong>Local server</strong> (an OpenAI-compatible server you run yourself)</td>
 </tr>
 <tr>
 <td><strong>Provider</strong></td>
-<td>Which registered cloud provider to use, shown for Cloud and Hybrid modes</td>
+<td>Which cloud provider to use, from the keys on the <a href="#providers">Providers</a> tab. Shown for Cloud and Hybrid</td>
 </tr>
 <tr>
-<td><strong>Optimize</strong></td>
-<td>Bias agent selection toward <strong>Quality</strong>, <strong>Speed</strong>, or <strong>Cost</strong></td>
+<td><strong>Optimize for</strong></td>
+<td><strong>Quality</strong> or <strong>Cost</strong> in Cloud mode; <strong>Speed</strong> or <strong>Cost</strong> in Hybrid mode</td>
 </tr>
 </tbody>
 </table>
 <p>In <strong>Local</strong> mode the provider and optimize options are hidden, since everything runs locally.</p>
 <h4 id="local-server-openai-compatible">Local Server (OpenAI-compatible)<a class="headerlink" href="#local-server-openai-compatible" title="Permanent link">&para;</a></h4>
-<p>With <strong>Source</strong> set to <strong>Local server</strong>, MAGDA talks to any server that speaks the OpenAI API — <strong>LM Studio</strong>, <strong>Ollama</strong>, <strong>GPUStack</strong>, or a plain <code>llama.cpp</code> server. The default address is Ollama's (<code>http://localhost:11434/v1</code>); MAGDA normalises whatever form you give it, with or without the <code>/v1</code> suffix.</p>
+<p>With <strong>Source</strong> set to <strong>Local server</strong>, MAGDA talks to a server that speaks the OpenAI API, such as <strong>Ollama</strong>, <strong>LM Studio</strong>, <strong>GPUStack</strong>, or a plain <code>llama.cpp</code> server.</p>
 <ul>
-<li><strong>Model</strong> — pick the model the server should use. <strong>Refresh</strong> queries the server's model list; you can also type a model id directly.</li>
-<li>An API key/token is only needed for servers that require one (for example GPUStack); the others run without it.</li>
+<li><strong>Model</strong> — pick the model the server should use. <strong>Refresh</strong> asks the server for its model list; you can also type a model id directly.</li>
 </ul>
+<p>MAGDA looks for the server at <code>http://localhost:11434/v1</code>, Ollama's default address. To use another address, or a server that needs an API key, quit MAGDA and set <code>localServerUrl</code> and <code>localServerApiKey</code> in the <code>ai</code> block of <a href="../../reference/troubleshooting/#config-file-location"><code>config.json</code></a>.</p>
 <p>One server and one model serve all agent roles, the same way the embedded model does.</p>
 <h3 id="advanced-setup">Advanced setup<a class="headerlink" href="#advanced-setup" title="Permanent link">&para;</a></h3>
-<p>Advanced replaces the single mode with a grid, one row per agent role. Each row has its own <strong>provider</strong> and <strong>model</strong>, drawn from whatever you registered on the Cloud tab and whatever local backends are available. Switching from Simple to Advanced seeds the grid from your simple settings, so you can start there and adjust only the rows you care about.</p>
+<p>Advanced replaces the single choice with a grid, one row per agent role. Each row has its own <strong>provider</strong> and <strong>model</strong>, drawn from the keys on the Providers tab and the local backends available. Switching from Simple to Advanced seeds the grid from your simple settings, so you can start there and adjust only the rows you care about.</p>
 <table>
 <thead>
 <tr>
@@ -2549,20 +2598,31 @@
 <h3 id="fast-inference-command">Fast Inference (Command)<a class="headerlink" href="#fast-inference-command" title="Permanent link">&para;</a></h3>
 <p><strong>Fast Inference</strong> runs Command requests entirely on your machine with a purpose-built model rather than a general-purpose LLM. It is not a chat model: it reads one command and emits the DSL directly, with no streaming and effectively no wait.</p>
 <p>Because it is a single-command tagger, it deliberately ignores conversation history — each request is read on its own. For follow-ups that depend on what you said earlier ("now make it louder"), a general model is the better fit.</p>
-<p>Fast Inference works out of the box using a small built-in model. Installing the larger <a href="#command-model">Command model</a> from the Models tab replaces it and markedly improves how well natural phrasing is understood. Cloud providers never use either one.</p>
-<h3 id="mcp-tools">MCP Tools<a class="headerlink" href="#mcp-tools" title="Permanent link">&para;</a></h3>
-<p><strong>Faust DSP</strong> validates AI-generated Faust code before MAGDA loads it. MAGDA starts the MCP server on demand through <code>npx</code>, so there is nothing to install by hand, but <code>npx</code> must be on your system <code>PATH</code> (it ships with Node.js). See <a href="../../devices/effects/">Effects — Faust validation</a> for details.</p>
-<h2 id="models">Models<a class="headerlink" href="#models" title="Permanent link">&para;</a></h2>
-<p>Every optional download lives on the Models tab, behind a <strong>Category</strong> dropdown. Categories appear only when your build supports them — the ONNX-backed ones (Sample analysis, Stem separation, Command model) are absent from the Intel macOS build.</p>
-<p>Downloads and removals take effect straight away; they do not wait for <strong>OK</strong>.</p>
+<p>Fast Inference works out of the box using a small built-in model. Installing the larger <a href="#command-model">Command model</a> from the Local models tab replaces it and markedly improves how well natural phrasing is understood. Cloud providers never use either one.</p>
+<h3 id="tools">Tools<a class="headerlink" href="#tools" title="Permanent link">&para;</a></h3>
+<p>Switch on <strong>Faust DSP</strong> to have AI-generated Faust code checked before MAGDA loads it. It needs Node.js: MAGDA starts the checker on demand through <code>npx</code>, so there is nothing else to install, but <code>npx</code> must be on your system <code>PATH</code>. The row says whether <code>npx</code> was found, and <strong>Get Node.js</strong> opens the Node.js download page. See <a href="../../devices/effects/">Effects — Faust validation</a> for details.</p>
+<h2 id="providers">Providers<a class="headerlink" href="#providers" title="Permanent link">&para;</a></h2>
+<p>The Providers tab holds API keys for hosted LLM providers. The tab row shows how many keys you have added.</p>
+<p>To add a key, pick the provider in the add row (OpenAI, Anthropic, Gemini, DeepSeek, or OpenRouter), paste the key, then click <strong>Test</strong> to check it and <strong>Add</strong> to keep it. <strong>Test</strong> sends one small request to the provider.</p>
+<p>Added keys are listed under <strong>API keys</strong>, each with its own <strong>Test</strong> and <strong>Remove</strong>. A provider that already has a key is greyed out in the dropdown. Choose between providers on the <a href="#assistant">Assistant</a> tab.</p>
+<div class="admonition note">
+<p class="admonition-title">Keys stay on your machine</p>
+<p>API keys are saved in MAGDA's settings file and used only to call the provider you entered them for.</p>
+</div>
+<h2 id="local-models">Local models<a class="headerlink" href="#local-models" title="Permanent link">&para;</a></h2>
+<p>Every optional download lives on the Local models tab, behind the <strong>Type</strong> dropdown: <strong>Local LLM</strong>, <strong>Sample analysis</strong>, <strong>Tempo detection</strong>, <strong>Stem separation</strong> and <strong>Command model</strong>.</p>
+<div class="admonition note">
+<p class="admonition-title">Intel Macs</p>
+<p>Sample analysis, Tempo detection, Stem separation and the Command model run on the ONNX runtime, which the Intel Mac build of MAGDA doesn't include. On an Intel Mac only <strong>Local LLM</strong> is listed. <strong>Transcribe to MIDI</strong> is unavailable there too, and <strong>Split into Stems</strong> offers HPSS only.</p>
+</div>
 <h3 id="local-llm">Local LLM<a class="headerlink" href="#local-llm" title="Permanent link">&para;</a></h3>
-<p>Configures the embedded <strong>llama.cpp</strong> engine for fully offline AI, with no network calls and no API key.</p>
+<p>Sets up the embedded <strong>llama.cpp</strong> engine for fully offline AI, with no network calls and no API key.</p>
 <ul>
-<li><strong>Download Model</strong> — downloads the MAGDA model (fine-tuned for DAW operations) from HuggingFace with a progress indicator.</li>
-<li><strong>Model (.gguf)</strong> — the path to the model file. Use the browse button to point at any GGUF model of your own.</li>
-<li><strong>GPU Layers</strong> — <strong>Auto (GPU)</strong> offloads everything the platform can take (Metal on macOS, CUDA on supported builds), <strong>CPU Only</strong> runs without the GPU, and <strong>Custom</strong> lets you enter a layer count for cards that run out of memory on Auto.</li>
-<li><strong>Context</strong> — the context-window size in tokens (default <code>4096</code>).</li>
-<li><strong>Load Model</strong> / <strong>Unload</strong> — load the model into memory or unload it to free resources.</li>
+<li><strong>Download a model…</strong> — downloads MAGDA's own model, fine-tuned for DAW operations, to a place you choose.</li>
+<li><strong>File (.gguf)</strong> — the model file. <strong>Choose…</strong> points at any GGUF model of your own.</li>
+<li><strong>GPU layers</strong> — <strong>Auto (GPU)</strong> offloads everything the GPU can take: Metal on macOS, and Vulkan on Windows and Linux when a Vulkan driver is installed (without one, the model runs on the CPU). <strong>CPU Only</strong> runs without the GPU, and <strong>Custom</strong> lets you enter a layer count for cards that run out of memory on Auto.</li>
+<li><strong>Context length</strong> — the context-window size in tokens (default <code>4096</code>).</li>
+<li><strong>Load model</strong> / <strong>Unload</strong> — load the model into memory or unload it to free resources. The tab row shows which model is loaded.</li>
 <li><strong>Load model on startup</strong> — when enabled, the model loads automatically each time MAGDA launches.</li>
 </ul>
 <h3 id="sample-analysis">Sample analysis<a class="headerlink" href="#sample-analysis" title="Permanent link">&para;</a></h3>
@@ -2570,9 +2630,13 @@
 <ul>
 <li>The page shows the current install state and the <strong>download size</strong>.</li>
 <li><strong>Download Sample Analyzer</strong> — fetches the model. Without it, the Library still supports filename, tag, family, shape, key, and BPM filtering, but not text-based semantic search.</li>
+<li><strong>Models location</strong> — where the model is kept. <strong>Browse...</strong> moves it to another folder, <strong>Reset</strong> goes back to the default.</li>
 <li><strong>Load</strong> / <strong>Unload</strong> — bring the analyzer into memory or release it. It also preloads in the background the first time you enter Library mode.</li>
+<li><strong>Load on startup</strong> — load the analyzer each time MAGDA launches.</li>
 </ul>
 <p>For how the analyzer is used once installed, see <a href="../../panels/media-library/#ai-sample-analyzer">Media Library &gt; AI Sample Analyzer</a>.</p>
+<h3 id="tempo-detection">Tempo detection<a class="headerlink" href="#tempo-detection" title="Permanent link">&para;</a></h3>
+<p>The beat tracker measures the tempo of samples whose file name and header don't carry one, when the Library indexes them, and lets a clip go into beat mode without you typing a BPM. Without it MAGDA falls back to an estimate that is right far less often. <strong>Download Beat Tracker</strong> fetches it, and <strong>Remove</strong> frees the disk space again.</p>
 <h3 id="stem-separation">Stem separation<a class="headerlink" href="#stem-separation" title="Permanent link">&para;</a></h3>
 <p>Weights for the machine-learning engines behind <a href="../../stem-separation/">Split into Stems</a>. The HPSS engine needs nothing here — it is pure signal processing and always available.</p>
 <table>
@@ -2601,7 +2665,7 @@
 <h3 id="command-model">Command model<a class="headerlink" href="#command-model" title="Permanent link">&para;</a></h3>
 <p>The larger model behind <a href="#fast-inference-command">Fast Inference</a>: a DeBERTa-v3 encoder fine-tuned to read a command and tag its intent and parameters.</p>
 <ul>
-<li>It is <strong>not bundled</strong> with MAGDA — the download is 429 MB.</li>
+<li>It is <strong>not bundled</strong> with MAGDA — the download is 430 MB.</li>
 <li>Without it, Fast Inference still works using the small built-in model. With it, natural phrasing is understood far more reliably.</li>
 <li><strong>Models location</strong> defaults to MAGDA's data folder. Use <strong>Browse...</strong> to keep the weights on another drive, or <strong>Reset</strong> to go back to the default.</li>
 <li>The <strong>Download</strong> button turns into <strong>Cancel</strong> while a download is running, and <strong>Remove</strong> once installed. The location cannot be changed mid-download.</li>
@@ -2688,6 +2752,8 @@
     
     
       <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="../../javascripts/site-header.js"></script>
       
     
   </body>

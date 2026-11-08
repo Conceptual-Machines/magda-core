@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/devices/step-sequencer/">
+        <link rel="canonical" href="https://docs.magda.land/devices/step-sequencer/">
       
       
         <link rel="prev" href="../chord-engine/">
@@ -19,7 +19,7 @@
         <link rel="next" href="../poly-sequencer/">
       
       
-      <link rel="icon" href="../../assets/images/magda-lisa.svg">
+      <link rel="icon" href="../../assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
@@ -88,71 +88,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="../../assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              Step Sequencer
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -190,22 +133,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -502,7 +460,7 @@
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -524,51 +482,7 @@
         
   
   <span class="md-ellipsis">
-    Audio Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/plugin-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Plugin Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/ai-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    AI Settings
+    Audio & MIDI
     
   </span>
   
@@ -613,6 +527,50 @@
   
   <span class="md-ellipsis">
     Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI
     
   </span>
   
@@ -742,6 +700,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../arrangement-view/" class="md-nav__link">
         
   
@@ -826,6 +805,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../chord-track/" class="md-nav__link">
         
   
@@ -880,10 +880,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -895,8 +895,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -1006,10 +1006,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" >
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1021,8 +1021,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1196,10 +1196,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" checked>
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1211,8 +1211,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1258,10 +1258,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" checked>
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1273,8 +1273,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1292,6 +1292,28 @@
   
   <span class="md-ellipsis">
     Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
     
   </span>
   
@@ -1388,34 +1410,24 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#parameters" class="md-nav__link">
+  <a href="#settings" class="md-nav__link">
     <span class="md-ellipsis">
-      Parameters
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Parameters">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#timing-direction" class="md-nav__link">
-    <span class="md-ellipsis">
-      Timing &amp; Direction
+      Settings
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#velocity" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#the-steps" class="md-nav__link">
     <span class="md-ellipsis">
-      Velocity
+      The Steps
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#time-bend" class="md-nav__link">
     <span class="md-ellipsis">
       Time Bend
@@ -1423,16 +1435,11 @@
   </a>
   
 </li>
-        
-      </ul>
-    </nav>
-  
-</li>
       
         <li class="md-nav__item">
-  <a href="#the-step-grid" class="md-nav__link">
+  <a href="#header-buttons" class="md-nav__link">
     <span class="md-ellipsis">
-      The Step Grid
+      Header Buttons
     </span>
   </a>
   
@@ -1442,15 +1449,6 @@
   <a href="#step-recording" class="md-nav__link">
     <span class="md-ellipsis">
       Step Recording
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#midi-thru" class="md-nav__link">
-    <span class="md-ellipsis">
-      MIDI Thru
     </span>
   </a>
   
@@ -1529,10 +1527,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" >
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1544,8 +1542,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1805,10 +1803,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1820,8 +1818,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -2004,10 +2002,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" >
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -2019,8 +2017,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -2209,6 +2207,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/troubleshooting/" class="md-nav__link">
         
   
@@ -2267,34 +2287,24 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#parameters" class="md-nav__link">
+  <a href="#settings" class="md-nav__link">
     <span class="md-ellipsis">
-      Parameters
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Parameters">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#timing-direction" class="md-nav__link">
-    <span class="md-ellipsis">
-      Timing &amp; Direction
+      Settings
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#velocity" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#the-steps" class="md-nav__link">
     <span class="md-ellipsis">
-      Velocity
+      The Steps
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#time-bend" class="md-nav__link">
     <span class="md-ellipsis">
       Time Bend
@@ -2302,16 +2312,11 @@
   </a>
   
 </li>
-        
-      </ul>
-    </nav>
-  
-</li>
       
         <li class="md-nav__item">
-  <a href="#the-step-grid" class="md-nav__link">
+  <a href="#header-buttons" class="md-nav__link">
     <span class="md-ellipsis">
-      The Step Grid
+      Header Buttons
     </span>
   </a>
   
@@ -2321,15 +2326,6 @@
   <a href="#step-recording" class="md-nav__link">
     <span class="md-ellipsis">
       Step Recording
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#midi-thru" class="md-nav__link">
-    <span class="md-ellipsis">
-      MIDI Thru
     </span>
   </a>
   
@@ -2373,20 +2369,21 @@
 
 
 <h1 id="step-sequencer">Step Sequencer<a class="headerlink" href="#step-sequencer" title="Permanent link">&para;</a></h1>
-<p>The Step Sequencer is a MIDI device that generates melodic and rhythmic patterns from a grid of programmable steps. Each step has a pitch, velocity, gate length, and optional glide — giving you precise control over every note in the sequence.</p>
+<p>The Step Sequencer is a MIDI device that generates melodic and rhythmic patterns from a row of up to 32 programmable steps. Each step has a note and switches for gate, tie, glide and accent — giving you precise control over every note in the sequence.</p>
 <div class="admonition tip">
 <p class="admonition-title">Need chords or a drum grid?</p>
 <p>The Step Sequencer is monophonic — one note per step. For chords (up to eight notes per step) and a switchable keyboard/drum view, use the <a href="../poly-sequencer/">Poly Sequencer</a>.</p>
 </div>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p><img alt="Step Sequencer" src="../../assets/images/devices/step-sequencer.png" /></p>
-<p>The Step Sequencer sits on a track's device chain before an instrument. It plays through a pattern of steps in sync with the project tempo, independent of any MIDI input. Steps can be programmed by clicking the grid, playing notes via step recording, or generating patterns with AI.</p>
-<h2 id="parameters">Parameters<a class="headerlink" href="#parameters" title="Permanent link">&para;</a></h2>
-<h3 id="timing-direction">Timing &amp; Direction<a class="headerlink" href="#timing-direction" title="Permanent link">&para;</a></h3>
+<p>The Step Sequencer sits on a track's device chain before an instrument. It plays through a pattern of steps in sync with the project tempo, independent of any MIDI input. Steps can be programmed by clicking them, playing notes via step recording, or generating patterns with AI.</p>
+<p>The faceplate has the steps on the left and the <a href="#time-bend">time bend</a> on the right. The sidebar's <strong>Show the time bend</strong> toggle hides or shows the time bend; the choice is saved with the device.</p>
+<h2 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h2>
+<p>A strip across the top of the steps holds the pattern's settings:</p>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
+<th>Setting</th>
 <th>Range</th>
 <th>Description</th>
 </tr>
@@ -2394,101 +2391,66 @@
 <tbody>
 <tr>
 <td><strong>Rate</strong></td>
-<td>Musical subdivisions (1/1 – 1/32, triplets, dotted)</td>
+<td>1/4. to 1/32, with dotted (.) and triplet (T) values</td>
 <td>How fast the sequencer advances through steps</td>
 </tr>
 <tr>
 <td><strong>Steps</strong></td>
-<td>1–16</td>
-<td>Number of active steps in the pattern</td>
-</tr>
-<tr>
-<td><strong>Dir</strong></td>
-<td>Forward, Reverse, Ping-Pong, Random</td>
-<td>Playback direction through the step grid</td>
-</tr>
-<tr>
-<td><strong>Swing</strong></td>
-<td>-100% to 100%</td>
-<td>Offsets every other step for a shuffle feel</td>
+<td>1–32</td>
+<td>Number of steps in the pattern</td>
 </tr>
 <tr>
 <td><strong>Gate</strong></td>
-<td>0–100%</td>
-<td>Default note length as a percentage of the step duration</td>
+<td>5–100%</td>
+<td>Note length as a percentage of the step duration</td>
+</tr>
+<tr>
+<td><strong>Dir</strong></td>
+<td>Fwd, Rev, P-P, Rnd</td>
+<td>Playback direction: forward, reverse, ping-pong or random</td>
 </tr>
 </tbody>
 </table>
-<h3 id="velocity">Velocity<a class="headerlink" href="#velocity" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Accent Vel</strong></td>
-<td>Velocity for accented steps</td>
-</tr>
-<tr>
-<td><strong>Normal Vel</strong></td>
-<td>Velocity for non-accented steps</td>
-</tr>
-</tbody>
-</table>
-<p>Individual step velocities can also be set directly on each step in the grid.</p>
-<h3 id="time-bend">Time Bend<a class="headerlink" href="#time-bend" title="Permanent link">&para;</a></h3>
-<p>The <a href="../../time-bend/">Time Bend</a> section reshapes step timing within each cycle, the same way it works in the <a href="../arpeggiator/">Arpeggiator</a>. Steps that would normally fire on a rigid grid get redistributed according to the curve — compressing some and expanding others.</p>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Range</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Depth</strong></td>
-<td>-1.0 to 1.0</td>
-<td>Curve intensity — positive front-loads steps, negative back-loads them</td>
-</tr>
-<tr>
-<td><strong>Skew</strong></td>
-<td>-1.0 to 1.0</td>
-<td>Shifts the curve's inflection point earlier or later</td>
-</tr>
-<tr>
-<td><strong>Cycles</strong></td>
-<td>1–8</td>
-<td>Repeats the curve within each pattern cycle</td>
-</tr>
-</tbody>
-</table>
-<p>Depth and Skew can be linked to <a href="../../modulation/macros/">Macros</a> for real-time timing modulation.</p>
-<h2 id="the-step-grid">The Step Grid<a class="headerlink" href="#the-step-grid" title="Permanent link">&para;</a></h2>
-<p>The main area of the Step Sequencer is a keyboard-style grid. Rows represent pitches (with a piano keyboard on the right) and columns represent steps. Click a cell to place a note on that step.</p>
-<p>Each step can have:</p>
+<p>Right-click the strip or the step ruler for the settings that have no box of their own:</p>
 <ul>
-<li><strong>Pitch</strong> — set by which row you click</li>
-<li><strong>Velocity</strong> — adjustable per step</li>
-<li><strong>Accent</strong> — toggleable per step for emphasis</li>
-<li><strong>Glide</strong> — smooth pitch transition from the previous step</li>
+<li><strong>Quantize</strong> and <strong>Quantize Sub</strong> — see <a href="#time-bend">Time Bend</a> below.</li>
+<li><strong>Velocity</strong> — the velocity of ordinary steps, 1–127.</li>
+<li><strong>Accent Velocity</strong> — the velocity of accented steps, 1–127.</li>
+</ul>
+<h2 id="the-steps">The Steps<a class="headerlink" href="#the-steps" title="Permanent link">&para;</a></h2>
+<p>Under the settings strip, a ruler numbers the steps and lights the one playing. Below it, each step has a note box, then four rows of switches. Click a switch to toggle it:</p>
+<ul>
+<li><strong>Gate</strong> — whether the step plays. A rest shows as a dot in its note box.</li>
+<li><strong>Tie</strong> — carries the previous note on through the step instead of retriggering it.</li>
+<li><strong>Glide</strong> — holds the step for its full length so the next note slides in from it. Tie and glide exclude each other.</li>
+<li><strong>Accent</strong> — plays the step at the Accent Velocity.</li>
+</ul>
+<p>Click a note box to pick the step's note from a pop-up keyboard. When the device has the height for it, a keyboard under the note boxes sets the selected step's note instead, with <strong>Octave</strong> buttons to move it.</p>
+<p><span class="keys"><kbd class="key-shift">Shift</kbd></span>-drag one note box onto another to copy that step. Right-click a step for <strong>Mute Step</strong> (or <strong>Unmute Step</strong>), <strong>Copy to All Steps</strong>, <strong>Clear Step</strong> and <strong>Clear Pattern</strong>.</p>
+<p>The expand button at the start of the ruler (<em>Expand into the arrangement</em>) lends the note editor to the arrangement, where it becomes a piano roll with a column per step. Click a cell to put that step's note there, and click it again to rest the step; the mouse wheel scrolls and zooms the rows. Only one faceplate can be out at a time. Its collapse button, or <span class="keys"><kbd class="key-escape">Esc</kbd></span>, puts it back.</p>
+<h2 id="time-bend">Time Bend<a class="headerlink" href="#time-bend" title="Permanent link">&para;</a></h2>
+<p>The <a href="../../time-bend/">Time Bend</a> column reshapes step timing within each cycle, the same way it works in the <a href="../arpeggiator/">Arpeggiator</a>. Steps that would normally fire on a rigid grid follow the curve instead — compressing some and expanding others.</p>
+<p>Drag the curve's points and bend its segments, right-click a point for a hard corner, or start from a <strong>SHAPE</strong>. <strong>GROOVE</strong> loads a groove's curve; <strong>AMOUNT</strong> sets how much of the bend is heard and <strong>CYCLES</strong> repeats it within the pattern. The <strong>TIME | DYNAMICS</strong> switch draws a level per step instead, which scales each step's velocity as it plays; the velocities set on the device are left as they are. See <a href="../../time-bend/">Time Bend</a> for the editor itself.</p>
+<p><strong>Quantize</strong> (0–100%, in the right-click menu) pulls the bent steps back toward a grid of <strong>Quantize Sub</strong> divisions (16–512) of the bend's cycle.</p>
+<p>AMOUNT and CYCLES can be linked to <a href="../../modulation/macros/">Macros</a> for real-time timing modulation. The time bend has its own expand button, which moves it into the arrangement.</p>
+<h2 id="header-buttons">Header Buttons<a class="headerlink" href="#header-buttons" title="Permanent link">&para;</a></h2>
+<p>The Step Sequencer's own buttons sit in the device header:</p>
+<ul>
+<li><strong>AI</strong> — opens the device's AI panel; see <a href="#ai-pattern-generation">AI Pattern Generation</a>.</li>
+<li><strong>Randomize pattern</strong> — fills the steps with a random pattern.</li>
+<li><strong>Step record</strong> — enters <a href="#step-recording">step recording</a>.</li>
+<li><strong>MIDI thru</strong> — passes incoming MIDI through to the downstream instrument alongside the sequencer output, so you can play live over the sequence.</li>
+<li><strong>Copy</strong> (<em>Click to copy pattern, drag to timeline</em>) — click to copy the pattern, or drag it onto the timeline to make a MIDI clip of it.</li>
 </ul>
 <h2 id="step-recording">Step Recording<a class="headerlink" href="#step-recording" title="Permanent link">&para;</a></h2>
-<p>Click the step record button to enter step recording mode. Play a note on your MIDI controller and it will be placed on the current step, then the cursor advances to the next step. This is a fast way to input melodies without clicking the grid.</p>
-<h2 id="midi-thru">MIDI Thru<a class="headerlink" href="#midi-thru" title="Permanent link">&para;</a></h2>
-<p>The MIDI thru button passes incoming MIDI notes through to the downstream instrument alongside the sequencer output. This lets you play live over the sequence.</p>
+<p>Click the step record button to enter step recording mode. Play a note on your MIDI controller and it will be placed on the current step, then the cursor advances to the next step. This is a fast way to input melodies without clicking the steps.</p>
 <h2 id="ai-pattern-generation">AI Pattern Generation<a class="headerlink" href="#ai-pattern-generation" title="Permanent link">&para;</a></h2>
 <p>The Step Sequencer can generate patterns using AI:</p>
 <ol>
-<li>Type a description in the prompt field (e.g. "acid techno bassline")</li>
-<li>Click <strong>Generate</strong></li>
-<li>The AI fills the step grid with a matching pattern</li>
+<li>Click the <strong>AI</strong> icon in the device header to open its <a href="../../panels/ai-assistant/#per-device-ai-panel">AI panel</a></li>
+<li>Type a description (e.g. "acid techno bassline") and press <span class="keys"><kbd class="key-enter">Enter</kbd></span></li>
+<li>The agent fills the steps with a matching pattern</li>
 </ol>
-<p>You can also click the random button for a quick random pattern.</p>
 <h2 id="known-limitations">Known Limitations<a class="headerlink" href="#known-limitations" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Arrangement loop boundary</strong>: The Step Sequencer may produce a brief timing glitch when the arrangement transport loops back to the start. This does not affect session clips or non-looping playback.</li>
@@ -2574,6 +2536,8 @@
     
     
       <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="../../javascripts/site-header.js"></script>
       
     
   </body>

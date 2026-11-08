@@ -10,16 +10,16 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/interface/connections/">
+        <link rel="canonical" href="https://docs.magda.land/interface/connections/">
       
       
         <link rel="prev" href="../controllers/">
       
       
-        <link rel="next" href="../../tracks/">
+        <link rel="next" href="../plugin-settings/">
       
       
-      <link rel="icon" href="../../assets/images/magda-lisa.svg">
+      <link rel="icon" href="../../assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
@@ -88,71 +88,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="../../assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              Connections
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -190,22 +133,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -504,7 +462,7 @@
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -526,51 +484,7 @@
         
   
   <span class="md-ellipsis">
-    Audio Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../plugin-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Plugin Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../ai-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    AI Settings
+    Audio & MIDI
     
   </span>
   
@@ -717,10 +631,72 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#ableton-link" class="md-nav__link">
+    <span class="md-ellipsis">
+      Ableton Link
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#midi-clock" class="md-nav__link">
+    <span class="md-ellipsis">
+      MIDI Clock
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI
+    
+  </span>
+  
+
+      </a>
     </li>
   
 
@@ -845,6 +821,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../arrangement-view/" class="md-nav__link">
         
   
@@ -929,6 +926,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../chord-track/" class="md-nav__link">
         
   
@@ -983,10 +1001,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -998,8 +1016,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -1109,10 +1127,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" >
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1124,8 +1142,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1297,10 +1315,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" >
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1312,8 +1330,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1357,10 +1375,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" >
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1372,8 +1390,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1391,6 +1409,28 @@
   
   <span class="md-ellipsis">
     Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
     
   </span>
   
@@ -1491,10 +1531,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" >
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1506,8 +1546,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1767,10 +1807,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1782,8 +1822,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -1966,10 +2006,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" >
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1981,8 +2021,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -2171,6 +2211,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/troubleshooting/" class="md-nav__link">
         
   
@@ -2279,6 +2341,24 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#ableton-link" class="md-nav__link">
+    <span class="md-ellipsis">
+      Ableton Link
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#midi-clock" class="md-nav__link">
+    <span class="md-ellipsis">
+      MIDI Clock
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2299,7 +2379,7 @@
 
 
 <h1 id="connections">Connections<a class="headerlink" href="#connections" title="Permanent link">&para;</a></h1>
-<p>The Connections dialog is where you say what is allowed to drive MAGDA from outside it. Open it from <strong>Settings &gt; Connections</strong>. It has four tabs.</p>
+<p>The <strong>Connections</strong> section of <a href="../preferences/">Settings</a> is where you say what is allowed to drive MAGDA from outside it, and what MAGDA keeps in time with. Every change here takes effect as you make it. It has six tabs.</p>
 <table>
 <thead>
 <tr>
@@ -2324,9 +2404,17 @@
 <td><strong>Clients</strong></td>
 <td>Grant each remote client what it may do, and see what it has done</td>
 </tr>
+<tr>
+<td><strong>Ableton Link</strong></td>
+<td>Play in time with other apps on the network</td>
+</tr>
+<tr>
+<td><strong>MIDI Clock</strong></td>
+<td>Send MIDI clock to hardware, or follow a clock from it</td>
+</tr>
 </tbody>
 </table>
-<p>None of this is AI-specific. An AI assistant is one kind of client, but the same permissions cover a Lua script, a bespoke controller, or anything else holding a token. Model and provider configuration lives in <a href="../ai-settings/">AI Settings</a>; MIDI profiles and Lua scripts live in <a href="../controllers/">Controllers</a>.</p>
+<p>None of the first four is AI-specific. An AI assistant is one kind of client, but the same permissions cover a Lua script, a bespoke controller, or anything else holding a token. Model and provider configuration lives in <a href="../ai-settings/">AI</a>; MIDI profiles and Lua scripts live in <a href="../controllers/">Controllers</a>.</p>
 <h2 id="mcp-and-websocket-are-two-separate-listeners">MCP and WebSocket are two separate listeners<a class="headerlink" href="#mcp-and-websocket-are-two-separate-listeners" title="Permanent link">&para;</a></h2>
 <p>This is the thing most worth understanding before you touch either switch.</p>
 <p>MAGDA's <strong>remote API</strong> — the thing that lets an outside program inspect and control your session — is served over <strong>two transports</strong>:</p>
@@ -2339,23 +2427,23 @@
 <p>See the <a href="../../reference/remote-api/">Remote API Reference</a> for connection framing,
 schema discovery, revisions and retries, subscriptions, errors, and the complete
 operation catalogue.</p>
-<p><strong>OSC is not one of them.</strong> It is a different protocol on a different stack, with no token, no client list, and no permissions — an OSC surface can do what OSC surfaces can do, and it will never appear on the Clients tab. It is in this dialog because it is another way into MAGDA from outside, not because it shares any of the above.</p>
+<p><strong>OSC is not one of them.</strong> It is a different protocol on a different stack, with no token, no client list, and no permissions — an OSC surface can do what OSC surfaces can do, and it will never appear on the Clients tab. It is in this section because it is another way into MAGDA from outside, not because it shares any of the above.</p>
 <h2 id="mcp">MCP<a class="headerlink" href="#mcp" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Enable the MCP endpoint</strong> — Opens and closes the listener immediately, not at the next launch.</li>
-<li><strong>Rotate token</strong> — Throws this endpoint's credential away and mints a new one, disconnecting every MCP client. WebSocket clients are unaffected. Clients that read the token file find the new one by themselves.</li>
+<li><strong>Enable the MCP endpoint</strong> — Opens and closes the listener immediately, not at the next launch. It listens on this machine only.</li>
+<li><strong>Rotate token</strong> — Throws this endpoint's credential away and mints a new one, disconnecting every MCP client after asking. WebSocket clients are unaffected. Clients that read the token file find the new one by themselves.</li>
 </ul>
-<p>Below the toggle, MAGDA composes the exact JSON to paste into an MCP host's config, using this install's own paths, with a <strong>Copy</strong> button. It stays correct across restarts: the helper it names finds MAGDA's current port and token each time, so neither has to be written down.</p>
+<p>Below the switch, <strong>MCP host configuration</strong> holds the exact JSON to paste into an MCP host's config, using this install's own paths, with a <strong>Copy</strong> button. It stays correct across restarts: the helper it names finds MAGDA's current port and token each time, so neither has to be written down.</p>
 <p>On Linux inside an AppImage, MAGDA stages <code>magda-mcp</code> into its data directory
 the first time this page is opened and updates that stable copy when the
 AppImage changes.</p>
 <h2 id="websocket">WebSocket<a class="headerlink" href="#websocket" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Enable the WebSocket API</strong> — Same immediate effect, on its own listener.</li>
+<li><strong>Enable the WebSocket API</strong> — Same immediate effect, on its own listener, also on this machine only.</li>
 <li><strong>Rotate token</strong> — The mirror image of the MCP one: drops WebSocket clients only.</li>
 </ul>
-<p>The page shows the URL to connect to, including the <code>?client=</code> query string. <strong>Name your client there</strong> — that name is what gets its own row and its own permissions on the Clients tab. A client that sends no name is lumped in with every other anonymous caller and stays read-only.</p>
-<p>The token itself is never shown. It is regenerated every run and written to an owner-only file whose path the page gives you; read it from there rather than copying it, because a token pasted somewhere permanent stops being valid the moment MAGDA restarts.</p>
+<p><strong>Connect to</strong> shows the URL, including the <code>?client=</code> query string. <strong>Name your client there</strong> — that name is what gets its own row and its own permissions on the Clients tab. A client that sends no name is lumped in with every other anonymous caller and stays read-only.</p>
+<p>The token itself is never shown. It is regenerated every run and written to an owner-only file, shown under <strong>Token &amp; port file</strong> with <strong>Reveal</strong> and <strong>Copy path</strong>; read it from there rather than copying it, because a token pasted somewhere permanent stops being valid the moment MAGDA restarts.</p>
 <h2 id="clients">Clients<a class="headerlink" href="#clients" title="Permanent link">&para;</a></h2>
 <p>A client that connects for the first time can <strong>read only</strong>. If your assistant reports that it cannot create a track or start playback, that is not a bug — nothing has been granted yet.</p>
 <p>Each client MAGDA has heard from over <strong>either</strong> transport gets a row, listed by the name it reported and tagged with the transport it came in over. Tick what you want it to be able to do:</p>
@@ -2390,7 +2478,7 @@ AppImage changes.</p>
 </tbody>
 </table>
 <p>Changes apply to the client's next request. There is nothing to restart and no need to reconnect.</p>
-<p>Each row also has <strong>Disconnect</strong>, which drops the client's current connections, and <strong>Forget</strong>, which discards its permissions. Forget does not disconnect: the client reverts to read-only and stays connected.</p>
+<p>Each row also has <strong>Disconnect</strong>, which drops the client's current connections, and <strong>Forget</strong>, which discards its permissions. Forget does not disconnect: the client reverts to read-only and stays connected. <strong>Forget all disconnected</strong>, in the tab row, clears every client that isn't connected right now.</p>
 <p>Grants are remembered between launches, keyed by the reported name. Two clients reporting the same name are one entry. A client that reports nothing is listed as <code>unknown</code> and shares one read-only entry with every other anonymous caller.</p>
 <h3 id="recent-activity">Recent activity<a class="headerlink" href="#recent-activity" title="Permanent link">&para;</a></h3>
 <p>Underneath the client list is a tail of what has actually been asked for, and how it was answered — so <code>tracks.create denied (edit)</code> appears next to the checkbox that would allow it.</p>
@@ -2406,6 +2494,46 @@ AppImage changes.</p>
 <p>There is no "send feedback to" address. MAGDA reads the datagrams it receives, so it answers whoever is talking to it.</p>
 <p>The status area below reports whether the socket is open, how many messages have arrived, and one line per surface MAGDA has heard from with its message counts and when it was last heard. A surface listed with nothing arriving and a surface never listed at all are different problems, which is why the list is there rather than just a counter.</p>
 <p>If OSC is enabled but not listening, the port was taken by another application.</p>
+<h2 id="ableton-link">Ableton Link<a class="headerlink" href="#ableton-link" title="Permanent link">&para;</a></h2>
+<p><a href="https://www.ableton.com/link/">Ableton Link</a> keeps MAGDA in time with other apps on the same network that have Link switched on. While Link is on, every app in the session shares one tempo, and MAGDA ignores its own tempo automation.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Ableton Link</strong></td>
+<td><strong>Enabled</strong> or <strong>Disabled</strong>. Saved for you, not per project</td>
+</tr>
+<tr>
+<td><strong>Start Stop Sync</strong></td>
+<td>Share play and stop with the other apps in the session. Off by default</td>
+</tr>
+<tr>
+<td><strong>Output latency offset (ms)</strong></td>
+<td>From −500 to 500. Raise it if MAGDA sounds late against the other apps, lower it if it sounds early</td>
+</tr>
+</tbody>
+</table>
+<p>When you press <strong>Play</strong>, or launch a Session clip while stopped, MAGDA waits for the session to reach the same point in the bar before it starts, never more than a bar. The Link chip in the transport blinks while a start is waiting; see <a href="../../transport/#ableton-link">Transport — Ableton Link</a>. The footer also shows an <strong>Ableton Link</strong> pill with the number of peers while Link is on; click it to come back to this tab.</p>
+<p>With <strong>Start Stop Sync</strong> on:</p>
+<ul>
+<li>Anything that starts or stops MAGDA's transport reaches the session: <strong>Play</strong>, <strong>Record</strong>, <strong>Stop</strong>, or a Session launch from stopped.</li>
+<li>When another app starts playing, MAGDA starts from its edit cursor, still waiting for the session's bar position.</li>
+<li>When another app stops, MAGDA stops too, which also ends a take you are recording.</li>
+<li>Joining a session that is already playing leaves MAGDA stopped until you press <strong>Play</strong>.</li>
+<li>Loading a project stops MAGDA but not the other apps.</li>
+</ul>
+<p>Only one sync source is followed at a time. Switching Link on stops following a <a href="#midi-clock">MIDI clock</a>, and choosing a clock to follow switches Link off.</p>
+<h2 id="midi-clock">MIDI Clock<a class="headerlink" href="#midi-clock" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Follow clock from</strong> — The MIDI input whose clock MAGDA follows, or <strong>None</strong>. The list offers the inputs switched on under <a href="../audio-settings/">Audio &amp; MIDI</a>. Following a clock switches Ableton Link off, and tempo automation is ignored while a clock is followed.</li>
+<li><strong>Send clock to</strong> — Tick each MIDI output that should receive clock. While the transport plays, MAGDA sends 24 clocks a beat, with Start, Continue, Stop and Song Position, timed to leave as the audio is heard. With no MIDI outputs connected, this says so.</li>
+</ul>
+<p>A device you chose that isn't plugged in keeps its place in the list, marked <strong>(not connected)</strong>. See <a href="../../transport/#midi-clock">Transport — MIDI Clock</a> for how MAGDA plays against an external clock.</p>
 
 
 
@@ -2487,6 +2615,8 @@ AppImage changes.</p>
     
     
       <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="../../javascripts/site-header.js"></script>
       
     
   </body>

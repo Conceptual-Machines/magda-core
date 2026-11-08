@@ -24399,7 +24399,7 @@
     },
     {
       "name": "pads.update",
-      "summary": "Edit pad notes, level, pan, switches, and output bus",
+      "summary": "Edit pad notes, level, pan, and switches",
       "paramStructure": "by-name",
       "params": [
         {

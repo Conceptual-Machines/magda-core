@@ -10,16 +10,16 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/tracks/">
+        <link rel="canonical" href="https://docs.magda.land/tracks/">
       
       
-        <link rel="prev" href="../interface/connections/">
+        <link rel="prev" href="../interface/ai-settings/">
       
       
         <link rel="next" href="../clips/">
       
       
-      <link rel="icon" href="../assets/images/magda-lisa.svg">
+      <link rel="icon" href="../assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
@@ -88,71 +88,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="../assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              Tracks
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -190,22 +133,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -502,7 +460,7 @@
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -524,51 +482,7 @@
         
   
   <span class="md-ellipsis">
-    Audio Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../interface/plugin-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Plugin Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../interface/ai-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    AI Settings
+    Audio & MIDI
     
   </span>
   
@@ -613,6 +527,50 @@
   
   <span class="md-ellipsis">
     Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interface/plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI
     
   </span>
   
@@ -844,6 +802,30 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#freezing-tracks" class="md-nav__link">
+    <span class="md-ellipsis">
+      Freezing Tracks
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Freezing Tracks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#unloading-plugins-on-freeze" class="md-nav__link">
+    <span class="md-ellipsis">
+      Unloading plugins on freeze
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#fx-chain" class="md-nav__link">
     <span class="md-ellipsis">
       FX Chain
@@ -960,6 +942,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../arrangement-view/" class="md-nav__link">
         
   
@@ -1044,6 +1047,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../chord-track/" class="md-nav__link">
         
   
@@ -1098,10 +1122,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1113,8 +1137,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -1224,10 +1248,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" >
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1239,8 +1263,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1412,10 +1436,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" >
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1427,8 +1451,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1472,10 +1496,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" >
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1487,8 +1511,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1506,6 +1530,28 @@
   
   <span class="md-ellipsis">
     Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../devices/strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
     
   </span>
   
@@ -1606,10 +1652,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" >
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1621,8 +1667,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1882,10 +1928,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1897,8 +1943,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -2081,10 +2127,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" >
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -2096,8 +2142,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -2269,6 +2315,28 @@
   
   <span class="md-ellipsis">
     File Formats
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
     
   </span>
   
@@ -2494,6 +2562,30 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#freezing-tracks" class="md-nav__link">
+    <span class="md-ellipsis">
+      Freezing Tracks
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Freezing Tracks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#unloading-plugins-on-freeze" class="md-nav__link">
+    <span class="md-ellipsis">
+      Unloading plugins on freeze
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#fx-chain" class="md-nav__link">
     <span class="md-ellipsis">
       FX Chain
@@ -2546,23 +2638,15 @@
 <tbody>
 <tr>
 <td><strong>Audio</strong></td>
-<td>Standard track for audio recording and playback</td>
-</tr>
-<tr>
-<td><strong>Instrument</strong></td>
-<td>Track with a virtual instrument plugin loaded</td>
-</tr>
-<tr>
-<td><strong>MIDI</strong></td>
-<td>Track that sends MIDI to external devices</td>
+<td>The regular track. It holds audio and MIDI clips, instruments, effects and live input, and can send MIDI out to hardware or to another track</td>
 </tr>
 <tr>
 <td><strong>Group</strong></td>
-<td>Bus track that groups multiple child tracks</td>
+<td>Bus that sums the child tracks inside it (see <a href="#grouping-tracks">Grouping Tracks</a>). It holds no clips</td>
 </tr>
 <tr>
 <td><strong>Aux</strong></td>
-<td>Auxiliary/send-return track for shared effects</td>
+<td>Send-return track for shared effects, fed by other tracks' sends. It holds no clips</td>
 </tr>
 <tr>
 <td><strong>Chord</strong></td>
@@ -2573,11 +2657,16 @@
 <td>A divider in the track list, with an optional name (see <a href="#separators">Separators</a>)</td>
 </tr>
 <tr>
+<td><strong>Output</strong></td>
+<td>One stereo output of a multi-output instrument, created from the device (see <a href="#multi-output-plugins">Multi-Output Plugins</a>)</td>
+</tr>
+<tr>
 <td><strong>Master</strong></td>
 <td>Final stereo output — one per project</td>
 </tr>
 </tbody>
 </table>
+<p>The chord track sits at the top of the Arrangement View and at the far left of Session View and the Mixer. Aux tracks sit in their own section above the master in the Arrangement View, and on the right beside the master in Session View and the Mixer.</p>
 <h2 id="track-controls">Track Controls<a class="headerlink" href="#track-controls" title="Permanent link">&para;</a></h2>
 <p>Every track provides the following controls. They render identically in the track header and the track <a href="../panels/inspector/">Inspector</a>, and reflow responsively to the width available rather than to fixed height presets, so no control is ever hidden.</p>
 <ul>
@@ -2593,6 +2682,7 @@
 <li><strong>Meter</strong> - Peak level meter for the track</li>
 </ul>
 <p>The <strong>Automation</strong> button lights purple when the track holds automation.</p>
+<p>Tracks that don't take input show fewer controls. An aux track has no record arm, input monitor, routing or sends; the chord track has only its volume and its chord preview; a separator has none.</p>
 <h3 id="input-monitoring">Input Monitoring<a class="headerlink" href="#input-monitoring" title="Permanent link">&para;</a></h3>
 <p>The input monitor button has three modes:</p>
 <table>
@@ -2623,13 +2713,14 @@
 </table>
 <p>Click the button to cycle Off → In → Auto, or right-click it to pick a mode from a menu.</p>
 <p>To play an instrument without arming its track, for example to practise before recording, set its monitor to <strong>In</strong>.</p>
-<p>With <strong>Auto-monitor selected track</strong> enabled (Preferences → General → Behavior), selecting a track sets its monitor to Auto and turns the previously selected track's monitor Off. This overrides a mode you set by hand. The option is off by default.</p>
+<p>With <strong>Auto-monitor selected track</strong> enabled (<strong>Settings &gt; General</strong>, under Behavior), selecting a track sets its monitor to Auto and turns the previously selected track's monitor Off. This overrides a mode you set by hand. The option is off by default.</p>
 <h2 id="multi-output-plugins">Multi-Output Plugins<a class="headerlink" href="#multi-output-plugins" title="Permanent link">&para;</a></h2>
 <p>When an instrument plugin has more than two output channels (e.g. Kontakt, Battery, Drum Machine Designer), MAGDA can create separate output tracks for each stereo pair.</p>
 <ul>
 <li>Open the multi-out menu on the device (the <img alt="output" src="../assets/images/icons/output.svg" width="16" /> button) and activate the output pairs you need</li>
 <li>Each activated pair creates an <strong>independent track</strong> placed directly after the instrument track</li>
 <li>Output tracks behave like any other track — you can rename, reorder, route to groups, and apply FX</li>
+<li>An output track's lane takes MIDI clips only, and they play the parent instrument</li>
 <li>To organize them, select the output tracks and move them into a <a href="#track-types">Group</a> using the right-click menu</li>
 </ul>
 <div class="admonition note">
@@ -2666,25 +2757,27 @@
 <p><img alt="Mixer View" src="../assets/images/tracks/mixer-view-manager.png" /></p>
 <h2 id="adding-and-managing-tracks">Adding and Managing Tracks<a class="headerlink" href="#adding-and-managing-tracks" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Press <span class="keys"><kbd class="key-control">Ctrl</kbd><span>+</span><kbd class="key-t">T</kbd></span> (<span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-t">T</kbd></span> on macOS) to add a new track</li>
-<li>Right-click a track header for options: rename, duplicate, delete, freeze</li>
-<li>Click the track name to rename it</li>
+<li>Press <span class="keys"><kbd class="key-control">Ctrl</kbd><span>+</span><kbd class="key-t">T</kbd></span> (<span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-t">T</kbd></span> on macOS) to add an audio track after the selected one, or <span class="keys"><kbd class="key-control">Ctrl</kbd><span>+</span><kbd class="key-shift">Shift</kbd><span>+</span><kbd class="key-t">T</kbd></span> (<span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-shift">Shift</kbd><span>+</span><kbd class="key-t">T</kbd></span>) to add a group track</li>
+<li>Click the <strong>+</strong> button in the Arrangement View's corner, or right-click the empty area below the tracks, for the add-track menu: <strong>Add Audio Track</strong>, <strong>Add Group Track</strong>, <strong>Add Aux Track</strong>, <strong>Add Chord Track</strong> and <strong>Add Separator</strong>. <strong>Add Chord Track</strong> is greyed out once the project has one. The <strong>Track</strong> menu offers the same items</li>
+<li>Right-click a track header for options: add a track, grouping, sends, freeze, enable or disable, duplicate, delete</li>
+<li>Double-click the track name to rename it</li>
 </ul>
 <h3 id="multi-track-selection">Multi-Track Selection<a class="headerlink" href="#multi-track-selection" title="Permanent link">&para;</a></h3>
-<p>Click a track header to select it. Hold <span class="keys"><kbd class="key-shift">Shift</kbd></span> and click another header to extend the selection to a contiguous range; <span class="keys"><kbd class="key-command">Cmd</kbd></span>-click (<span class="keys"><kbd class="key-control">Ctrl</kbd></span>-click on Windows/Linux) to toggle individual tracks in or out of the selection. Most track-level actions — mute, solo, delete, freeze, group — apply to every selected track in one operation.</p>
+<p>Click a track header to select it. Hold <span class="keys"><kbd class="key-shift">Shift</kbd></span> and click another header to extend the selection to a contiguous range; <span class="keys"><kbd class="key-command">Cmd</kbd></span>-click (<span class="keys"><kbd class="key-control">Ctrl</kbd></span>-click on Windows/Linux) to toggle individual tracks in or out of the selection. Most track-level actions — mute, solo, delete, group — apply to every selected track in one operation. Freeze applies to the track you right-clicked.</p>
 <h3 id="disabling-a-track">Disabling a Track<a class="headerlink" href="#disabling-a-track" title="Permanent link">&para;</a></h3>
 <p>Right-click a track header and choose <strong>Disable Track</strong>, or use the power switch in the track inspector. A disabled track renders nothing. Its clips, devices, sends and output all fall silent, and anything routed into it stops there. This applies to exports and bounces too. Its header dims and reads <em>Disabled</em>. Choose <strong>Enable Track</strong> to bring it back.</p>
 <p>A track is also disabled when its chain holds a MAGDA device this copy of MAGDA does not have, for example one from an extension that is not installed, or one from a newer version. Rather than play the chain without it, the track stays silent. Its header names the missing device, and the device's slot reads <em>Not in this build</em>. The track can't be enabled until the device is removed or replaced. Until then the device keeps its settings and saves them unchanged, so the project opens as it was in a copy of MAGDA that has it.</p>
 <h2 id="separators">Separators<a class="headerlink" href="#separators" title="Permanent link">&para;</a></h2>
 <p>A separator divides up the track list. It has no header, controls, signal or clips: it is a thin row across the arrangement and a vertical line in the Session View and the Mixer.</p>
-<p>Choose <strong>Track → Add Separator</strong> to add one after the selected track, then drag it where you want it in the arrangement or the Session View. A separator starts without a name. Double-click it, or right-click it and choose <strong>Rename Separator</strong>, to give it one. Drag its edge to make it a little taller or wider. Separators don't take a position on <a href="../reference/osc-addresses/">control surfaces</a>, and they aren't exported to DAWproject files.</p>
+<p>Choose <strong>Track → Add Separator</strong> to add one after the selected track, or choose <strong>Add Separator</strong> from the add-track menu, then drag it where you want it in the arrangement or the Session View. A separator starts without a name. Double-click it, or right-click it and choose <strong>Rename Separator...</strong>, to give it one.</p>
+<p>With <strong>Add a separator after a new chord track</strong> on (<strong>Settings &gt; General</strong>, under Behavior; on by default), adding a chord track also adds a separator after it. Drag its edge to make it a little taller or wider. Separators don't take a position on <a href="../reference/osc-addresses/">control surfaces</a>, and they aren't exported to DAWproject files.</p>
 <h2 id="grouping-tracks">Grouping Tracks<a class="headerlink" href="#grouping-tracks" title="Permanent link">&para;</a></h2>
 <p>Group tracks collect several tracks under a single bus so you can fold them away and control them together. Right-click a track header for the grouping actions:</p>
 <ul>
 <li><strong>Group tracks</strong> — with two or more tracks selected, collects them into a new group track.</li>
 <li><strong>Ungroup tracks</strong> — on a group track, dissolves it and promotes its children back to the top level.</li>
-<li><strong>Remove from group</strong> — moves a track out of its group, back to the top level.</li>
-<li><strong>Move to group</strong> — a submenu listing the existing group tracks; pick one to move the track into it.</li>
+<li><strong>Remove from Group</strong> — moves a track out of its group, back to the top level.</li>
+<li><strong>Move to Group</strong> — a submenu listing the existing group tracks; pick one to move the track into it.</li>
 </ul>
 <p>Collapse or expand a group's children from the <a href="#track-view-manager">Track Manager</a> or the group header. The chord track and separators can't join a group.</p>
 <h2 id="duplicating-tracks">Duplicating Tracks<a class="headerlink" href="#duplicating-tracks" title="Permanent link">&para;</a></h2>
@@ -2720,10 +2813,24 @@
 </tbody>
 </table>
 <p><strong>Duplicate Track Content Only</strong> is useful when you want the clips on a clean signal path — the new track has the same structure and name, but its FX chain is empty.</p>
+<h2 id="freezing-tracks">Freezing Tracks<a class="headerlink" href="#freezing-tracks" title="Permanent link">&para;</a></h2>
+<p>Freezing renders a track to an audio file and plays the file in its place, so the track's instruments and effects stop costing CPU. Right-click the track header and choose <strong>Freeze Track</strong>; a progress window shows while it renders. Choose <strong>Unfreeze Track</strong> to go back to the live chain.</p>
+<ul>
+<li>The file holds the track's signal up to its fader, together with every track routed into it, from the start of the project to the last clip plus the tail its devices declare.</li>
+<li>Devices after the fader keep running live.</li>
+<li>Tracks routed into the frozen track stop playing on their own, since the file already holds them, and their devices show greyed out.</li>
+<li>A frozen track's header dims, with a cyan strip on its outer edge, and its clips can't be edited until you unfreeze it.</li>
+<li>Only audio tracks can be frozen. A disabled track can't be, and neither can a track that outputs into another track: freeze the track it feeds instead.</li>
+<li>The file is kept in the project's renders folder, under <code>freeze</code>.</li>
+</ul>
+<h3 id="unloading-plugins-on-freeze">Unloading plugins on freeze<a class="headerlink" href="#unloading-plugins-on-freeze" title="Permanent link">&para;</a></h3>
+<p>With <strong>Unload plugins when freezing, to free their memory</strong> on (<strong>Settings &gt; General</strong>, under Engine; on by default), freezing also closes the plugins whose sound the file now holds: those before the fader and those on tracks routed into the frozen track. <strong>Unfreeze Track</strong> loads them again with their settings. A large sampler takes as long to come back as it takes to open, and an instrument stays silent until it has loaded. Devices after the fader stay loaded.</p>
+<p>With the option off, the plugins stay loaded until the project closes. Either way, a project reopened with a frozen track doesn't load that track's plugins until you unfreeze it.</p>
 <h2 id="fx-chain">FX Chain<a class="headerlink" href="#fx-chain" title="Permanent link">&para;</a></h2>
 <p>Each track has an FX chain — an ordered list of audio processors applied to the track's signal. See <a href="../fx-chain/">FX Chain &amp; Racks</a> for full details.</p>
+<p>An ARA plugin such as Melodyne inserted on a track takes over that track's audio clips and plays them live. See <a href="../ara/">ARA Plugins</a>.</p>
 <h2 id="clips">Clips<a class="headerlink" href="#clips" title="Permanent link">&para;</a></h2>
-<p>Tracks contain clips — audio and MIDI data blocks arranged on the timeline. See <a href="../clips/">Clips</a> for details on editing, splitting, duplicating, and rendering clips.</p>
+<p>Tracks contain clips — audio and MIDI data blocks arranged on the timeline. Group, aux and separator tracks take no clips. See <a href="../clips/">Clips</a> for details on editing, splitting, duplicating, and rendering clips.</p>
 
 
 
@@ -2805,6 +2912,8 @@
     
     
       <script src="../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="../javascripts/site-header.js"></script>
       
     
   </body>

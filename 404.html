@@ -13,7 +13,7 @@
       
       
       
-      <link rel="icon" href="/magda-core/assets/images/magda-lisa.svg">
+      <link rel="icon" href="/assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
@@ -22,10 +22,10 @@
       
     
     
-      <link rel="stylesheet" href="/magda-core/assets/stylesheets/main.8608ea7d.min.css">
+      <link rel="stylesheet" href="/assets/stylesheets/main.8608ea7d.min.css">
       
         
-        <link rel="stylesheet" href="/magda-core/assets/stylesheets/palette.06af60db.min.css">
+        <link rel="stylesheet" href="/assets/stylesheets/palette.06af60db.min.css">
       
       
 
@@ -44,9 +44,9 @@
       
     
     
-      <link rel="stylesheet" href="/magda-core/stylesheets/extra.css">
+      <link rel="stylesheet" href="/stylesheets/extra.css">
     
-    <script>__md_scope=new URL("/magda-core/",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("/",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -77,71 +77,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="/magda-core/assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -179,22 +122,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -219,7 +177,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href="https://magda.land" title="MAGDA Manual" class="md-nav__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
       
-  <img src="/magda-core/assets/images/magda-lisa.svg" alt="logo">
+  <img src="/assets/images/magda-lisa.svg" alt="logo">
 
     </a>
     MAGDA Manual
@@ -246,7 +204,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/." class="md-nav__link">
+      <a href="/." class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -267,7 +225,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/is-magda-right-for-you/" class="md-nav__link">
+      <a href="/is-magda-right-for-you/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -329,7 +287,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/getting-started/installation/" class="md-nav__link">
+      <a href="/getting-started/installation/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -351,7 +309,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/getting-started/first-session/" class="md-nav__link">
+      <a href="/getting-started/first-session/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -373,7 +331,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/localization/" class="md-nav__link">
+      <a href="/localization/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -443,7 +401,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/interface/overview/" class="md-nav__link">
+      <a href="/interface/overview/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -465,7 +423,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/interface/menus/" class="md-nav__link">
+      <a href="/interface/menus/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -487,11 +445,11 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/interface/preferences/" class="md-nav__link">
+      <a href="/interface/preferences/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -509,11 +467,11 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/interface/audio-settings/" class="md-nav__link">
+      <a href="/interface/audio-settings/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Audio Settings
+    Audio & MIDI
     
   </span>
   
@@ -531,51 +489,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/interface/plugin-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Plugin Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="/magda-core/interface/ai-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    AI Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="/magda-core/interface/controllers/" class="md-nav__link">
+      <a href="/interface/controllers/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -597,11 +511,55 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/interface/connections/" class="md-nav__link">
+      <a href="/interface/connections/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
     Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="/interface/plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="/interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI
     
   </span>
   
@@ -626,7 +584,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/tracks/" class="md-nav__link">
+      <a href="/tracks/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -647,7 +605,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/clips/" class="md-nav__link">
+      <a href="/clips/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -668,7 +626,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/stem-separation/" class="md-nav__link">
+      <a href="/stem-separation/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -689,7 +647,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/fx-chain/" class="md-nav__link">
+      <a href="/fx-chain/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -710,7 +668,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/plugin-parameters/" class="md-nav__link">
+      <a href="/plugin-parameters/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -731,7 +689,28 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/arrangement-view/" class="md-nav__link">
+      <a href="/ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="/arrangement-view/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -752,7 +731,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/session-view/" class="md-nav__link">
+      <a href="/session-view/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -773,7 +752,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/mixer-view/" class="md-nav__link">
+      <a href="/mixer-view/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -794,7 +773,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/recording-comping/" class="md-nav__link">
+      <a href="/recording-comping/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -815,7 +794,28 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/chord-track/" class="md-nav__link">
+      <a href="/exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="/chord-track/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -836,7 +836,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/working-with-ai/" class="md-nav__link">
+      <a href="/working-with-ai/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -869,10 +869,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -884,8 +884,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -898,7 +898,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/panels/inspector/" class="md-nav__link">
+      <a href="/panels/inspector/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -920,7 +920,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/panels/browsers/" class="md-nav__link">
+      <a href="/panels/browsers/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -942,7 +942,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/panels/media-library/" class="md-nav__link">
+      <a href="/panels/media-library/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -964,7 +964,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/panels/ai-assistant/" class="md-nav__link">
+      <a href="/panels/ai-assistant/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -995,10 +995,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" >
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1010,8 +1010,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1024,7 +1024,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/panels/editors/" class="md-nav__link">
+      <a href="/panels/editors/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1046,7 +1046,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/panels/piano-roll/" class="md-nav__link">
+      <a href="/panels/piano-roll/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1068,7 +1068,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/panels/drum-grid-editor/" class="md-nav__link">
+      <a href="/panels/drum-grid-editor/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1090,7 +1090,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/panels/waveform-editor/" class="md-nav__link">
+      <a href="/panels/waveform-editor/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1112,7 +1112,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/panels/track-chain/" class="md-nav__link">
+      <a href="/panels/track-chain/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1142,7 +1142,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/panels/chord-panel/" class="md-nav__link">
+      <a href="/panels/chord-panel/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1183,10 +1183,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" >
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1198,8 +1198,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1212,7 +1212,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/devices/built-in/" class="md-nav__link">
+      <a href="/devices/built-in/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1243,10 +1243,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" >
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1258,8 +1258,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1272,7 +1272,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/devices/arpeggiator/" class="md-nav__link">
+      <a href="/devices/arpeggiator/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1294,7 +1294,29 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/devices/chord-engine/" class="md-nav__link">
+      <a href="/devices/strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="/devices/chord-engine/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1316,7 +1338,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/devices/step-sequencer/" class="md-nav__link">
+      <a href="/devices/step-sequencer/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1338,7 +1360,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/devices/poly-sequencer/" class="md-nav__link">
+      <a href="/devices/poly-sequencer/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1377,10 +1399,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" >
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1392,8 +1414,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1406,7 +1428,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/devices/poly-synth/" class="md-nav__link">
+      <a href="/devices/poly-synth/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1428,7 +1450,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/devices/fm0/" class="md-nav__link">
+      <a href="/devices/fm0/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1450,7 +1472,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/devices/drum-kit/" class="md-nav__link">
+      <a href="/devices/drum-kit/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1472,7 +1494,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/devices/physical-models/" class="md-nav__link">
+      <a href="/devices/physical-models/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1494,7 +1516,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/devices/mutable/" class="md-nav__link">
+      <a href="/devices/mutable/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1516,7 +1538,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/devices/drum-grid/" class="md-nav__link">
+      <a href="/devices/drum-grid/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1538,7 +1560,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/devices/sampler/" class="md-nav__link">
+      <a href="/devices/sampler/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1560,7 +1582,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/devices/faust-instrument/" class="md-nav__link">
+      <a href="/devices/faust-instrument/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1590,7 +1612,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/devices/effects/" class="md-nav__link">
+      <a href="/devices/effects/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1612,7 +1634,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/devices/analysis/" class="md-nav__link">
+      <a href="/devices/analysis/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1653,10 +1675,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1668,8 +1690,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -1682,7 +1704,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/modulation/overview/" class="md-nav__link">
+      <a href="/modulation/overview/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1704,7 +1726,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/modulation/modulators/" class="md-nav__link">
+      <a href="/modulation/modulators/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1726,7 +1748,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/modulation/macros/" class="md-nav__link">
+      <a href="/modulation/macros/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1748,7 +1770,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/modulation/linking/" class="md-nav__link">
+      <a href="/modulation/linking/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1777,7 +1799,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/automation/" class="md-nav__link">
+      <a href="/automation/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1798,7 +1820,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/time-bend/" class="md-nav__link">
+      <a href="/time-bend/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1819,7 +1841,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/transport/" class="md-nav__link">
+      <a href="/transport/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1852,10 +1874,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" >
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1867,8 +1889,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -1881,7 +1903,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/reference/remote-api/" class="md-nav__link">
+      <a href="/reference/remote-api/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1903,7 +1925,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/reference/remote-api-operations/" class="md-nav__link">
+      <a href="/reference/remote-api-operations/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1925,7 +1947,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/reference/dsl/" class="md-nav__link">
+      <a href="/reference/dsl/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1947,7 +1969,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/reference/controller-profile-format/" class="md-nav__link">
+      <a href="/reference/controller-profile-format/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1969,7 +1991,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/reference/osc-addresses/" class="md-nav__link">
+      <a href="/reference/osc-addresses/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1991,7 +2013,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/reference/lua-scripting/" class="md-nav__link">
+      <a href="/reference/lua-scripting/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -2013,7 +2035,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/reference/keyboard-shortcuts/" class="md-nav__link">
+      <a href="/reference/keyboard-shortcuts/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -2035,7 +2057,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/reference/file-formats/" class="md-nav__link">
+      <a href="/reference/file-formats/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -2057,7 +2079,29 @@
   
   
     <li class="md-nav__item">
-      <a href="/magda-core/reference/troubleshooting/" class="md-nav__link">
+      <a href="/reference/project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="/reference/troubleshooting/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -2173,10 +2217,12 @@
     </div>
     
     
-    <script id="__config" type="application/json">{"base": "/magda-core/", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "/magda-core/assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    <script id="__config" type="application/json">{"base": "/", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "/assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
     
     
-      <script src="/magda-core/assets/javascripts/bundle.c8b220af.min.js"></script>
+      <script src="/assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="/javascripts/site-header.js"></script>
       
     
   </body>

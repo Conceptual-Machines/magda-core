@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/reference/remote-api/">
+        <link rel="canonical" href="https://docs.magda.land/reference/remote-api/">
       
       
         <link rel="prev" href="../../transport/">
@@ -19,7 +19,7 @@
         <link rel="next" href="../remote-api-operations/">
       
       
-      <link rel="icon" href="../../assets/images/magda-lisa.svg">
+      <link rel="icon" href="../../assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
@@ -88,71 +88,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="../../assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              Remote API
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -190,22 +133,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -502,7 +460,7 @@
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -524,51 +482,7 @@
         
   
   <span class="md-ellipsis">
-    Audio Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/plugin-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Plugin Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/ai-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    AI Settings
+    Audio & MIDI
     
   </span>
   
@@ -613,6 +527,50 @@
   
   <span class="md-ellipsis">
     Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI
     
   </span>
   
@@ -742,6 +700,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../arrangement-view/" class="md-nav__link">
         
   
@@ -826,6 +805,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../chord-track/" class="md-nav__link">
         
   
@@ -880,10 +880,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -895,8 +895,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -1006,10 +1006,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" >
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1021,8 +1021,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1194,10 +1194,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" >
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1209,8 +1209,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1254,10 +1254,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" >
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1269,8 +1269,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1288,6 +1288,28 @@
   
   <span class="md-ellipsis">
     Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
     
   </span>
   
@@ -1388,10 +1410,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" >
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1403,8 +1425,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1664,10 +1686,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1679,8 +1701,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -1865,10 +1887,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" checked>
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1880,8 +1902,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -2043,93 +2065,6 @@
       Operation catalogue
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Operation catalogue">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#system-diagnostics-jobs-and-rendering" class="md-nav__link">
-    <span class="md-ellipsis">
-      System, diagnostics, jobs, and rendering
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#project-and-chord-track" class="md-nav__link">
-    <span class="md-ellipsis">
-      Project and chord track
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#tracks-routing-sends-and-sidechains" class="md-nav__link">
-    <span class="md-ellipsis">
-      Tracks, routing, sends, and sidechains
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#clips-and-midi-events" class="md-nav__link">
-    <span class="md-ellipsis">
-      Clips and MIDI events
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#devices-pads-racks-and-modulation" class="md-nav__link">
-    <span class="md-ellipsis">
-      Devices, pads, racks, and modulation
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#selection-transport-and-session" class="md-nav__link">
-    <span class="md-ellipsis">
-      Selection, transport, and Session
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#automation-and-grooves" class="md-nav__link">
-    <span class="md-ellipsis">
-      Automation and grooves
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#focused-device-and-hardware-midi" class="md-nav__link">
-    <span class="md-ellipsis">
-      Focused device and hardware MIDI
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#websocket-subscription-methods" class="md-nav__link">
-    <span class="md-ellipsis">
-      WebSocket subscription methods
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -2321,6 +2256,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../troubleshooting/" class="md-nav__link">
         
   
@@ -2472,93 +2429,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Operation catalogue">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#system-diagnostics-jobs-and-rendering" class="md-nav__link">
-    <span class="md-ellipsis">
-      System, diagnostics, jobs, and rendering
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#project-and-chord-track" class="md-nav__link">
-    <span class="md-ellipsis">
-      Project and chord track
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#tracks-routing-sends-and-sidechains" class="md-nav__link">
-    <span class="md-ellipsis">
-      Tracks, routing, sends, and sidechains
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#clips-and-midi-events" class="md-nav__link">
-    <span class="md-ellipsis">
-      Clips and MIDI events
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#devices-pads-racks-and-modulation" class="md-nav__link">
-    <span class="md-ellipsis">
-      Devices, pads, racks, and modulation
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#selection-transport-and-session" class="md-nav__link">
-    <span class="md-ellipsis">
-      Selection, transport, and Session
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#automation-and-grooves" class="md-nav__link">
-    <span class="md-ellipsis">
-      Automation and grooves
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#focused-device-and-hardware-midi" class="md-nav__link">
-    <span class="md-ellipsis">
-      Focused device and hardware MIDI
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#websocket-subscription-methods" class="md-nav__link">
-    <span class="md-ellipsis">
-      WebSocket subscription methods
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -2607,9 +2477,10 @@ transports:</p>
 <li><strong>MCP</strong> for AI hosts. Every ordinary Remote API operation is exposed as an MCP
   tool, and common reads are also exposed as resources.</li>
 </ul>
-<p>This page documents API version <strong>1.0</strong>. Do not hard-code the catalogue or copy
-JSON schemas from this page: call <code>system.describe</code> over WebSocket, or use MCP's
-<code>tools/list</code>, to obtain the exact schemas implemented by the running build.</p>
+<p>This page documents API version <strong>1.0</strong>. Every operation is listed on
+<a href="../remote-api-operations/">Remote API Operations</a>. Don't hard-code that list:
+call <code>system.describe</code> over WebSocket, or use MCP's <code>tools/list</code>, to get the
+exact schemas of the running build.</p>
 <h2 id="enable-the-api">Enable the API<a class="headerlink" href="#enable-the-api" title="Permanent link">&para;</a></h2>
 <p>Open <strong>Settings &gt; Connections</strong> and enable the transport you need. Each
 transport has its own listener, port, and per-run bearer token. Enabling MCP does
@@ -2915,14 +2786,14 @@ bounded rather than buffered without limit.</p>
 methods. MCP does not expose <code>meters</code> or <code>playhead</code> resources; use WebSocket for
 continuous samples.</p>
 <h2 id="asynchronous-jobs">Asynchronous jobs<a class="headerlink" href="#asynchronous-jobs" title="Permanent link">&para;</a></h2>
-<p>Project open/save-as, rendering, master capture, and Session recording can
-return a <code>job_...</code> record instead of completing the work inline. Job states are
-<code>accepted</code>, <code>running</code>, <code>completed</code>, <code>cancelled</code>, <code>failed</code>, or <code>unsupported</code>.
-Progress is monotonic from <code>0</code> to <code>1</code>.</p>
+<p>Project open/save-as, rendering, track freezing, master capture, and Session
+recording can return a <code>job_...</code> record instead of completing the work inline.
+Job states are <code>accepted</code>, <code>running</code>, <code>completed</code>, <code>cancelled</code>, <code>failed</code>, or
+<code>unsupported</code>. Progress is monotonic from <code>0</code> to <code>1</code>.</p>
 <p>Use <code>jobs.get</code> or <code>jobs.list</code>, or subscribe to <code>jobs</code>. Use <code>jobs.cancel</code> to
-cancel work. Jobs belong to the connection that created them: another
-connection receives <code>not_found</code>, and disconnecting cancels active jobs and
-forgets their records. Completed records are retained for at most ten minutes,
+cancel work; it also needs the scope of the operation that started the job.
+Jobs belong to the connection that created them: another connection receives
+<code>not_found</code>, and disconnecting cancels active jobs and forgets their records. Completed records are retained for at most ten minutes,
 up to the newest 128 records.</p>
 <p>Artifacts are opaque <code>artifact_...</code> handles with a kind and media type. The API
 does not expose internal filesystem or engine objects through job results.</p>
@@ -3028,902 +2899,11 @@ bare.</p>
 </tbody>
 </table>
 <h2 id="operation-catalogue">Operation catalogue<a class="headerlink" href="#operation-catalogue" title="Permanent link">&para;</a></h2>
-<p>The tables below are an index, not a substitute for the runtime JSON schemas.
-Unless stated otherwise, list/get/status operations require <code>read</code> and mutation
-operations require <code>edit</code>.</p>
-<h3 id="system-diagnostics-jobs-and-rendering">System, diagnostics, jobs, and rendering<a class="headerlink" href="#system-diagnostics-jobs-and-rendering" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Operation</th>
-<th>Scope</th>
-<th>Purpose</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>system.describe</code></td>
-<td><code>read</code></td>
-<td>Return the API version and complete operation/schema catalogue.</td>
-</tr>
-<tr>
-<td><code>engine.health</code></td>
-<td><code>read</code></td>
-<td>Read engine binding, callback load, xruns, and recent problems.</td>
-</tr>
-<tr>
-<td><code>meters.read</code></td>
-<td><code>read</code></td>
-<td>Read a bounded latest track/master peak snapshot.</td>
-</tr>
-<tr>
-<td><code>jobs.list</code></td>
-<td><code>read</code></td>
-<td>List asynchronous jobs owned by this connection.</td>
-</tr>
-<tr>
-<td><code>jobs.get</code></td>
-<td><code>read</code></td>
-<td>Inspect one owned job.</td>
-</tr>
-<tr>
-<td><code>jobs.cancel</code></td>
-<td>producing operation's scope</td>
-<td>Cancel one owned job.</td>
-</tr>
-<tr>
-<td><code>engine.renderRange</code></td>
-<td><code>edit</code></td>
-<td>Render a beat/second range to an absolute WAV, FLAC, Opus or MP3 path (<code>bitrateKbps</code> sets a lossy bitrate; <code>vbrQuality</code>, 0 to 9, encodes MP3 at a LAME VBR level instead).</td>
-</tr>
-<tr>
-<td><code>engine.masterCapture.start</code></td>
-<td><code>edit</code></td>
-<td>Start capturing the true master callback output.</td>
-</tr>
-<tr>
-<td><code>engine.masterCapture.stop</code></td>
-<td><code>edit</code></td>
-<td>Stop and finalize an owned master capture.</td>
-</tr>
-<tr>
-<td><code>engine.masterCapture.status</code></td>
-<td><code>read</code></td>
-<td>Read capture capability and current activity.</td>
-</tr>
-<tr>
-<td><code>capture.recentMaster</code></td>
-<td><code>edit</code></td>
-<td>Put the master's last bars on a new track where they were heard.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="project-and-chord-track">Project and chord track<a class="headerlink" href="#project-and-chord-track" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Operation</th>
-<th>Scope</th>
-<th>Purpose</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>project.get</code></td>
-<td><code>read</code></td>
-<td>Read safe current-project metadata.</td>
-</tr>
-<tr>
-<td><code>project.new</code></td>
-<td><code>edit</code></td>
-<td>Create an untitled project.</td>
-</tr>
-<tr>
-<td><code>project.close</code></td>
-<td><code>edit</code></td>
-<td>Close the current project with an explicit dirty policy.</td>
-</tr>
-<tr>
-<td><code>project.open</code></td>
-<td><code>edit</code></td>
-<td>Open an absolute path as an asynchronous job.</td>
-</tr>
-<tr>
-<td><code>project.save</code></td>
-<td><code>edit</code></td>
-<td>Save to the existing target.</td>
-</tr>
-<tr>
-<td><code>project.saveAs</code></td>
-<td><code>edit</code></td>
-<td>Save to an absolute path as an asynchronous job.</td>
-</tr>
-<tr>
-<td><code>project.setTempo</code></td>
-<td><code>edit</code></td>
-<td>Set tempo from 20 to 400 BPM.</td>
-</tr>
-<tr>
-<td><code>project.setTimeSignature</code></td>
-<td><code>edit</code></td>
-<td>Set numerator and denominator.</td>
-</tr>
-<tr>
-<td><code>project.setLoopRange</code></td>
-<td><code>edit</code></td>
-<td>Set the project loop range in beats.</td>
-</tr>
-<tr>
-<td><code>chordTrack.get</code></td>
-<td><code>read</code></td>
-<td>Read the singleton chord track and ordered progression.</td>
-</tr>
-<tr>
-<td><code>chordTrack.detect</code></td>
-<td><code>read</code></td>
-<td>Detect a structured progression in a MIDI clip range.</td>
-</tr>
-<tr>
-<td><code>chordTrack.ensure</code></td>
-<td><code>edit</code></td>
-<td>Create the singleton chord track if absent.</td>
-</tr>
-<tr>
-<td><code>chordTrack.replaceProgression</code></td>
-<td><code>edit</code></td>
-<td>Replace its structured progression.</td>
-</tr>
-<tr>
-<td><code>chordTrack.extract</code></td>
-<td><code>edit</code></td>
-<td>Detect and materialize a progression atomically.</td>
-</tr>
-<tr>
-<td><code>chordTrack.sendToTrack</code></td>
-<td><code>edit</code></td>
-<td>Bake a progression to a normal MIDI track.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="tracks-routing-sends-and-sidechains">Tracks, routing, sends, and sidechains<a class="headerlink" href="#tracks-routing-sends-and-sidechains" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Operation</th>
-<th>Scope</th>
-<th>Purpose</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>trackPresets.list</code></td>
-<td><code>read</code></td>
-<td>List saved track-chain presets by opaque id.</td>
-</tr>
-<tr>
-<td><code>tracks.list</code></td>
-<td><code>read</code></td>
-<td>List tracks.</td>
-</tr>
-<tr>
-<td><code>tracks.get</code></td>
-<td><code>read</code></td>
-<td>Read one track.</td>
-</tr>
-<tr>
-<td><code>tracks.create</code></td>
-<td><code>edit</code></td>
-<td>Create a track.</td>
-</tr>
-<tr>
-<td><code>tracks.createFromPreset</code></td>
-<td><code>edit</code></td>
-<td>Create a track from a saved chain preset.</td>
-</tr>
-<tr>
-<td><code>tracks.applyPreset</code></td>
-<td><code>edit</code></td>
-<td>Apply a saved chain preset to an existing track.</td>
-</tr>
-<tr>
-<td><code>tracks.update</code></td>
-<td><code>edit</code></td>
-<td>Update mixer, display, arm, monitor, or input state.</td>
-</tr>
-<tr>
-<td><code>tracks.delete</code></td>
-<td><code>edit</code></td>
-<td>Delete a track after reference-impact policy checks.</td>
-</tr>
-<tr>
-<td><code>tracks.group</code></td>
-<td><code>edit</code></td>
-<td>Group tracks under a new group track.</td>
-</tr>
-<tr>
-<td><code>tracks.move</code></td>
-<td><code>edit</code></td>
-<td>Move a track to a one-based list position.</td>
-</tr>
-<tr>
-<td><code>routing.endpoints.list</code></td>
-<td><code>read</code></td>
-<td>List safe logical audio and MIDI endpoints.</td>
-</tr>
-<tr>
-<td><code>routing.get</code></td>
-<td><code>read</code></td>
-<td>Read one track's audio and MIDI routes.</td>
-</tr>
-<tr>
-<td><code>routing.set</code></td>
-<td><code>edit</code></td>
-<td>Atomically set a track's routes and MIDI channels.</td>
-</tr>
-<tr>
-<td><code>sends.list</code></td>
-<td><code>read</code></td>
-<td>List one track's sends.</td>
-</tr>
-<tr>
-<td><code>sends.create</code></td>
-<td><code>edit</code></td>
-<td>Create a send.</td>
-</tr>
-<tr>
-<td><code>sends.update</code></td>
-<td><code>edit</code></td>
-<td>Update a send.</td>
-</tr>
-<tr>
-<td><code>sends.remove</code></td>
-<td><code>edit</code></td>
-<td>Remove a send.</td>
-</tr>
-<tr>
-<td><code>sidechains.list</code></td>
-<td><code>read</code></td>
-<td>List device/rack sidechains and capabilities.</td>
-</tr>
-<tr>
-<td><code>sidechains.get</code></td>
-<td><code>read</code></td>
-<td>Inspect one sidechain.</td>
-</tr>
-<tr>
-<td><code>sidechains.set</code></td>
-<td><code>edit</code></td>
-<td>Configure or clear one sidechain atomically.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="clips-and-midi-events">Clips and MIDI events<a class="headerlink" href="#clips-and-midi-events" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Operation</th>
-<th>Scope</th>
-<th>Purpose</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>clips.list</code></td>
-<td><code>read</code></td>
-<td>List clips, optionally filtered by track and view.</td>
-</tr>
-<tr>
-<td><code>clips.get</code></td>
-<td><code>read</code></td>
-<td>Read one clip.</td>
-</tr>
-<tr>
-<td><code>clips.createMidi</code></td>
-<td><code>edit</code></td>
-<td>Create a MIDI clip.</td>
-</tr>
-<tr>
-<td><code>clips.loadSample</code></td>
-<td><code>edit</code></td>
-<td>Load a host-local audio file as a clip.</td>
-</tr>
-<tr>
-<td><code>clips.updateAudio</code></td>
-<td><code>edit</code></td>
-<td>Set playback mode, source tempo, stretch, reverse, and fades.</td>
-</tr>
-<tr>
-<td><code>clips.addMidiNote</code></td>
-<td><code>edit</code></td>
-<td>Add one note to a MIDI clip.</td>
-</tr>
-<tr>
-<td><code>clips.listMidiEvents</code></td>
-<td><code>read</code></td>
-<td>List notes, CC, pitch bend, channel pressure, and poly aftertouch.</td>
-</tr>
-<tr>
-<td><code>clips.addMidiEvents</code></td>
-<td><code>edit</code></td>
-<td>Atomically add expressive MIDI events.</td>
-</tr>
-<tr>
-<td><code>clips.updateMidiEvents</code></td>
-<td><code>edit</code></td>
-<td>Atomically update events by id.</td>
-</tr>
-<tr>
-<td><code>clips.replaceMidiEvents</code></td>
-<td><code>edit</code></td>
-<td>Atomically replace every event.</td>
-</tr>
-<tr>
-<td><code>clips.deleteMidiEvents</code></td>
-<td><code>edit</code></td>
-<td>Atomically delete events by id.</td>
-</tr>
-<tr>
-<td><code>clips.delete</code></td>
-<td><code>edit</code></td>
-<td>Delete a clip.</td>
-</tr>
-<tr>
-<td><code>clips.move</code></td>
-<td><code>edit</code></td>
-<td>Move a clip to an Arrangement position or Session slot.</td>
-</tr>
-<tr>
-<td><code>clips.resize</code></td>
-<td><code>edit</code></td>
-<td>Resize from the start or end edge.</td>
-</tr>
-<tr>
-<td><code>clips.duplicate</code></td>
-<td><code>edit</code></td>
-<td>Duplicate to an Arrangement position or Session slot.</td>
-</tr>
-<tr>
-<td><code>clips.update</code></td>
-<td><code>edit</code></td>
-<td>Change name, enabled state, or groove assignment.</td>
-</tr>
-<tr>
-<td><code>clips.transpose</code></td>
-<td><code>edit</code></td>
-<td>Transpose MIDI notes by semitones.</td>
-</tr>
-<tr>
-<td><code>clips.quantize</code></td>
-<td><code>edit</code></td>
-<td>Quantize selected or all MIDI notes.</td>
-</tr>
-<tr>
-<td><code>clips.sliceNotes</code></td>
-<td><code>edit</code></td>
-<td>Slice selected or all MIDI notes into subdivisions.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="devices-pads-racks-and-modulation">Devices, pads, racks, and modulation<a class="headerlink" href="#devices-pads-racks-and-modulation" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Operation</th>
-<th>Scope</th>
-<th>Purpose</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>devices.list</code></td>
-<td><code>read</code></td>
-<td>List the safe flattened device/rack/chain graph.</td>
-</tr>
-<tr>
-<td><code>devices.catalog</code></td>
-<td><code>read</code></td>
-<td>List addable devices by catalogue id.</td>
-</tr>
-<tr>
-<td><code>devicePresets.list</code></td>
-<td><code>read</code></td>
-<td>List presets for an addressed device.</td>
-</tr>
-<tr>
-<td><code>devices.add</code></td>
-<td><code>edit</code></td>
-<td>Add a catalogue device to a track or rack chain.</td>
-</tr>
-<tr>
-<td><code>devices.applyPreset</code></td>
-<td><code>edit</code></td>
-<td>Apply an opaque preset to an existing device.</td>
-</tr>
-<tr>
-<td><code>devices.replace</code></td>
-<td><code>edit</code></td>
-<td>Replace a device while preserving its chain slot.</td>
-</tr>
-<tr>
-<td><code>devices.remove</code></td>
-<td><code>edit</code></td>
-<td>Remove a device.</td>
-</tr>
-<tr>
-<td><code>devices.move</code></td>
-<td><code>edit</code></td>
-<td>Move a device within its chain.</td>
-</tr>
-<tr>
-<td><code>devices.setBypassed</code></td>
-<td><code>edit</code></td>
-<td>Set bypass state.</td>
-</tr>
-<tr>
-<td><code>devices.listParameters</code></td>
-<td><code>read</code></td>
-<td>List real-unit parameter values and customization flags.</td>
-</tr>
-<tr>
-<td><code>devices.setParameter</code></td>
-<td><code>edit</code></td>
-<td>Set one AI-enabled parameter in real units.</td>
-</tr>
-<tr>
-<td><code>devices.setParameterConfig</code></td>
-<td><code>edit</code></td>
-<td>Configure visible, mini-mixer, and AI-agent parameters.</td>
-</tr>
-<tr>
-<td><code>devices.openEditor</code></td>
-<td><code>edit</code></td>
-<td>Open a plugin editor window.</td>
-</tr>
-<tr>
-<td><code>pads.list</code></td>
-<td><code>read</code></td>
-<td>List all 64 slots of an addressed Drum Grid.</td>
-</tr>
-<tr>
-<td><code>pads.create</code></td>
-<td><code>edit</code></td>
-<td>Create an empty pad chain.</td>
-</tr>
-<tr>
-<td><code>pads.setDevice</code></td>
-<td><code>edit</code></td>
-<td>Replace a pad voice with a catalogue device.</td>
-</tr>
-<tr>
-<td><code>pads.setSample</code></td>
-<td><code>edit</code></td>
-<td>Replace a pad voice with a host-local sample.</td>
-</tr>
-<tr>
-<td><code>pads.clear</code></td>
-<td><code>edit</code></td>
-<td>Clear a pad.</td>
-</tr>
-<tr>
-<td><code>pads.swap</code></td>
-<td><code>edit</code></td>
-<td>Swap two single-note pads.</td>
-</tr>
-<tr>
-<td><code>pads.update</code></td>
-<td><code>edit</code></td>
-<td>Update note range, level, pan, switches, and output bus.</td>
-</tr>
-<tr>
-<td><code>racks.create</code></td>
-<td><code>edit</code></td>
-<td>Create a rack on a track or in a nested chain.</td>
-</tr>
-<tr>
-<td><code>racks.remove</code></td>
-<td><code>edit</code></td>
-<td>Remove a rack at any nesting depth.</td>
-</tr>
-<tr>
-<td><code>racks.setBypassed</code></td>
-<td><code>edit</code></td>
-<td>Set rack bypass.</td>
-</tr>
-<tr>
-<td><code>racks.update</code></td>
-<td><code>edit</code></td>
-<td>Update a nested rack.</td>
-</tr>
-<tr>
-<td><code>chains.create</code></td>
-<td><code>edit</code></td>
-<td>Create a chain inside a rack.</td>
-</tr>
-<tr>
-<td><code>chains.remove</code></td>
-<td><code>edit</code></td>
-<td>Remove a nested rack chain.</td>
-</tr>
-<tr>
-<td><code>chains.update</code></td>
-<td><code>edit</code></td>
-<td>Update chain name, routing, mixer, or switch state.</td>
-</tr>
-<tr>
-<td><code>mods.list</code></td>
-<td><code>read</code></td>
-<td>List modulators on a device.</td>
-</tr>
-<tr>
-<td><code>mods.create</code></td>
-<td><code>edit</code></td>
-<td>Create an LFO, envelope, random, or follower modulator.</td>
-</tr>
-<tr>
-<td><code>mods.update</code></td>
-<td><code>edit</code></td>
-<td>Update a device modulator.</td>
-</tr>
-<tr>
-<td><code>mods.remove</code></td>
-<td><code>edit</code></td>
-<td>Remove a device modulator.</td>
-</tr>
-<tr>
-<td><code>mods.link</code></td>
-<td><code>edit</code></td>
-<td>Link a modulator to an AI-enabled parameter.</td>
-</tr>
-<tr>
-<td><code>mods.unlink</code></td>
-<td><code>edit</code></td>
-<td>Remove a modulator link.</td>
-</tr>
-<tr>
-<td><code>macros.list</code></td>
-<td><code>read</code></td>
-<td>List device macros and links.</td>
-</tr>
-<tr>
-<td><code>macros.setValue</code></td>
-<td><code>edit</code></td>
-<td>Set a normalized macro value.</td>
-</tr>
-<tr>
-<td><code>macros.link</code></td>
-<td><code>edit</code></td>
-<td>Link a macro to an AI-enabled parameter.</td>
-</tr>
-<tr>
-<td><code>macros.unlink</code></td>
-<td><code>edit</code></td>
-<td>Remove a macro link.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="selection-transport-and-session">Selection, transport, and Session<a class="headerlink" href="#selection-transport-and-session" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Operation</th>
-<th>Scope</th>
-<th>Purpose</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>selection.get</code></td>
-<td><code>read</code></td>
-<td>Read the current track, clip, and note selection.</td>
-</tr>
-<tr>
-<td><code>selection.set</code></td>
-<td><code>edit</code></td>
-<td>Replace the current selection.</td>
-</tr>
-<tr>
-<td><code>transport.get</code></td>
-<td><code>read</code></td>
-<td>Read transport state.</td>
-</tr>
-<tr>
-<td><code>transport.play</code></td>
-<td><code>transport</code></td>
-<td>Start playback.</td>
-</tr>
-<tr>
-<td><code>transport.stop</code></td>
-<td><code>transport</code></td>
-<td>Stop playback.</td>
-</tr>
-<tr>
-<td><code>transport.setRecording</code></td>
-<td><code>transport</code></td>
-<td>Set recording state.</td>
-</tr>
-<tr>
-<td><code>transport.setLoopEnabled</code></td>
-<td><code>transport</code></td>
-<td>Enable or disable the transport loop.</td>
-</tr>
-<tr>
-<td><code>transport.seek</code></td>
-<td><code>transport</code></td>
-<td>Seek to an absolute beat.</td>
-</tr>
-<tr>
-<td><code>transport.seekRelative</code></td>
-<td><code>transport</code></td>
-<td>Move by beats or bars, clamped at zero.</td>
-</tr>
-<tr>
-<td><code>session.get</code></td>
-<td><code>read</code></td>
-<td>Read scenes, tracks, and every Session slot state.</td>
-</tr>
-<tr>
-<td><code>session.createScene</code></td>
-<td><code>edit</code></td>
-<td>Create a durable scene.</td>
-</tr>
-<tr>
-<td><code>session.updateScene</code></td>
-<td><code>edit</code></td>
-<td>Update scene metadata.</td>
-</tr>
-<tr>
-<td><code>session.moveScene</code></td>
-<td><code>edit</code></td>
-<td>Move a scene by stable id.</td>
-</tr>
-<tr>
-<td><code>session.duplicateScene</code></td>
-<td><code>edit</code></td>
-<td>Duplicate a scene with explicit clip-copy behavior.</td>
-</tr>
-<tr>
-<td><code>session.deleteScene</code></td>
-<td><code>edit</code></td>
-<td>Delete a scene using an explicit populated-slot policy.</td>
-</tr>
-<tr>
-<td><code>session.updateClipSettings</code></td>
-<td><code>edit</code></td>
-<td>Update clip launch mode, quantization, and follow action.</td>
-</tr>
-<tr>
-<td><code>session.launchClip</code></td>
-<td><code>session</code></td>
-<td>Launch a Session clip.</td>
-</tr>
-<tr>
-<td><code>session.stopClip</code></td>
-<td><code>session</code></td>
-<td>Stop a Session clip.</td>
-</tr>
-<tr>
-<td><code>session.stopTrack</code></td>
-<td><code>session</code></td>
-<td>Stop the active Session clip on one track.</td>
-</tr>
-<tr>
-<td><code>session.stopAll</code></td>
-<td><code>session</code></td>
-<td>Stop every Session clip.</td>
-</tr>
-<tr>
-<td><code>session.launchScene</code></td>
-<td><code>session</code></td>
-<td>Launch a scene.</td>
-</tr>
-<tr>
-<td><code>session.returnToArrangement</code></td>
-<td><code>session</code></td>
-<td>Return one or all tracks to Arrangement playback.</td>
-</tr>
-<tr>
-<td><code>session.recordingCapabilities</code></td>
-<td><code>read</code></td>
-<td>Read Session recording support and stop policy.</td>
-</tr>
-<tr>
-<td><code>session.armSlotRecording</code></td>
-<td><code>session</code></td>
-<td>Arm or unarm an empty addressed slot.</td>
-</tr>
-<tr>
-<td><code>session.beginSlotRecording</code></td>
-<td><code>session</code></td>
-<td>Begin a slot take as an asynchronous job.</td>
-</tr>
-<tr>
-<td><code>session.stopSlotRecording</code></td>
-<td><code>session</code></td>
-<td>Stop a slot take and complete its job.</td>
-</tr>
-<tr>
-<td><code>session.beginPerformanceCapture</code></td>
-<td><code>session</code></td>
-<td>Capture a performance into Arrangement as a job.</td>
-</tr>
-<tr>
-<td><code>session.stopPerformanceCapture</code></td>
-<td><code>session</code></td>
-<td>Stop and commit performance capture.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="automation-and-grooves">Automation and grooves<a class="headerlink" href="#automation-and-grooves" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Operation</th>
-<th>Scope</th>
-<th>Purpose</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>automation.listLanes</code></td>
-<td><code>read</code></td>
-<td>List every automation lane.</td>
-</tr>
-<tr>
-<td><code>automation.getLane</code></td>
-<td><code>read</code></td>
-<td>Read one lane.</td>
-</tr>
-<tr>
-<td><code>automation.createLane</code></td>
-<td><code>edit</code></td>
-<td>Create an absolute or clip-based lane.</td>
-</tr>
-<tr>
-<td><code>automation.addPoint</code></td>
-<td><code>edit</code></td>
-<td>Add a normalized point.</td>
-</tr>
-<tr>
-<td><code>automation.setPoints</code></td>
-<td><code>edit</code></td>
-<td>Replace every point on an absolute lane.</td>
-</tr>
-<tr>
-<td><code>automation.clearLane</code></td>
-<td><code>edit</code></td>
-<td>Remove all points from a lane.</td>
-</tr>
-<tr>
-<td><code>automation.deleteLane</code></td>
-<td><code>edit</code></td>
-<td>Delete a lane and its clips.</td>
-</tr>
-<tr>
-<td><code>automation.listClips</code></td>
-<td><code>read</code></td>
-<td>List automation clips, optionally by lane.</td>
-</tr>
-<tr>
-<td><code>automation.getClip</code></td>
-<td><code>read</code></td>
-<td>Read one automation clip.</td>
-</tr>
-<tr>
-<td><code>automation.createClip</code></td>
-<td><code>edit</code></td>
-<td>Create a clip on a clip-based lane.</td>
-</tr>
-<tr>
-<td><code>automation.deleteClip</code></td>
-<td><code>edit</code></td>
-<td>Delete an automation clip.</td>
-</tr>
-<tr>
-<td><code>automation.moveClip</code></td>
-<td><code>edit</code></td>
-<td>Move an automation clip.</td>
-</tr>
-<tr>
-<td><code>automation.resizeClip</code></td>
-<td><code>edit</code></td>
-<td>Resize an automation clip from either edge.</td>
-</tr>
-<tr>
-<td><code>automation.duplicateClip</code></td>
-<td><code>edit</code></td>
-<td>Duplicate an automation clip after its source.</td>
-</tr>
-<tr>
-<td><code>automation.updateClip</code></td>
-<td><code>edit</code></td>
-<td>Update metadata, looping, or points.</td>
-</tr>
-<tr>
-<td><code>grooves.list</code></td>
-<td><code>read</code></td>
-<td>List groove template names.</td>
-</tr>
-<tr>
-<td><code>grooves.upsert</code></td>
-<td><code>edit</code></td>
-<td>Create or replace a groove template.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="focused-device-and-hardware-midi">Focused device and hardware MIDI<a class="headerlink" href="#focused-device-and-hardware-midi" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Operation</th>
-<th>Scope</th>
-<th>Purpose</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>focused.get</code></td>
-<td><code>read</code></td>
-<td>Read the focused device/rack and its macro page.</td>
-</tr>
-<tr>
-<td><code>focused.setMacro</code></td>
-<td><code>edit</code></td>
-<td>Set a normalized macro on the focused device.</td>
-</tr>
-<tr>
-<td><code>focused.cycleDevice</code></td>
-<td><code>edit</code></td>
-<td>Move focus to the previous or next top-level node.</td>
-</tr>
-<tr>
-<td><code>midi.listOutputPorts</code></td>
-<td><code>read</code></td>
-<td>List physical MIDI output names.</td>
-</tr>
-<tr>
-<td><code>midi.send</code></td>
-<td><code>hardware-midi</code></td>
-<td>Send one status-first channel message.</td>
-</tr>
-<tr>
-<td><code>midi.sendSysEx</code></td>
-<td><code>hardware-midi</code></td>
-<td>Send a SysEx payload; MAGDA adds <code>F0</code>/<code>F7</code>.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="websocket-subscription-methods">WebSocket subscription methods<a class="headerlink" href="#websocket-subscription-methods" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Operation</th>
-<th>Scope</th>
-<th>Purpose</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>subscriptions.subscribe</code></td>
-<td><code>read</code></td>
-<td>Subscribe to topics and optionally receive snapshots.</td>
-</tr>
-<tr>
-<td><code>subscriptions.unsubscribe</code></td>
-<td><code>read</code></td>
-<td>Stop selected subscriptions, or all when omitted.</td>
-</tr>
-<tr>
-<td><code>subscriptions.list</code></td>
-<td><code>read</code></td>
-<td>List this connection's subscribed topics.</td>
-</tr>
-<tr>
-<td><code>subscriptions.resync</code></td>
-<td><code>read</code></td>
-<td>Request complete snapshots for subscribed topics.</td>
-</tr>
-</tbody>
-</table>
+<p><a href="../remote-api-operations/">Remote API Operations</a> lists every operation with its
+scope and parameters. It is generated from the same registry as
+<code>system.describe</code>, and the OpenRPC document behind it,
+<a href="../magda-openrpc.json"><code>magda-openrpc.json</code></a>, is there for client generators and
+API tools.</p>
 <h2 id="limits-and-security-model">Limits and security model<a class="headerlink" href="#limits-and-security-model" title="Permanent link">&para;</a></h2>
 <p>The Remote API binds to loopback by default and uses cleartext <code>ws://</code> and
 <code>http://</code> because it is a local control surface, not a network service. Do not
@@ -4066,6 +3046,8 @@ conditions.</p>
     
     
       <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="../../javascripts/site-header.js"></script>
       
     
   </body>

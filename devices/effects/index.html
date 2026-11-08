@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/devices/effects/">
+        <link rel="canonical" href="https://docs.magda.land/devices/effects/">
       
       
         <link rel="prev" href="../faust-instrument/">
@@ -19,7 +19,7 @@
         <link rel="next" href="../analysis/">
       
       
-      <link rel="icon" href="../../assets/images/magda-lisa.svg">
+      <link rel="icon" href="../../assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
@@ -88,71 +88,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="../../assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              Effects
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -190,22 +133,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -502,7 +460,7 @@
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -524,51 +482,7 @@
         
   
   <span class="md-ellipsis">
-    Audio Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/plugin-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Plugin Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/ai-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    AI Settings
+    Audio & MIDI
     
   </span>
   
@@ -613,6 +527,50 @@
   
   <span class="md-ellipsis">
     Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI
     
   </span>
   
@@ -742,6 +700,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../arrangement-view/" class="md-nav__link">
         
   
@@ -826,6 +805,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../chord-track/" class="md-nav__link">
         
   
@@ -880,10 +880,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -895,8 +895,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -1006,10 +1006,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" >
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1021,8 +1021,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1196,10 +1196,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" checked>
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1211,8 +1211,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1256,10 +1256,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" >
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1271,8 +1271,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1290,6 +1290,28 @@
   
   <span class="md-ellipsis">
     Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
     
   </span>
   
@@ -1390,10 +1412,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" >
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1405,8 +1427,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1666,6 +1688,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="EQ &amp; Filter">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#eq-band-editor" class="md-nav__link">
+    <span class="md-ellipsis">
+      EQ band editor
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1714,6 +1751,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#spectral" class="md-nav__link">
+    <span class="md-ellipsis">
+      Spectral
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#utility" class="md-nav__link">
     <span class="md-ellipsis">
       Utility
@@ -1723,9 +1769,18 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#ir-reverb" class="md-nav__link">
+  <a href="#convolution" class="md-nav__link">
     <span class="md-ellipsis">
-      IR Reverb
+      Convolution
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#spectral-fx" class="md-nav__link">
+    <span class="md-ellipsis">
+      Spectral FX
     </span>
   </a>
   
@@ -1749,6 +1804,24 @@
   
     <nav class="md-nav" aria-label="Faust (Custom DSP)">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#patches-and-presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      Patches and presets
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#editing-and-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      Editing and controls
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#how-your-code-is-run" class="md-nav__link">
@@ -1830,10 +1903,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1845,8 +1918,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -2029,10 +2102,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" >
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -2044,8 +2117,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -2234,6 +2307,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/troubleshooting/" class="md-nav__link">
         
   
@@ -2298,6 +2393,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="EQ &amp; Filter">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#eq-band-editor" class="md-nav__link">
+    <span class="md-ellipsis">
+      EQ band editor
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2346,6 +2456,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#spectral" class="md-nav__link">
+    <span class="md-ellipsis">
+      Spectral
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#utility" class="md-nav__link">
     <span class="md-ellipsis">
       Utility
@@ -2355,9 +2474,18 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#ir-reverb" class="md-nav__link">
+  <a href="#convolution" class="md-nav__link">
     <span class="md-ellipsis">
-      IR Reverb
+      Convolution
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#spectral-fx" class="md-nav__link">
+    <span class="md-ellipsis">
+      Spectral FX
     </span>
   </a>
   
@@ -2381,6 +2509,24 @@
   
     <nav class="md-nav" aria-label="Faust (Custom DSP)">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#patches-and-presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      Patches and presets
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#editing-and-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      Editing and controls
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#how-your-code-is-run" class="md-nav__link">
@@ -2437,11 +2583,11 @@
 <tbody>
 <tr>
 <td><strong>Compressor</strong></td>
-<td>Two engines. <strong>Clean</strong>: feedforward with peak/RMS detection, soft knee, stereo link, sidechain HPF, external audio sidechain, parallel mix, output safety limiting. <strong>Glue</strong>: Brouns FBFF compressor with Detector (Peak/RMS), Style (Pre/Post), and FBFF blend.</td>
+<td>Two engines. <strong>Clean</strong>: feedforward with peak/RMS detection, soft knee, stereo link, sidechain HPF, external audio sidechain, parallel mix, output safety limiting. <strong>Glue</strong>: Brouns FBFF compressor with Detector (Peak/RMS), Style (Pre/Post), and FBFF blend. On the faceplate the knobs sit in four tabs: <strong>Curve</strong> (Threshold, Ratio, Knee), <strong>Timing</strong> (Attack, Release), <strong>Level</strong> (Makeup, Output) and <strong>Detector</strong> (Link, SC HPF, FBFF).</td>
 </tr>
 <tr>
 <td><strong>Multiband Compressor</strong></td>
-<td>OTT-style 3-band compressor. LR4 crossover split, two OTT stages in series per band, symmetric expander, per-band brickwall limiter, editable crossover frequencies and per-band thresholds in the curve editor.</td>
+<td>OTT-style 3-band compressor. LR4 crossover split, two OTT stages in series per band, symmetric expander, per-band brickwall limiter, editable crossover frequencies and per-band thresholds in the curve editor. The graph always shows, since it selects the band; the sidebar's <strong>Show the band</strong> and <strong>Show the global controls</strong> toggles hide the band editor and the whole-device controls.</td>
 </tr>
 <tr>
 <td><strong>Limiter</strong></td>
@@ -2468,14 +2614,18 @@
 <tbody>
 <tr>
 <td><strong>EQ</strong></td>
-<td>8-band parametric EQ. Each band selectable between HP, Low Shelf, Bell, High Shelf, LP, and Notch. The curve view draws the live signal spectrum behind the response curve — a dim trace for the input and a brighter one for the output — so you can see what each band is doing to the actual material.</td>
+<td>8-band parametric EQ. Each band is a low cut or high cut (12 or 24 dB/oct), low shelf, bell, high shelf, or notch. The curve view draws the live signal spectrum behind the response curve — a dim trace for the input and a brighter one for the output — so you can see what each band is doing to the actual material. See <a href="#eq-band-editor">EQ band editor</a> below.</td>
 </tr>
 <tr>
 <td><strong>Filter</strong></td>
-<td>Six-model multimode filter. <strong>SVF</strong>: clean 2-pole LP/BP/HP/Notch. <strong>Ladder</strong>: 4-pole low-pass with driven resonance. <strong>Korg 35</strong>: MS-style LP/HP with analog bite. <strong>Oberheim</strong>: SEM-style LP/BP/HP/Notch. <strong>Sallen-Key</strong>: smooth 2nd-order LP/BP/HP. <strong>Diode</strong>: resonant 4-pole diode ladder with input drive.</td>
+<td>Seven-model multimode filter. <strong>SVF</strong>: clean LP/BP/HP/Notch with 2, 4 or 6 <strong>Poles</strong>, plus <strong>Notch+</strong>, a notch at the cutoff between two resonant peaks. <strong>Ladder</strong>: 4-pole low-pass with driven resonance. <strong>Korg 35</strong>: MS-style LP/HP with analog bite. <strong>Oberheim</strong>: SEM-style LP/BP/HP/Notch. <strong>Sallen-Key</strong>: smooth 2nd-order LP/BP/HP. <strong>Diode</strong>: resonant 4-pole diode ladder with input drive. <strong>Comb</strong>: peaks at the cutoff and its harmonics, with Resonance as feedback; mode <strong>+</strong> puts the peaks on the harmonics, <strong>-</strong> on the odd half-harmonics, an octave down and hollow. The Poles control shows only on the SVF.</td>
 </tr>
 </tbody>
 </table>
+<h3 id="eq-band-editor">EQ band editor<a class="headerlink" href="#eq-band-editor" title="Permanent link">&para;</a></h3>
+<p>Each band has a chip under the curve. The chip's dot turns the band on or off; click the rest of the chip to edit that band. At the device chain's standard height the band editor opens over the curve, and <span class="keys"><kbd class="key-escape">Esc</kbd></span> closes it. Given more height, it sits under the chips.</p>
+<p>The editor holds the band's type (<strong>LC</strong>, <strong>LS</strong>, <strong>Bell</strong>, <strong>Notch</strong>, <strong>HS</strong>, <strong>HC</strong>), a <strong>12 | 24</strong> slope switch for LC and HC, and <strong>Note</strong>, <strong>Freq</strong>, <strong>Gain</strong> and <strong>Q</strong>, with the device's <strong>Output</strong> beside them. The <strong>Note</strong> tile shows the band's frequency as a note and cents. Click it and type a note (<code>C3</code>, <code>F#1</code>, <code>Bb0</code>) to set the frequency exactly.</p>
+<p>The expand button in the device header moves the curve and chips into the arrangement, where there is room to work; the band editor stays in the device.</p>
 <h2 id="reverb-space">Reverb &amp; Space<a class="headerlink" href="#reverb-space" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2494,8 +2644,8 @@
 <td>Stereo widener with three engines. <strong>Dimension</strong>: Roland Dimension D-style anti-phase modulated delays. <strong>Haas</strong>: short fixed delay on one channel. <strong>M/S</strong>: pure side-channel gain, no time smear.</td>
 </tr>
 <tr>
-<td><strong>IR Reverb</strong></td>
-<td>Convolution reverb that plays the signal through an impulse response you load. See <a href="#ir-reverb">IR Reverb</a> below.</td>
+<td><strong>Convolution</strong></td>
+<td>Convolution reverb that plays the signal through an impulse response you load. See <a href="#convolution">Convolution</a> below.</td>
 </tr>
 </tbody>
 </table>
@@ -2591,6 +2741,21 @@
 </tr>
 </tbody>
 </table>
+<h2 id="spectral">Spectral<a class="headerlink" href="#spectral" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Device</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Spectral FX</strong></td>
+<td>Four FFT effects in series: spectral gate, contrast, phase-coherent frequency shift and phase scramble, over a scrolling spectrogram. See <a href="#spectral-fx">Spectral FX</a> below.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="utility">Utility<a class="headerlink" href="#utility" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2602,7 +2767,11 @@
 <tbody>
 <tr>
 <td><strong>Utility</strong></td>
-<td>Gain, pan, stereo width, mono sum, low-frequency mono, and per-channel polarity flip.</td>
+<td>Gain, pan, stereo width, mono sum, low-frequency mono, left/right swap and per-channel polarity flip. <strong>Pan</strong>, <strong>Width</strong>, <strong>Low mono</strong> and <strong>Gain</strong> sit in a row over the <strong>Mono</strong>, <strong>Low mono</strong>, <strong>Swap</strong>, <strong>Ø L</strong> and <strong>Ø R</strong> toggles. Beside them is a picture of the stereo field: drag the band to pan, drag its edges to change the width, and double-click it to reset both. An amber tick marks the low-mono crossover. The sidebar's <strong>Show the stereo field</strong> toggle hides the picture. Gain is the device's output level, so its side strip has a meter but no fader.</td>
+</tr>
+<tr>
+<td><strong>Test Tone</strong></td>
+<td>Tone generator for calibration and routing checks. <strong>Waveform</strong> picks Sine, Triangle, Saw Up, Saw Down, Square or Noise; <strong>Frequency</strong> runs from 20 Hz to 20 kHz and <strong>Level</strong> from -60 to 0 dB. The noise colour (White, Pink, Brown) applies to Noise, and Frequency is dimmed while Noise plays. Turn on <strong>Transport only</strong> to keep it silent while the transport is stopped.</td>
 </tr>
 </tbody>
 </table>
@@ -2610,10 +2779,16 @@
 <p class="admonition-title">Note</p>
 <p>Devices that bundle multiple engines (Compressor, Reverb, Dimension, Filter, Pitch) expose an engine selector at the top of the editor and switch DSP in place. Macros and modulator links survive the switch.</p>
 </div>
-<h2 id="ir-reverb">IR Reverb<a class="headerlink" href="#ir-reverb" title="Permanent link">&para;</a></h2>
-<p>The <strong>IR Reverb</strong> is a native MAGDA device (not part of the Faust FX bank) that sits under <strong>Reverb</strong> in the Plugin Browser. Where the Reverb device synthesises a space from an algorithm, this one convolves your signal with a recording of a real one: an impulse response captured in a hall, a stairwell, a plate, a spring tank, a guitar cabinet, or any object you have measured. Anything an impulse response can describe, it will reproduce, which also makes it the device to reach for when you want a specific room rather than a plausible one.</p>
+<h2 id="convolution">Convolution<a class="headerlink" href="#convolution" title="Permanent link">&para;</a></h2>
+<p>The <strong>Convolution</strong> device (called IR Reverb in earlier versions) is a native MAGDA device, not part of the Faust FX bank, that sits under <strong>Reverb</strong> in the Plugin Browser. Where the Reverb device synthesises a space from an algorithm, this one convolves your signal with a recording of a real one: an impulse response captured in a hall, a stairwell, a plate, a spring tank, a guitar cabinet, or any object you have measured. Anything an impulse response can describe, it will reproduce, which also makes it the device to reach for when you want a specific room rather than a plausible one.</p>
 <p>No impulse responses ship with MAGDA, so the device starts empty and passes the signal through until you load one.</p>
-<p><strong>Loading an impulse response.</strong> Either click the <strong>folder button</strong> at the top right of the faceplate and pick a file, or drag an audio file straight onto the device. WAV, AIFF, FLAC and Ogg are all accepted, mono or stereo. The loaded file's name replaces the <em>No IR loaded</em> label in the header.</p>
+<p>The faceplate has three panels side by side:</p>
+<ul>
+<li><strong>IMPULSE RESPONSE</strong> draws the loaded impulse response's waveform, in dB so the tail shows. Its title gives the file's name, its length and whether it is mono or stereo.</li>
+<li><strong>FILTER</strong> draws the live response of the low and high cut filters over the <strong>Low Cut</strong>, <strong>High Cut</strong> and <strong>Q</strong> tiles.</li>
+<li><strong>OUTPUT</strong> holds <strong>Gain</strong> and <strong>Mix</strong>. The sidebar's <strong>Show the output</strong> toggle shows or hides this panel.</li>
+</ul>
+<p><strong>Loading an impulse response.</strong> Click the IMPULSE RESPONSE panel, or the folder button in its title, and pick a file. You can also drag an audio file onto the panel; its border lights up blue while a file is over it. WAV, AIFF, FLAC and Ogg are all accepted, mono or stereo.</p>
 <p>The impulse response is stored inside the device, not referenced from disk, so a project stays self-contained: it opens with its reverb intact on a machine that has never seen the original file. Long impulse responses make for large project files.</p>
 <p><strong>Controls:</strong></p>
 <table>
@@ -2625,11 +2800,11 @@
 </thead>
 <tbody>
 <tr>
-<td><strong>LOW CUT</strong></td>
+<td><strong>Low Cut</strong></td>
 <td>High-pass on the reverb, 10 Hz to 20 kHz. Clears mud out of the tail.</td>
 </tr>
 <tr>
-<td><strong>HIGH CUT</strong></td>
+<td><strong>High Cut</strong></td>
 <td>Low-pass on the reverb, 10 Hz to 20 kHz. Darkens the tail so it sits behind the dry signal.</td>
 </tr>
 <tr>
@@ -2637,11 +2812,11 @@
 <td>Resonance of both cutoff filters, 0.1 to 14, shared between them.</td>
 </tr>
 <tr>
-<td><strong>GAIN</strong></td>
+<td><strong>Gain</strong></td>
 <td>Output trim, -12 to +6 dB.</td>
 </tr>
 <tr>
-<td><strong>MIX</strong></td>
+<td><strong>Mix</strong></td>
 <td>Dry/wet balance, 0 to 100%. At 0% the device is a straight passthrough.</td>
 </tr>
 </tbody>
@@ -2649,6 +2824,45 @@
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>The device reports no latency, so it needs no delay compensation and can be used freely on a live-monitored track. A long impulse response is still expensive to convolve, though: if the CPU meter climbs, a shorter one costs less.</p>
+</div>
+<h2 id="spectral-fx">Spectral FX<a class="headerlink" href="#spectral-fx" title="Permanent link">&para;</a></h2>
+<p><strong>Spectral FX</strong> is a native MAGDA device in its own <strong>Spectral</strong> category of the Plugin Browser. It splits the signal into its frequency content and runs four effects on it, always in this order: Gate, Contrast, Shift, then Scramble. At their defaults all four are off and the device is transparent.</p>
+<p><strong>Controls:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Gate</strong></td>
+<td>Mutes frequencies quieter than the threshold, from -80 dB (<strong>Off</strong>) to 0 dB. The threshold reads in the same dBFS as broadband material, so a gate at -40 dB cuts what sits below -40 dBFS.</td>
+</tr>
+<tr>
+<td><strong>Contrast</strong></td>
+<td>-100 to 100%. Above zero it sharpens the peaks and lowers the floor; below zero it flattens the spectrum. The overall level stays the same.</td>
+</tr>
+<tr>
+<td><strong>Shift</strong></td>
+<td>Moves every frequency by the same number of hertz, -2000 to +2000 Hz. The shift is phase-coherent, so it is exact in Hz; like Freq Shift, it pulls harmonics out of tune with each other.</td>
+</tr>
+<tr>
+<td><strong>Scramble</strong></td>
+<td>0 to 100%. Randomises the phase of each frequency for a smeared, washed-out texture, with the level kept steady.</td>
+</tr>
+<tr>
+<td><strong>Output</strong></td>
+<td>Output level, -24 to +24 dB.</td>
+</tr>
+</tbody>
+</table>
+<p>The dry/wet balance is the mix box at the top of the device's side strip.</p>
+<p>The faceplate is a scrolling spectrogram of the device's own output, low frequencies at the bottom, with 100 Hz, 1 kHz and 10 kHz marked. The strip at its right shows the colour scale and marks the Gate threshold, and a non-zero Shift is shown in the top-right corner.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The device delays the signal by its FFT size, 2048 samples (4096 at sample rates above 50 kHz), and reports that latency so MAGDA's delay compensation keeps the track in time.</p>
 </div>
 <h2 id="sidechain">Sidechain<a class="headerlink" href="#sidechain" title="Permanent link">&para;</a></h2>
 <p>The <strong>Sidechain</strong> device is a native MAGDA device (not part of the Faust FX bank) that sits under <strong>Dynamics</strong> in the Plugin Browser. It is a MIDI-triggered volume shaper: the device holds its own gain at unity and a retriggerable curve ducks it toward silence, keyed from the notes of another track. This is the classic "sidechain pump" effect without a compressor — the curve <em>is</em> the gain envelope, so you draw exactly the ducking shape you want.</p>
@@ -2699,13 +2913,26 @@
 <h2 id="faust-custom-dsp">Faust (Custom DSP)<a class="headerlink" href="#faust-custom-dsp" title="Permanent link">&para;</a></h2>
 <p>The <strong>Faust</strong> device hosts a <a href="https://faust.grame.fr">Faust</a> DSP that you compile and load at runtime. Unlike the rest of the MAGDA FX bank, where each device wraps a fixed pre-compiled <code>.dsp</code> source, this device accepts any Faust program.</p>
 <p>Both this and the <a href="../faust-instrument/">Faust Instrument</a> live under <strong>Custom DSP</strong> in the device browser. Reach for the instrument instead when you want MIDI to play your DSP as a synth rather than process an incoming signal.</p>
+<p>The device's title is the name of the loaded patch ("Drive", say); hover it to see the patch's credits.</p>
+<h3 id="patches-and-presets">Patches and presets<a class="headerlink" href="#patches-and-presets" title="Permanent link">&para;</a></h3>
+<p>A Faust <strong>patch</strong> is a <code>.dsp</code> file, and it holds source code only. Patches live in the <strong>Patches</strong> submenu of the device's preset box:</p>
 <ul>
-<li><strong>Folder icon</strong> - load a <code>.dsp</code> file from disk. The source is compiled and swapped in immediately.</li>
-<li><strong>Script icon</strong> - opens an in-app code editor for live editing. Saving recompiles and hot-swaps the DSP.</li>
-<li>The current script name is shown in the header banner ("Drive" in the example).</li>
-<li>Arrows in the header step through parameter pages when the DSP exposes more controls than fit on one screen.</li>
+<li><strong>Built-in</strong> - the patches that ship with MAGDA, grouped by category.</li>
+<li><strong>My Patches</strong> - the <code>.dsp</code> files in <code>Faust Patches/Effects</code> inside your presets folder (set under <strong>Settings &gt; Paths</strong>; by default <code>Documents/MAGDA/Presets</code>). The <a href="../faust-instrument/">Faust Instrument</a> lists its own from <code>Faust Patches/Instruments</code>.</li>
+<li><strong>Load .dsp File...</strong> - open a patch from anywhere on disk.</li>
+<li><strong>Save .dsp File...</strong> - save the current source as a <code>.dsp</code>, by default into My Patches.</li>
 </ul>
-<p>Parameters live in a stable pool of slots that persist across recompiles, so macro links, modulator routings, MIDI Learn assignments, and automation lanes survive a code change as long as the slot ordering is preserved. This makes the device practical for iterative DSP development without losing your patch state on every save.</p>
+<p>Loading a patch compiles it and swaps it in immediately. It replaces the code and nothing else, so your modulators and macros stay, and the preset box clears its name, since no preset describes the device any more.</p>
+<p>A MAGDA <strong>preset</strong>, saved with the floppy-disk button, is a full snapshot: the source, the parameter values, modulators, macros and gain. Loading one brings back the patch it was saved with.</p>
+<p>Patches kept in the <code>FaustEffects</code> folder of earlier versions are no longer listed; they stay on disk and open with <strong>Load .dsp File...</strong>.</p>
+<h3 id="editing-and-controls">Editing and controls<a class="headerlink" href="#editing-and-controls" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The <strong>code</strong> icon beside the floppy (<em>Edit the patch's source</em>) opens an in-app code editor. <strong>Compile</strong> recompiles the source and hot-swaps the DSP.</li>
+<li>If a patch fails to compile, the error shows in a strip along the foot of the device.</li>
+<li>The parameter grid is up to eight columns by two rows. Faust groups in the source become named page tabs.</li>
+<li>A patch with a custom view, such as Drive, shows it to the right of the grid, and the grid takes only as many columns as its controls fill. The sidebar's <strong>Show the parameters</strong> and <strong>Show the patch's view</strong> toggles hide either side; one of the two always shows.</li>
+</ul>
+<p>Parameters live in a stable pool of slots that persist across recompiles, so macro links, modulator routings, MIDI Learn assignments, and automation lanes survive a code change as long as the slot ordering is preserved. This makes the device practical for iterative DSP development without losing your patch state on every compile.</p>
 <h3 id="how-your-code-is-run">How your code is run<a class="headerlink" href="#how-your-code-is-run" title="Permanent link">&para;</a></h3>
 <p>Your DSP is compiled to WebAssembly and then JIT-compiled to native machine code by <a href="https://wasmtime.dev">wasmtime</a>, so it runs as real compiled code rather than being interpreted.</p>
 <p>Two things follow from that. It is fast enough to play with rather than merely audition, though it still carries more overhead than the ahead-of-time compiled MAGDA FX bank, which has no sandbox boundary and is optimised by your system compiler. And it is sandboxed: the DSP runs inside the WebAssembly memory model, so a patch that misbehaves cannot take the application down with it. That matters most when you are iterating quickly or loading code an AI wrote.</p>
@@ -2715,7 +2942,7 @@
 </div>
 <h3 id="writing-faust-with-ai-help">Writing Faust with AI help<a class="headerlink" href="#writing-faust-with-ai-help" title="Permanent link">&para;</a></h3>
 <p><a href="https://github.com/Conceptual-Machines/faust-mcp-magda"><code>faust-mcp-magda</code></a> is an optional companion tool that exposes the Faust compiler and standard library to AI assistants. MAGDA uses it to validate AI-generated Faust code before loading it into this device, so syntax errors and bad library references get caught up front instead of failing at compile time.</p>
-<p>Enable it from <strong>Settings &gt; AI Settings</strong>, on the <strong>Config</strong> page, by turning on the <strong>Faust DSP</strong> toggle. When Faust validation is used, MAGDA will start the MCP server on-demand via <code>npx</code>; no manual install step is needed. <code>npx</code> must be available on the system <code>PATH</code> (it ships with Node.js).</p>
+<p>Enable it from <strong>Settings &gt; AI</strong>, on the <strong>Assistant</strong> tab, by turning on the <strong>Faust DSP</strong> toggle under <strong>Tools</strong>. When Faust validation is used, MAGDA will start the MCP server on-demand via <code>npx</code>; no manual install step is needed. <code>npx</code> must be available on the system <code>PATH</code> (it ships with Node.js).</p>
 <p>The MCP server carries its own copy of the Faust compiler, so no separate Faust installation is required either. This is a separate thing from how the device runs your DSP during playback, described above; the server only checks that code compiles before MAGDA loads it.</p>
 <p>The server can also be wired into a separate MCP-aware AI assistant (Claude, Cursor, and similar) directly, by adding it to that client's MCP config; see the <a href="https://github.com/Conceptual-Machines/faust-mcp-magda">project README</a> for details. This is independent of the MAGDA-side toggle.</p>
 
@@ -2799,6 +3026,8 @@
     
     
       <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="../../javascripts/site-header.js"></script>
       
     
   </body>

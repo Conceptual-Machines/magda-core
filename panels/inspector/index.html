@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/panels/inspector/">
+        <link rel="canonical" href="https://docs.magda.land/panels/inspector/">
       
       
         <link rel="prev" href="../../working-with-ai/">
@@ -19,7 +19,7 @@
         <link rel="next" href="../browsers/">
       
       
-      <link rel="icon" href="../../assets/images/magda-lisa.svg">
+      <link rel="icon" href="../../assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
@@ -88,71 +88,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="../../assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              Inspector
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -190,22 +133,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -502,7 +460,7 @@
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -524,51 +482,7 @@
         
   
   <span class="md-ellipsis">
-    Audio Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/plugin-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Plugin Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/ai-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    AI Settings
+    Audio & MIDI
     
   </span>
   
@@ -613,6 +527,50 @@
   
   <span class="md-ellipsis">
     Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI
     
   </span>
   
@@ -742,6 +700,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../arrangement-view/" class="md-nav__link">
         
   
@@ -826,6 +805,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../chord-track/" class="md-nav__link">
         
   
@@ -882,10 +882,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" checked>
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -897,8 +897,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -968,6 +968,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#master-inspector" class="md-nav__link">
+    <span class="md-ellipsis">
+      Master Inspector
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#clip-inspector" class="md-nav__link">
     <span class="md-ellipsis">
       Clip Inspector
@@ -978,18 +987,72 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#audio-properties" class="md-nav__link">
+  <a href="#clip" class="md-nav__link">
     <span class="md-ellipsis">
-      Audio Properties
+      Clip
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#session-launch-follow" class="md-nav__link">
+  <a href="#mix" class="md-nav__link">
     <span class="md-ellipsis">
-      Session Launch &amp; Follow
+      Mix
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#warp-pitch" class="md-nav__link">
+    <span class="md-ellipsis">
+      Warp &amp; Pitch
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pitch" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pitch
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fades" class="md-nav__link">
+    <span class="md-ellipsis">
+      Fades
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#time-bend" class="md-nav__link">
+    <span class="md-ellipsis">
+      Time Bend
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#labels" class="md-nav__link">
+    <span class="md-ellipsis">
+      Labels
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      Launch
     </span>
   </a>
   
@@ -1010,9 +1073,27 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#automation-inspectors" class="md-nav__link">
+    <span class="md-ellipsis">
+      Automation Inspectors
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#device-inspector" class="md-nav__link">
     <span class="md-ellipsis">
       Device Inspector
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mods-and-macros" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mods and Macros
     </span>
   </a>
   
@@ -1109,10 +1190,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" >
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1124,8 +1205,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1297,10 +1378,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" >
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1312,8 +1393,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1357,10 +1438,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" >
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1372,8 +1453,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1391,6 +1472,28 @@
   
   <span class="md-ellipsis">
     Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
     
   </span>
   
@@ -1491,10 +1594,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" >
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1506,8 +1609,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1767,10 +1870,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1782,8 +1885,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -1966,10 +2069,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" >
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1981,8 +2084,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -2171,6 +2274,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/troubleshooting/" class="md-nav__link">
         
   
@@ -2229,6 +2354,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#master-inspector" class="md-nav__link">
+    <span class="md-ellipsis">
+      Master Inspector
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#clip-inspector" class="md-nav__link">
     <span class="md-ellipsis">
       Clip Inspector
@@ -2239,18 +2373,72 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#audio-properties" class="md-nav__link">
+  <a href="#clip" class="md-nav__link">
     <span class="md-ellipsis">
-      Audio Properties
+      Clip
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#session-launch-follow" class="md-nav__link">
+  <a href="#mix" class="md-nav__link">
     <span class="md-ellipsis">
-      Session Launch &amp; Follow
+      Mix
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#warp-pitch" class="md-nav__link">
+    <span class="md-ellipsis">
+      Warp &amp; Pitch
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pitch" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pitch
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fades" class="md-nav__link">
+    <span class="md-ellipsis">
+      Fades
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#time-bend" class="md-nav__link">
+    <span class="md-ellipsis">
+      Time Bend
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#labels" class="md-nav__link">
+    <span class="md-ellipsis">
+      Labels
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      Launch
     </span>
   </a>
   
@@ -2271,9 +2459,27 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#automation-inspectors" class="md-nav__link">
+    <span class="md-ellipsis">
+      Automation Inspectors
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#device-inspector" class="md-nav__link">
     <span class="md-ellipsis">
       Device Inspector
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mods-and-macros" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mods and Macros
     </span>
   </a>
   
@@ -2300,48 +2506,76 @@
 
 <h1 id="inspector">Inspector<a class="headerlink" href="#inspector" title="Permanent link">&para;</a></h1>
 <p>The Inspector panel is on the right side of the window. It displays context-sensitive properties for the currently selected item.</p>
-<p>The <strong>FX</strong>, <strong>Latency</strong>, <strong>Mods</strong> and <strong>Macros</strong> sections start folded each time you open MAGDA. Click a section's title to unfold it.</p>
+<p>Its sections fold: click a section's title to fold or unfold it. A folded section stays folded as you select other items, until you restart MAGDA. The <strong>FX</strong>, <strong>Latency</strong>, <strong>Mods</strong> and <strong>Macros</strong> sections start folded each time you open MAGDA. When an inspector is taller than the panel, the panel scrolls.</p>
 <p><img alt="Inspector — Audio Clip" src="../../assets/images/panels/inspector-audio.png" /></p>
 <h2 id="track-inspector">Track Inspector<a class="headerlink" href="#track-inspector" title="Permanent link">&para;</a></h2>
-<p>Displayed when a track is selected. Shows:</p>
+<p>Displayed when a track is selected. From the top:</p>
 <ul>
-<li><strong>Track name</strong> — Click to rename</li>
-<li><strong>Track color</strong> — Right-click the track name, or click the color swatch beside it, to choose a color. A track with no color has no swatch</li>
-<li><strong>Volume and pan</strong> — Numeric readouts and controls</li>
-<li><strong>Input routing</strong> — Select audio/MIDI input source</li>
-<li><strong>Output routing</strong> — Select audio/MIDI output destination</li>
-<li><strong>Sends</strong> — List of send slots with level controls</li>
+<li><strong>Name</strong> — Click to rename. The track colour shows as a spine beside the name, or fills the name field when <strong>Track colour</strong> is set to <strong>Full bar</strong> in <strong>Settings &gt; Appearance</strong>. Click the spine, or right-click the name, to choose a colour. A track with no colour has no spine. The switch at the right enables or disables the track</li>
+<li><strong>Mix</strong> — Volume and pan, <strong>M</strong> (mute), <strong>S</strong> (solo), <strong>R</strong> (record arm), input monitoring, and the automation button, which lights when the track has automation</li>
+<li><strong>Automated</strong> — Appears when the track has automation and lists the automated parameters. The automation button folds it away</li>
+<li><strong>Routing</strong> — Audio and MIDI input and output selectors</li>
+<li><strong>FX</strong> — The track's FX chain, one row per device (a rack shows as one row). Click a row's dot to bypass the device; click its chevron to unfold up to three of its parameters, chosen in the <strong>Mini FX</strong> column of the <a href="../../plugin-parameters/">Configure Parameters dialog</a>. Third-party plugins have a button that opens their window. The section header shows the track's total latency</li>
+<li><strong>Sends</strong> — The track's sends with their levels; the <strong>+</strong> in the section header adds a send</li>
+<li><strong>Mods</strong> and <strong>Macros</strong> — The track's own <a href="../../modulation/modulators/">modulators</a> and <a href="../../modulation/macros/">macros</a>, see <a href="#mods-and-macros">Mods and Macros</a></li>
+<li><strong>Clips</strong> — How many clips the track holds</li>
+</ul>
+<p>Which of these a track shows depends on its type: a group or aux has no record or input routing, for example. With several tracks selected, the inspector names how many, and mute, solo, record arm, enable, and colour apply to all of them.</p>
+<h2 id="master-inspector">Master Inspector<a class="headerlink" href="#master-inspector" title="Permanent link">&para;</a></h2>
+<p>Displayed when the master is selected:</p>
+<ul>
+<li><strong>Header</strong> — The master's channel layout and how many devices its chain holds, with a mute button</li>
+<li><strong>Output</strong> — Volume and a live peak meter. Click the peak readout to reset it</li>
+<li><strong>FX</strong> — The master chain, in the same rows as the track inspector's FX section</li>
+<li><strong>Latency</strong> — The master chain's total latency in milliseconds and samples, and the devices that add the most (up to five)</li>
+<li><strong>Mods</strong> and <strong>Macros</strong> — The master's own modulators and macros</li>
 </ul>
 <h2 id="clip-inspector">Clip Inspector<a class="headerlink" href="#clip-inspector" title="Permanent link">&para;</a></h2>
-<p>Displayed when a clip is selected. Shows:</p>
+<p>Displayed when a clip is selected. The header shows the clip's colour spine and name over a summary line: the clip type, <em>Session</em> for a Session View clip, the take, its length in bars, and the sample rate (audio) or note count (MIDI). Double-click the name to rename the clip. Click the spine, or right-click the name, to choose a colour: <strong>None</strong>, <strong>Inherit from Track</strong>, or a palette colour. A clip with no colour has no spine. Beside the name sit <strong>Save to library</strong>, which saves the clip's settings or MIDI file to the media library, and the power button that enables or disables the clip.</p>
+<p>Position and loop values are expressed in <strong>beats</strong> (shown as bars and beats). The sections below appear for the kinds of clip they apply to.</p>
+<h3 id="clip">Clip<a class="headerlink" href="#clip" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Clip name</strong> - Click to rename</li>
-<li><strong>Clip color</strong> - Right-click the clip name, or click the color swatch beside it, to choose a color. A clip with no color has no swatch</li>
-<li><strong>Position</strong> - Start, end, and length on the timeline (beats)</li>
-<li><strong>Loop settings</strong> - Loop on/off, loop start, loop end, phase / offset (beats)</li>
+<li><strong>Clip</strong> — <strong>Start</strong>, <strong>End</strong> and <strong>Length</strong> on the timeline</li>
+<li><strong>Loop</strong> — The loop switch, with the loop's start and end and its <strong>Phase</strong> (or offset)</li>
+<li><strong>Takes</strong> — For a clip with recorded takes, the take to play</li>
 </ul>
-<h3 id="audio-properties">Audio Properties<a class="headerlink" href="#audio-properties" title="Permanent link">&para;</a></h3>
-<p>For audio clips, the inspector shows additional controls. Position and loop fields are expressed in <strong>beats</strong> rather than seconds; the only seconds value in the clip model is the source file's on-disk duration, shown as a read-only reference.</p>
+<h3 id="mix">Mix<a class="headerlink" href="#mix" title="Permanent link">&para;</a></h3>
+<p>For audio clips:</p>
 <ul>
-<li><strong>Playback</strong> - Source BPM (editable), total beats, and Auto Tempo toggle. With Auto Tempo on, the clip stretches so its beat count stays fixed as the project tempo changes; with it off, the clip plays at its native sample rate</li>
-<li><strong>Warp</strong> - Enable per-segment time-stretching via warp markers</li>
-<li><strong>Transient Detection</strong> - Sensitivity slider for transient markers</li>
-<li><strong>Pitch</strong> - Transpose in semitones; Auto-Pitch mode (Off, Pitch Track, Chord Mono, Chord Poly); Analog Pitch toggle for resampling instead of time-stretch</li>
-<li><strong>Mix</strong> - Volume, gain, pan, and reverse</li>
-<li><strong>Channels</strong> - Channel routing for stereo / mono interpretation</li>
-<li><strong>Fades</strong> - In / out length and curve</li>
+<li><strong>Volume</strong>, <strong>Pan</strong> and <strong>Gain</strong></li>
+<li><strong>Reverse</strong> — Play the clip backwards</li>
+<li><strong>Gain envelope</strong> — Show the clip's gain envelope</li>
 </ul>
-<h3 id="session-launch-follow">Session Launch &amp; Follow<a class="headerlink" href="#session-launch-follow" title="Permanent link">&para;</a></h3>
-<p>When a clip lives in Session View, the inspector adds:</p>
+<h3 id="warp-pitch">Warp &amp; Pitch<a class="headerlink" href="#warp-pitch" title="Permanent link">&para;</a></h3>
+<p>For audio clips. The switch in the section header turns warp markers on or off.</p>
 <ul>
-<li><strong>Launch Mode</strong> - Trigger (one-shot) or Toggle</li>
-<li><strong>Launch Quantize</strong> - Bar / beat snap for launch timing</li>
-<li><strong>Follow Action</strong> - Action when the clip ends: None, Play Next, Play Previous, Play Random, Stop, Play Again</li>
-<li><strong>Follow Delay (beats)</strong> - Delay between the clip ending and the follow action firing (0 - 64 beats)</li>
-<li><strong>Follow Loops</strong> - Number of loops the clip plays before the follow action fires</li>
+<li><strong>Beat</strong> / <strong>Free</strong> — Beat follows the project tempo in bars and beats; Free plays the file at its own rate</li>
+<li><strong>Stretch engine</strong> — <strong>Off</strong>, <strong>Signalsmith</strong>, <strong>SoundTouch</strong>, or <strong>SoundTouch HQ</strong></li>
+<li><strong>Transient sensitivity</strong> — How readily transient markers are detected</li>
+<li><strong>Tempo</strong> and <strong>Length</strong> — The source tempo in BPM, with buttons that halve or double it, and the length in beats</li>
+<li><strong>Speed</strong> and <strong>Analog</strong> — In Free mode, the playback speed, and analog pitch, which resamples instead of time-stretching</li>
+<li><strong>Pitch</strong> — Transpose in semitones and cents</li>
+<li><strong>Key</strong> — The source's key root</li>
 </ul>
+<h3 id="pitch">Pitch<a class="headerlink" href="#pitch" title="Permanent link">&para;</a></h3>
+<p>For MIDI clips: <strong>Transpose</strong> buttons that move every note down or up an octave or a semitone (−12, −1, +1, +12).</p>
+<h3 id="fades">Fades<a class="headerlink" href="#fades" title="Permanent link">&para;</a></h3>
+<p>For audio clips: fade-in and fade-out lengths, each with its curve shape. <strong>Crossfade in</strong> and <strong>Crossfade out</strong> appear where the clip overlaps a neighbour, and the switch in the section header crossfades automatically where clips overlap. A Session View clip has a <strong>Launch</strong> fade instead, which smooths the start (0 keeps the transient).</p>
+<h3 id="time-bend">Time Bend<a class="headerlink" href="#time-bend" title="Permanent link">&para;</a></h3>
+<p>For MIDI clips: the clip's <a href="../../time-bend/">time bend</a> curve.</p>
+<h3 id="labels">Labels<a class="headerlink" href="#labels" title="Permanent link">&para;</a></h3>
+<p>For audio clips: the clip's labels, placed with the Label tool in the waveform editor.</p>
+<h3 id="launch">Launch<a class="headerlink" href="#launch" title="Permanent link">&para;</a></h3>
+<p>For clips in Session View:</p>
+<ul>
+<li><strong>Quantize</strong> — Bar / beat snap for launch timing</li>
+<li><strong>Follow action</strong> — Action when the clip ends: None, Play Next, Play Previous, Play Random, Stop, Play Again</li>
+<li><strong>Delay (beats)</strong> - Delay between the clip ending and the follow action firing (0 - 64 beats)</li>
+<li><strong>Loops</strong> - Number of loops the clip plays before the follow action fires</li>
+</ul>
+<p><strong>Delay</strong> and <strong>Loops</strong> appear once a follow action is set.</p>
 <h2 id="note-inspector">Note Inspector<a class="headerlink" href="#note-inspector" title="Permanent link">&para;</a></h2>
-<p>Displayed when one or more MIDI notes are selected in the Piano Roll. Shows:</p>
+<p>Displayed when one or more MIDI notes are selected in the Piano Roll. The header names the note (or how many are selected) over the clip's name. Shows:</p>
 <ul>
 <li><strong>Pitch</strong> — MIDI note number and name</li>
 <li><strong>Velocity</strong> — Note velocity (0–127)</li>
@@ -2349,13 +2583,21 @@
 <li><strong>Length</strong> — Note duration</li>
 </ul>
 <p>When multiple notes are selected, the inspector shows ranges (e.g., "C3–G5") and allows batch editing.</p>
+<h2 id="automation-inspectors">Automation Inspectors<a class="headerlink" href="#automation-inspectors" title="Permanent link">&para;</a></h2>
+<p>Selecting automation points shows the parameter's name over how many points are selected, with the <strong>Value</strong> and <strong>Position</strong> of the selection. With several points selected, editing the value moves them all by the same amount.</p>
+<p>Selecting an automation clip shows its name over a summary line (the automated parameter and the clip's length), with the <strong>Start</strong>, <strong>End</strong> and <strong>Length</strong> of the clip, and the <strong>Loop</strong> switch with the loop's length. Right-click the name to choose the clip's colour.</p>
 <h2 id="device-inspector">Device Inspector<a class="headerlink" href="#device-inspector" title="Permanent link">&para;</a></h2>
-<p>Displayed when a device (plugin or built-in) is selected in the track chain. Shows:</p>
+<p>Displayed when a device, rack, or chain is selected in the track chain:</p>
 <ul>
-<li><strong>Device name</strong> — Click to rename the instance</li>
-<li><strong>Device type</strong> — Plugin format and category</li>
-<li><strong>Parameters</strong> — All exposed parameters with knobs/sliders</li>
+<li><strong>Header</strong> — The device type (for example its plugin format, <em>Instrument</em> or <em>Effect</em>, and the manufacturer) over the device's name</li>
+<li><strong>Facts</strong> — The device's <strong>Category</strong> (for MAGDA's own devices), its <strong>Latency</strong>, and, for a device with a sidechain input, where its <strong>Sidechain</strong> comes from</li>
+<li><strong>Mods</strong> and <strong>Macros</strong> — The device's or rack's own modulators and macros</li>
+<li><strong>About</strong> — A short description, for MAGDA's own devices</li>
 </ul>
+<p>The device's parameters live on the device itself, in the <a href="../track-chain/">track chain</a>.</p>
+<h2 id="mods-and-macros">Mods and Macros<a class="headerlink" href="#mods-and-macros" title="Permanent link">&para;</a></h2>
+<p>The track, master, and device inspectors each show the selected item's own <strong>Mods</strong> and <strong>Macros</strong>, using the same cards, knobs, and editors as the <a href="../../modulation/overview/">track chain</a>. Edits made in either place show in the other. Click a card to open its editor below the cards.</p>
+<p>Clicking a modulator or macro in the chain selects its owner and opens that item here, unfolding its section. Post-FX devices, analysis devices, and the chord track have no mods or macros, so they show none here either.</p>
 
 
 
@@ -2437,6 +2679,8 @@
     
     
       <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="../../javascripts/site-header.js"></script>
       
     
   </body>

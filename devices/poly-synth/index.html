@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/devices/poly-synth/">
+        <link rel="canonical" href="https://docs.magda.land/devices/poly-synth/">
       
       
         <link rel="prev" href="../poly-sequencer/">
@@ -19,7 +19,7 @@
         <link rel="next" href="../fm0/">
       
       
-      <link rel="icon" href="../../assets/images/magda-lisa.svg">
+      <link rel="icon" href="../../assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
@@ -88,71 +88,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="../../assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              Poly Synth
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -190,22 +133,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -502,7 +460,7 @@
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -524,51 +482,7 @@
         
   
   <span class="md-ellipsis">
-    Audio Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/plugin-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Plugin Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/ai-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    AI Settings
+    Audio & MIDI
     
   </span>
   
@@ -613,6 +527,50 @@
   
   <span class="md-ellipsis">
     Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI
     
   </span>
   
@@ -742,6 +700,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../arrangement-view/" class="md-nav__link">
         
   
@@ -826,6 +805,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../chord-track/" class="md-nav__link">
         
   
@@ -880,10 +880,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -895,8 +895,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -1006,10 +1006,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" >
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1021,8 +1021,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1196,10 +1196,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" checked>
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1211,8 +1211,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1256,10 +1256,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" >
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1271,8 +1271,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1290,6 +1290,28 @@
   
   <span class="md-ellipsis">
     Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
     
   </span>
   
@@ -1392,10 +1414,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" checked>
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1407,8 +1429,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1469,6 +1491,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#faceplate" class="md-nav__link">
+    <span class="md-ellipsis">
+      Faceplate
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#oscillators" class="md-nav__link">
     <span class="md-ellipsis">
       Oscillators
@@ -1478,27 +1509,51 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#filter" class="md-nav__link">
+  <a href="#unison-and-voice" class="md-nav__link">
     <span class="md-ellipsis">
-      Filter
+      Unison and voice
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#amp" class="md-nav__link">
+  <a href="#filters" class="md-nav__link">
     <span class="md-ellipsis">
-      Amp
+      Filters
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Filters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Routing
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#envelopes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Envelopes
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#voice-and-output" class="md-nav__link">
+  <a href="#mpe" class="md-nav__link">
     <span class="md-ellipsis">
-      Voice and output
+      MPE
     </span>
   </a>
   
@@ -1763,10 +1818,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1778,8 +1833,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -1962,10 +2017,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" >
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1977,8 +2032,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -2167,6 +2222,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/troubleshooting/" class="md-nav__link">
         
   
@@ -2216,6 +2293,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#faceplate" class="md-nav__link">
+    <span class="md-ellipsis">
+      Faceplate
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#oscillators" class="md-nav__link">
     <span class="md-ellipsis">
       Oscillators
@@ -2225,27 +2311,51 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#filter" class="md-nav__link">
+  <a href="#unison-and-voice" class="md-nav__link">
     <span class="md-ellipsis">
-      Filter
+      Unison and voice
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#amp" class="md-nav__link">
+  <a href="#filters" class="md-nav__link">
     <span class="md-ellipsis">
-      Amp
+      Filters
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Filters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Routing
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#envelopes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Envelopes
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#voice-and-output" class="md-nav__link">
+  <a href="#mpe" class="md-nav__link">
     <span class="md-ellipsis">
-      Voice and output
+      MPE
     </span>
   </a>
   
@@ -2289,9 +2399,17 @@
 
 
 <h1 id="poly-synth">Poly Synth<a class="headerlink" href="#poly-synth" title="Permanent link">&para;</a></h1>
-<p>Poly Synth is a 16-voice subtractive synthesizer built into MAGDA. Four detunable oscillators feed a multimode state-variable filter with its own envelope, followed by an amplitude ADSR. It plays in poly, mono, or legato modes.</p>
+<p>Poly Synth is a 16-voice subtractive synthesizer built into MAGDA. Four detunable oscillators, with up to eight stereo unison copies, feed two multimode state-variable filters in series or in parallel, followed by an amplitude ADSR. It plays in poly, mono, or legato modes.</p>
+<h2 id="faceplate">Faceplate<a class="headerlink" href="#faceplate" title="Permanent link">&para;</a></h2>
+<p>The faceplate has three panels, each with two tabs:</p>
+<ul>
+<li><strong>OSC</strong> and <strong>VOICE</strong> - the oscillators, and unison with the performance controls</li>
+<li><strong>FILTER 1</strong> and <strong>FILTER 2</strong> - the two filters, their routing, and a response curve</li>
+<li><strong>AMP ENV</strong> and <strong>FILTER ENV</strong> - the two envelopes</li>
+</ul>
+<p>The <strong>Show the oscillators</strong> toggle in the device's sidebar hides the first panel, OSC and VOICE together, to make the device narrower.</p>
 <h2 id="oscillators">Oscillators<a class="headerlink" href="#oscillators" title="Permanent link">&para;</a></h2>
-<p>Four oscillators, each with the same four controls. Oscillators 2 to 4 default to silent (level -60 dB), so a fresh patch sounds from Osc 1 alone until you bring the others up.</p>
+<p>The <strong>OSC</strong> tab has a row per oscillator, under the column heads <strong>LVL</strong>, <strong>CRS</strong>, <strong>FINE</strong>, and <strong>RST</strong>. Oscillators 2 to 4 start silent (level -60 dB), so a fresh patch sounds from Osc 1 alone until you bring the others up.</p>
 <table>
 <thead>
 <tr>
@@ -2312,7 +2430,7 @@
 <td><strong>Level</strong></td>
 <td>-60 to 6 dB</td>
 <td>-12 (Osc 1)</td>
-<td>Oscillator gain</td>
+<td>Oscillator gain; -60 dB is silent</td>
 </tr>
 <tr>
 <td><strong>Coarse</strong></td>
@@ -2328,9 +2446,79 @@
 </tr>
 </tbody>
 </table>
-<p>Each oscillator also has an <strong>Enable</strong> toggle (on by default) and a <strong>Reset</strong> toggle that resets its phase on every note-on for a consistent attack.</p>
-<h2 id="filter">Filter<a class="headerlink" href="#filter" title="Permanent link">&para;</a></h2>
-<p>A multimode state-variable filter with a dedicated envelope.</p>
+<p>The row starts with the waveform's icon; click it to pick another wave from a menu. The dot beside the icon turns the oscillator on and off (on by default); a disabled oscillator's row greys out. Tick <strong>RST</strong> to reset the oscillator's phase on every note-on, for a consistent attack.</p>
+<h2 id="unison-and-voice">Unison and voice<a class="headerlink" href="#unison-and-voice" title="Permanent link">&para;</a></h2>
+<p>The <strong>VOICE</strong> tab holds unison and the performance controls. <strong>Poly</strong>, <strong>Mono</strong>, and <strong>Legato</strong> run across the top.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Range</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Voice Mode</strong></td>
+<td>Poly / Mono / Legato</td>
+<td>Poly</td>
+<td>Voicing</td>
+</tr>
+<tr>
+<td><strong>Voices</strong></td>
+<td>1 / 2 / 4 / 8</td>
+<td>1</td>
+<td>Unison copies of the oscillators</td>
+</tr>
+<tr>
+<td><strong>Detune</strong></td>
+<td>0 to 100 cents</td>
+<td>20</td>
+<td>How far the copies spread either side of the played pitch</td>
+</tr>
+<tr>
+<td><strong>Spread</strong></td>
+<td>0 to 1</td>
+<td>0.5</td>
+<td>Stereo width of the copies</td>
+</tr>
+<tr>
+<td><strong>Glide</strong></td>
+<td>0 to 2000 ms</td>
+<td>0</td>
+<td>Portamento time (mono and legato only)</td>
+</tr>
+<tr>
+<td><strong>Bend</strong></td>
+<td>0 to 24 st</td>
+<td>2</td>
+<td>Pitch-wheel range</td>
+</tr>
+<tr>
+<td><strong>Output</strong></td>
+<td>-60 to 6 dB</td>
+<td>0</td>
+<td>Master output level</td>
+</tr>
+<tr>
+<td><strong>Vel&gt;Amp</strong></td>
+<td>0 to 1</td>
+<td>1</td>
+<td>Velocity to amplitude depth</td>
+</tr>
+<tr>
+<td><strong>Vel&gt;Cut</strong></td>
+<td>0 to 6 oct</td>
+<td>0</td>
+<td>Velocity to filter cutoff depth, on both filters</td>
+</tr>
+</tbody>
+</table>
+<p>With <strong>Voices</strong> above 1, every note plays that many copies of all four oscillators, spaced evenly across the <strong>Detune</strong> range. <strong>Spread</strong> pans them to alternate sides, wider towards the outer copies. The copies are mixed so that more voices don't get louder. <strong>Detune</strong> and <strong>Spread</strong> dim while <strong>Voices</strong> is 1.</p>
+<p>Unison costs CPU in proportion to the copies. In a measured worst case, all four oscillators and both filters at 6 poles, 16 held notes at 8 voices took about a quarter of one CPU core, against under a tenth with unison off.</p>
+<h2 id="filters">Filters<a class="headerlink" href="#filters" title="Permanent link">&para;</a></h2>
+<p>Poly Synth has two state-variable filters, on the <strong>FILTER 1</strong> and <strong>FILTER 2</strong> tabs. The dot on each tab turns that filter on or off; Filter 1 starts on and Filter 2 off. A filter that is off passes its input straight through.</p>
 <table>
 <thead>
 <tr>
@@ -2345,7 +2533,13 @@
 <td><strong>Type</strong></td>
 <td>LP / HP / BP / Notch</td>
 <td>LP</td>
-<td>Filter topology</td>
+<td>Filter response, picked from icons</td>
+</tr>
+<tr>
+<td><strong>Poles</strong></td>
+<td>2 / 4 / 6</td>
+<td>2</td>
+<td>Filter steepness</td>
 </tr>
 <tr>
 <td><strong>Cutoff</strong></td>
@@ -2354,16 +2548,16 @@
 <td>Filter frequency</td>
 </tr>
 <tr>
-<td><strong>Resonance</strong></td>
+<td><strong>Reso</strong></td>
 <td>0 to 0.95</td>
 <td>0.3</td>
-<td>Filter Q</td>
+<td>Resonance</td>
 </tr>
 <tr>
-<td><strong>Slope</strong></td>
-<td>12 dB / 24 dB</td>
-<td>12 dB</td>
-<td>Filter steepness</td>
+<td><strong>Env Amt</strong></td>
+<td>-4 to 4 oct</td>
+<td>0</td>
+<td>Filter envelope depth on cutoff (bipolar)</td>
 </tr>
 <tr>
 <td><strong>Drive</strong></td>
@@ -2371,17 +2565,19 @@
 <td>0</td>
 <td>Pre-filter saturation</td>
 </tr>
-<tr>
-<td><strong>Filter Env</strong></td>
-<td>-4 to 4 oct</td>
-<td>0</td>
-<td>Envelope depth on cutoff (bipolar)</td>
-</tr>
 </tbody>
 </table>
-<p>The filter envelope has its own <strong>Attack</strong> (1 to 2000 ms), <strong>Decay</strong> (1 to 2000 ms), <strong>Sustain</strong> (0 to 1), and <strong>Release</strong> (1 to 4000 ms).</p>
-<h2 id="amp">Amp<a class="headerlink" href="#amp" title="Permanent link">&para;</a></h2>
-<p>The amplitude envelope shapes the level of each note.</p>
+<p>Each filter has its own set of these. More poles cut more steeply, with the resonance on the last stage only. Switching the type or the poles while a note plays fades between them rather than clicking. The response curve beside the tiles draws the selected tab's filter.</p>
+<p>The two filters share the filter envelope and <strong>Vel&gt;Cut</strong>.</p>
+<h3 id="routing">Routing<a class="headerlink" href="#routing" title="Permanent link">&para;</a></h3>
+<p>The icons at the right of the panel's tabs set the routing:</p>
+<ul>
+<li><strong>Serial</strong> runs Filter 1 into Filter 2.</li>
+<li><strong>Parallel</strong> feeds both filters from the oscillators and mixes them by <strong>Blend</strong>: 0 is Filter 1 alone, 1 is Filter 2 alone, 0.5 (the default) is an even mix. <strong>Blend</strong> dims in Serial.</li>
+</ul>
+<p>Poles replace the 12 dB and 24 dB slopes of earlier versions. A patch saved at 24 dB now plays as 4 poles, with one resonant peak where it had two. When you open a project that used the 4OSC synth, MAGDA offers to convert each one to a Poly Synth; see <a href="../../reference/project-migrations/">Project Migrations</a>.</p>
+<h2 id="envelopes">Envelopes<a class="headerlink" href="#envelopes" title="Permanent link">&para;</a></h2>
+<p>The <strong>AMP ENV</strong> and <strong>FILTER ENV</strong> tabs each show an envelope graph above four tiles. Drag the handles on the graph, or edit the tiles.</p>
 <table>
 <thead>
 <tr>
@@ -2418,55 +2614,15 @@
 </tr>
 </tbody>
 </table>
-<h2 id="voice-and-output">Voice and output<a class="headerlink" href="#voice-and-output" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Range</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Voice Mode</strong></td>
-<td>Poly / Mono / Legato</td>
-<td>Poly</td>
-<td>Voicing</td>
-</tr>
-<tr>
-<td><strong>Glide</strong></td>
-<td>0 to 2000 ms</td>
-<td>0</td>
-<td>Portamento time (mono and legato only)</td>
-</tr>
-<tr>
-<td><strong>Bend Range</strong></td>
-<td>0 to 24 st</td>
-<td>2</td>
-<td>Pitch-wheel range</td>
-</tr>
-<tr>
-<td><strong>Vel &gt; Amp</strong></td>
-<td>0 to 1</td>
-<td>1</td>
-<td>Velocity to amplitude depth</td>
-</tr>
-<tr>
-<td><strong>Vel &gt; Filter</strong></td>
-<td>0 to 6 oct</td>
-<td>0</td>
-<td>Velocity to filter cutoff depth</td>
-</tr>
-<tr>
-<td><strong>Output</strong></td>
-<td>-60 to 6 dB</td>
-<td>0</td>
-<td>Master output level</td>
-</tr>
-</tbody>
-</table>
+<p>Both envelopes have the same ranges and defaults. The amp envelope shapes each note's level; the filter envelope moves both filters' cutoffs by their <strong>Env Amt</strong>.</p>
+<h2 id="mpe">MPE<a class="headerlink" href="#mpe" title="Permanent link">&para;</a></h2>
+<p>Poly Synth responds to per-note expression, as an MPE clip plays it (see <a href="../../panels/piano-roll/#pitch-glides-mpe">Pitch Glides</a>):</p>
+<ul>
+<li><strong>Pitch bend</strong> on a member channel (2 to 16) moves only the note on that channel, at a fixed range of ±48 semitones.</li>
+<li><strong>Timbre</strong> (CC74) moves both filters' cutoffs, up to 3 octaves either way.</li>
+<li><strong>Pressure</strong> lifts the note's level by up to 6 dB.</li>
+</ul>
+<p>The pitch wheel on channel 1 is the ordinary wheel: it moves every note, by <strong>Bend</strong>. A keyboard set to send on any other channel has its wheel read as per-note bend at ±48 semitones, so set it to channel 1 to play with <strong>Bend</strong>.</p>
 <h2 id="macros-modulation-and-presets">Macros, modulation, and presets<a class="headerlink" href="#macros-modulation-and-presets" title="Permanent link">&para;</a></h2>
 <p>Like every MAGDA instrument, Poly Synth lives in the standard device slot, so its parameters can be driven by <a href="../../modulation/macros/">macros</a> and <a href="../../modulation/overview/">modulators</a>, and patches save and recall through the <a href="../../panels/browsers/">preset system</a>.</p>
 <h2 id="ai-sound-design">AI sound design<a class="headerlink" href="#ai-sound-design" title="Permanent link">&para;</a></h2>
@@ -2552,6 +2708,8 @@
     
     
       <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="../../javascripts/site-header.js"></script>
       
     
   </body>

@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/modulation/modulators/">
+        <link rel="canonical" href="https://docs.magda.land/modulation/modulators/">
       
       
         <link rel="prev" href="../overview/">
@@ -19,7 +19,7 @@
         <link rel="next" href="../macros/">
       
       
-      <link rel="icon" href="../../assets/images/magda-lisa.svg">
+      <link rel="icon" href="../../assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
@@ -88,71 +88,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="../../assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              Modulators
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -190,22 +133,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -502,7 +460,7 @@
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -524,51 +482,7 @@
         
   
   <span class="md-ellipsis">
-    Audio Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/plugin-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Plugin Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/ai-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    AI Settings
+    Audio & MIDI
     
   </span>
   
@@ -613,6 +527,50 @@
   
   <span class="md-ellipsis">
     Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI
     
   </span>
   
@@ -742,6 +700,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../arrangement-view/" class="md-nav__link">
         
   
@@ -826,6 +805,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../chord-track/" class="md-nav__link">
         
   
@@ -880,10 +880,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -895,8 +895,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -1006,10 +1006,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" >
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1021,8 +1021,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1194,10 +1194,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" >
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1209,8 +1209,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1254,10 +1254,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" >
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1269,8 +1269,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1288,6 +1288,28 @@
   
   <span class="md-ellipsis">
     Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
     
   </span>
   
@@ -1388,10 +1410,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" >
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1403,8 +1425,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1666,10 +1688,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" checked>
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1681,8 +1703,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -1765,61 +1787,37 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#the-modulator-editor" class="md-nav__link">
+    <span class="md-ellipsis">
+      The Modulator Editor
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#lfo" class="md-nav__link">
     <span class="md-ellipsis">
       LFO
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="LFO">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#waveforms" class="md-nav__link">
-    <span class="md-ellipsis">
-      Waveforms
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#parameters" class="md-nav__link">
-    <span class="md-ellipsis">
-      Parameters
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
-  <a href="#bezier-curve-shape" class="md-nav__link">
+  <a href="#curve" class="md-nav__link">
     <span class="md-ellipsis">
-      Bezier Curve Shape
+      Curve
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Bezier Curve Shape">
+    <nav class="md-nav" aria-label="Curve">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#editing" class="md-nav__link">
     <span class="md-ellipsis">
       Editing
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#parameters_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      Parameters
     </span>
   </a>
   
@@ -1850,7 +1848,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#parameters_2" class="md-nav__link">
+  <a href="#parameters" class="md-nav__link">
     <span class="md-ellipsis">
       Parameters
     </span>
@@ -1874,7 +1872,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#parameters_3" class="md-nav__link">
+  <a href="#parameters_1" class="md-nav__link">
     <span class="md-ellipsis">
       Parameters
     </span>
@@ -1898,16 +1896,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#audio-source" class="md-nav__link">
-    <span class="md-ellipsis">
-      Audio source
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#parameters_4" class="md-nav__link">
+  <a href="#parameters_2" class="md-nav__link">
     <span class="md-ellipsis">
       Parameters
     </span>
@@ -1919,6 +1908,15 @@
   <a href="#detection-filters" class="md-nav__link">
     <span class="md-ellipsis">
       Detection filters
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audio-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      Audio source
     </span>
   </a>
   
@@ -2071,10 +2069,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" >
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -2086,8 +2084,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -2276,6 +2274,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/troubleshooting/" class="md-nav__link">
         
   
@@ -2325,61 +2345,37 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#the-modulator-editor" class="md-nav__link">
+    <span class="md-ellipsis">
+      The Modulator Editor
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#lfo" class="md-nav__link">
     <span class="md-ellipsis">
       LFO
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="LFO">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#waveforms" class="md-nav__link">
-    <span class="md-ellipsis">
-      Waveforms
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#parameters" class="md-nav__link">
-    <span class="md-ellipsis">
-      Parameters
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
-  <a href="#bezier-curve-shape" class="md-nav__link">
+  <a href="#curve" class="md-nav__link">
     <span class="md-ellipsis">
-      Bezier Curve Shape
+      Curve
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Bezier Curve Shape">
+    <nav class="md-nav" aria-label="Curve">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#editing" class="md-nav__link">
     <span class="md-ellipsis">
       Editing
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#parameters_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      Parameters
     </span>
   </a>
   
@@ -2410,7 +2406,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#parameters_2" class="md-nav__link">
+  <a href="#parameters" class="md-nav__link">
     <span class="md-ellipsis">
       Parameters
     </span>
@@ -2434,7 +2430,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#parameters_3" class="md-nav__link">
+  <a href="#parameters_1" class="md-nav__link">
     <span class="md-ellipsis">
       Parameters
     </span>
@@ -2458,16 +2454,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#audio-source" class="md-nav__link">
-    <span class="md-ellipsis">
-      Audio source
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#parameters_4" class="md-nav__link">
+  <a href="#parameters_2" class="md-nav__link">
     <span class="md-ellipsis">
       Parameters
     </span>
@@ -2479,6 +2466,15 @@
   <a href="#detection-filters" class="md-nav__link">
     <span class="md-ellipsis">
       Detection filters
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audio-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      Audio source
     </span>
   </a>
   
@@ -2509,92 +2505,91 @@
 
 
 <h1 id="modulators">Modulators<a class="headerlink" href="#modulators" title="Permanent link">&para;</a></h1>
-<p>Modulators are signal generators that modulate device parameters over time. Each track has a global modulator panel that can target any parameter on any device in the track's chain.</p>
-<p>Modulators are managed from the modulation panel at the bottom of the track chain. Click the <strong>+</strong> button to add a new modulator. The panel shows active modulators alongside the macro knobs.</p>
-<p>Double-click a modulator's name label to rename it (for example "Filter Wobble" or "Swell"), the same way you rename a <a href="../macros/#naming">macro</a>. Custom names make a track with several LFOs and envelopes far easier to read.</p>
+<p>Modulators are signal generators that modulate device parameters over time. A track's modulators can target any parameter on any device in the track's chain; racks and devices have modulators of their own too (see <a href="../overview/#hierarchical-scope">Hierarchical Scope</a>).</p>
+<p>Open a track's modulators with the <strong>Track modulators</strong> button in the track chain header, or a rack's or device's with the <strong>Mods</strong> button in its header. They also appear in the <a href="../../panels/inspector/#mods-and-macros">Inspector</a>. Click <strong>+ Add mod</strong> in the next free slot and pick <strong>LFO</strong>, <strong>Curve</strong>, <strong>Envelope</strong>, <strong>Random</strong>, or <strong>Follower</strong>. Modulators fill the slots in order; click <strong>+</strong> in the panel's header to add another page of slots, and right-click the header to <strong>Remove last page</strong>.</p>
 <p><img alt="Global Macros &amp; Modulators" src="../../assets/images/modulation/global-macros-mods.png" width="500" /></p>
+<p>Each card shows the modulator's shape, a short type tag (such as SINE, ADSR, S&amp;H, or FOL), its rate or time, and how many links it has. The name appears on the card only while you rename it.</p>
+<p>Right-click a modulator's card for <strong>Rename</strong>, <strong>Show Automation Lane</strong>, <strong>Disable</strong> / <strong>Enable</strong>, the <strong>Link to Parameter...</strong> submenus, <strong>Unlink</strong> for each of its links, <strong>Clear All Links</strong>, <strong>Learn MIDI</strong> (which maps a controller to the modulator's rate), and <strong>Remove</strong>. Custom names such as "Filter Wobble" or "Swell" make a track with several LFOs and envelopes far easier to read.</p>
+<h2 id="the-modulator-editor">The Modulator Editor<a class="headerlink" href="#the-modulator-editor" title="Permanent link">&para;</a></h2>
+<p>Click a modulator's card to open its editor beside the panel; click the card again to close it. The editor has two tabs at the top:</p>
+<ul>
+<li><strong>The modulator's name</strong> — the first tab, over the modulator's controls. Double-click the name to rename it.</li>
+<li><strong>Links</strong> — how many parameters the modulator drives, over a list of its links. Each row shows the target parameter, the link amount (drag across the row to change it, from −100% to +100%), <strong>BI</strong> / <strong>UN</strong> for bipolar or unipolar, <strong>ON</strong> / <strong>OFF</strong>, and <strong>x</strong> to remove the link.</li>
+</ul>
+<p>Every modulator except the follower ends on its <strong>TRIG</strong> row: <strong>Free</strong> (runs continuously), <strong>Transport</strong> (restarts when playback starts), <strong>MIDI</strong> (restarts on incoming notes), or <strong>Audio</strong> (restarts on incoming audio). For <strong>MIDI</strong> and <strong>Audio</strong> on a device or rack modulator, the settings button beside it picks what triggers it: the track itself or another track.</p>
+<p>The LFO, Curve, and Random modulators share a rate row: the <strong>Free</strong> / <strong>Sync</strong> button switches between a rate in Hz and a tempo-synced division (such as 1 Bar, 1/4, or 1/8), and the field beside it sets the value.</p>
 <h2 id="lfo">LFO<a class="headerlink" href="#lfo" title="Permanent link">&para;</a></h2>
 <p><img alt="LFO Editor" src="../../assets/images/modulation/lfo-editor.png" /></p>
-<p>A low-frequency oscillator that cycles through a waveform shape.</p>
-<h3 id="waveforms">Waveforms<a class="headerlink" href="#waveforms" title="Permanent link">&para;</a></h3>
+<p>A low-frequency oscillator that cycles through a waveform shape. Pick the shape from the row of icons at the top:</p>
 <ul>
 <li>Sine</li>
 <li>Triangle</li>
-<li>Sawtooth</li>
 <li>Square</li>
-<li>Random (Sample &amp; Hold)</li>
+<li>Saw Up</li>
+<li>Saw Down</li>
 </ul>
-<h3 id="parameters">Parameters<a class="headerlink" href="#parameters" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Rate</strong> — Speed of the LFO cycle (Hz or synced to tempo)</li>
-<li><strong>Depth</strong> — Modulation amount</li>
-<li><strong>Phase offset</strong> — Starting point in the waveform cycle (0°–360°)</li>
-<li><strong>Tempo sync</strong> — Lock the rate to musical divisions (1/4, 1/8, 1/16, etc.)</li>
-<li><strong>One-shot</strong> — Play the waveform once instead of looping</li>
-</ul>
-<h2 id="bezier-curve-shape">Bezier Curve Shape<a class="headerlink" href="#bezier-curve-shape" title="Permanent link">&para;</a></h2>
-<p>A freely editable modulation shape drawn with bezier curves. Use this to create complex, custom modulation patterns that go beyond standard waveforms.</p>
+<p>Below the shape display sit the rate row and the trigger. With the <strong>Audio</strong> trigger, <strong>Atk</strong> and <strong>Rel</strong> set how the trigger follows the incoming level.</p>
+<h2 id="curve">Curve<a class="headerlink" href="#curve" title="Permanent link">&para;</a></h2>
+<p>A freely editable modulation shape. Use it to create complex, custom modulation patterns that go beyond standard waveforms.</p>
 <p><img alt="Curve Editor" src="../../assets/images/modulation/curve-editor.png" /></p>
+<p>The row at the top holds a <strong>Preset</strong> menu of starting shapes (Triangle, Sine, Ramp Up, Ramp Down, S-Curve, Exp, Log) and a button that opens the curve in its own, larger editor window. Below the curve sit the rate row and the trigger.</p>
 <h3 id="editing">Editing<a class="headerlink" href="#editing" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Add a point</strong> — Double-click on the curve</li>
+<li><strong>Add a point</strong> — Double-click an empty spot on the curve</li>
 <li><strong>Move a point</strong> — Drag it to a new position</li>
-<li><strong>Adjust curvature</strong> — Drag the bezier handles to shape the curve between points</li>
+<li><strong>Adjust curvature</strong> — Drag the handle between two points to bend that segment; double-click the handle to straighten it</li>
 <li><strong>Delete a point</strong> — Double-click an existing point</li>
 </ul>
-<h3 id="parameters_1">Parameters<a class="headerlink" href="#parameters_1" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Rate</strong> — Speed of the curve cycle (Hz or synced to tempo)</li>
-<li><strong>Depth</strong> — Modulation amount</li>
-<li><strong>Tempo sync</strong> — Lock the rate to musical divisions</li>
-</ul>
+<p>The editor window adds a <strong>Loop</strong> / <strong>1-Shot</strong> switch, so the curve can play once instead of looping, along with grid and snap settings and buttons to save the curve as a preset or reset it.</p>
 <h2 id="random">Random<a class="headerlink" href="#random" title="Permanent link">&para;</a></h2>
 <p><img alt="Random Modulator" src="../../assets/images/modulation/random-modulator.png" /></p>
-<p>A randomised modulation source. Unlike the LFO's Sample &amp; Hold waveform, the Random modulator has its own shaping and smoothing controls and can run as stepped random values or continuous noise. The slider at the top sets the output amount.</p>
+<p>A randomised modulation source with its own shaping and smoothing controls. It runs as stepped random values or as continuous noise.</p>
 <h3 id="type">Type<a class="headerlink" href="#type" title="Permanent link">&para;</a></h3>
-<p>The dropdown selects the source:</p>
+<p>The <strong>Random</strong> / <strong>Noise</strong> switch at the top selects the source:</p>
 <ul>
 <li><strong>Random</strong> — Generates a new random value each cycle (sample &amp; hold)</li>
 <li><strong>Noise</strong> — Continuous random signal</li>
 </ul>
-<h3 id="parameters_2">Parameters<a class="headerlink" href="#parameters_2" title="Permanent link">&para;</a></h3>
+<h3 id="parameters">Parameters<a class="headerlink" href="#parameters" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Shp</strong> (Shape) — Biases the distribution of the random values</li>
 <li><strong>Smo</strong> (Smooth) — Smooths the transitions between values (0 = hard steps, 1 = gliding)</li>
 <li><strong>Stp</strong> (Step Depth) — Amount of stepped variation between values</li>
-<li><strong>Rate</strong> — The row below sets the speed. The <strong>Free</strong> button toggles between free-run (rate in Hz) and tempo-synced (a musical division such as 1 Bar, 1/4, 1/8). The field beside it sets the value.</li>
-<li><strong>Trigger</strong> — How the modulator is (re)started: <strong>Free</strong>, <strong>Transport</strong>, or <strong>MIDI</strong>.</li>
+<li><strong>Rate</strong> — The rate row sets the speed, free-running or tempo-synced</li>
+<li><strong>TRIG</strong> — How the modulator is (re)started</li>
 </ul>
 <h2 id="envelope-adsr">Envelope (ADSR)<a class="headerlink" href="#envelope-adsr" title="Permanent link">&para;</a></h2>
 <p><img alt="Envelope Modulator" src="../../assets/images/modulation/envelope-modulator.png" /></p>
-<p>An ADSR envelope used as a modulation source. Triggered by playback or incoming MIDI notes, it shapes a parameter through attack, decay, sustain, and release stages. The display at the top shows the envelope shape and its current state (for example <em>Idle</em>).</p>
-<h3 id="parameters_3">Parameters<a class="headerlink" href="#parameters_3" title="Permanent link">&para;</a></h3>
+<p>An ADSR envelope used as a modulation source. Triggered by playback or incoming MIDI notes, it shapes a parameter through attack, decay, sustain, and release stages. The display at the top shows the envelope shape and its current state.</p>
+<h3 id="parameters_1">Parameters<a class="headerlink" href="#parameters_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>A</strong> (Attack) — Rise time to peak (ms)</li>
 <li><strong>D</strong> (Decay) — Fall time to the sustain level (ms)</li>
 <li><strong>S</strong> (Sustain) — Held level while gated (0–1)</li>
 <li><strong>R</strong> (Release) — Fall time after the gate releases (ms)</li>
 <li><strong>A crv / D crv / R crv</strong> — Bend each stage from logarithmic to exponential</li>
-<li><strong>Trigger</strong> — What starts the envelope: <strong>Free</strong> (cycles continuously), <strong>Transport</strong> (starts on play), or <strong>MIDI</strong> (gated by note on/off). The gear button beside it holds tempo-sync options for the stage times.</li>
+<li><strong>TRIG</strong> — What starts the envelope: <strong>Free</strong> (cycles continuously), <strong>Transport</strong> (starts on play), <strong>MIDI</strong> (gated by note on/off), or <strong>Audio</strong></li>
 </ul>
 <h2 id="envelope-follower">Envelope Follower<a class="headerlink" href="#envelope-follower" title="Permanent link">&para;</a></h2>
 <p><img alt="Envelope Follower" src="../../assets/images/modulation/envelope-follower.png" /></p>
-<p>Follows the amplitude of an audio signal and uses it as a modulation source. Use it to make one parameter react to the dynamics of a track, for example ducking a pad from a kick drum. The bar at the top shows the live follower output.</p>
-<h3 id="audio-source">Audio source<a class="headerlink" href="#audio-source" title="Permanent link">&para;</a></h3>
-<p>Click the <strong>Audio Source</strong> button to choose what the follower listens to — the track's own audio, or another track's audio routed in as a sidechain.</p>
-<h3 id="parameters_4">Parameters<a class="headerlink" href="#parameters_4" title="Permanent link">&para;</a></h3>
+<p>Follows the amplitude of an audio signal and uses it as a modulation source. Use it to make one parameter react to the dynamics of a track, for example ducking a pad from a kick drum. The display at the top shows the live follower output.</p>
+<h3 id="parameters_2">Parameters<a class="headerlink" href="#parameters_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Gain</strong> — Input gain into the detector (dB)</li>
-<li><strong>A</strong> (Attack) — How fast the follower rises (ms)</li>
-<li><strong>H</strong> (Hold) — Time held at the peak before releasing (ms)</li>
-<li><strong>R</strong> (Release) — How fast the follower falls (ms)</li>
+<li><strong>A</strong> (Attack) — How fast the follower rises</li>
+<li><strong>H</strong> (Hold) — Time held at the peak before releasing</li>
+<li><strong>R</strong> (Release) — How fast the follower falls</li>
 </ul>
+<p>Times from one second up read in seconds.</p>
 <h3 id="detection-filters">Detection filters<a class="headerlink" href="#detection-filters" title="Permanent link">&para;</a></h3>
 <p>Band-limit what the follower reacts to so it tracks only part of the spectrum:</p>
 <ul>
-<li><strong>HP</strong> — Toggle on and set the cutoff (Hz) to ignore low frequencies</li>
-<li><strong>LP</strong> — Toggle on and set the cutoff (Hz) to ignore high frequencies</li>
+<li><strong>HP</strong> — Toggle on and set the cutoff to ignore low frequencies</li>
+<li><strong>LP</strong> — Toggle on and set the cutoff to ignore high frequencies</li>
 </ul>
+<p>Cutoffs from 1 kHz up read in kHz.</p>
+<h3 id="audio-source">Audio source<a class="headerlink" href="#audio-source" title="Permanent link">&para;</a></h3>
+<p>Click the <strong>Audio Source</strong> button at the bottom to choose what the follower listens to — the track's own audio, or another track's audio routed in as a sidechain.</p>
 
 
 
@@ -2676,6 +2671,8 @@
     
     
       <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="../../javascripts/site-header.js"></script>
       
     
   </body>

@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/devices/fm0/">
+        <link rel="canonical" href="https://docs.magda.land/devices/fm0/">
       
       
         <link rel="prev" href="../poly-synth/">
@@ -19,7 +19,7 @@
         <link rel="next" href="../drum-kit/">
       
       
-      <link rel="icon" href="../../assets/images/magda-lisa.svg">
+      <link rel="icon" href="../../assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
@@ -88,71 +88,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="../../assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              FM0
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -190,22 +133,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -502,7 +460,7 @@
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -524,51 +482,7 @@
         
   
   <span class="md-ellipsis">
-    Audio Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/plugin-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Plugin Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/ai-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    AI Settings
+    Audio & MIDI
     
   </span>
   
@@ -613,6 +527,50 @@
   
   <span class="md-ellipsis">
     Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI
     
   </span>
   
@@ -742,6 +700,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../arrangement-view/" class="md-nav__link">
         
   
@@ -826,6 +805,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../chord-track/" class="md-nav__link">
         
   
@@ -880,10 +880,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -895,8 +895,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -1006,10 +1006,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" >
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1021,8 +1021,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1196,10 +1196,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" checked>
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1211,8 +1211,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1256,10 +1256,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" >
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1271,8 +1271,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1290,6 +1290,28 @@
   
   <span class="md-ellipsis">
     Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
     
   </span>
   
@@ -1392,10 +1414,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" checked>
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1407,8 +1429,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1491,9 +1513,9 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#modulation-matrix" class="md-nav__link">
+  <a href="#faceplate" class="md-nav__link">
     <span class="md-ellipsis">
-      Modulation matrix
+      Faceplate
     </span>
   </a>
   
@@ -1509,9 +1531,60 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#amp-voice-and-velocity" class="md-nav__link">
+  <a href="#modulation-matrix" class="md-nav__link">
     <span class="md-ellipsis">
-      Amp, voice, and velocity
+      Modulation matrix
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      Filter
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Filter">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-filter-in-the-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      The filter in the matrix
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#amplitude-envelope" class="md-nav__link">
+    <span class="md-ellipsis">
+      Amplitude envelope
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#voice" class="md-nav__link">
+    <span class="md-ellipsis">
+      Voice
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mpe" class="md-nav__link">
+    <span class="md-ellipsis">
+      MPE
     </span>
   </a>
   
@@ -1754,10 +1827,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1769,8 +1842,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -1953,10 +2026,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" >
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1968,8 +2041,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -2158,6 +2231,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/troubleshooting/" class="md-nav__link">
         
   
@@ -2207,9 +2302,9 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#modulation-matrix" class="md-nav__link">
+  <a href="#faceplate" class="md-nav__link">
     <span class="md-ellipsis">
-      Modulation matrix
+      Faceplate
     </span>
   </a>
   
@@ -2225,9 +2320,60 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#amp-voice-and-velocity" class="md-nav__link">
+  <a href="#modulation-matrix" class="md-nav__link">
     <span class="md-ellipsis">
-      Amp, voice, and velocity
+      Modulation matrix
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      Filter
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Filter">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-filter-in-the-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      The filter in the matrix
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#amplitude-envelope" class="md-nav__link">
+    <span class="md-ellipsis">
+      Amplitude envelope
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#voice" class="md-nav__link">
+    <span class="md-ellipsis">
+      Voice
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mpe" class="md-nav__link">
+    <span class="md-ellipsis">
+      MPE
     </span>
   </a>
   
@@ -2271,30 +2417,17 @@
 
 
 <h1 id="fm0">FM0<a class="headerlink" href="#fm0" title="Permanent link">&para;</a></h1>
-<p>FM0 is a 16-voice, four-operator FM synthesizer built into MAGDA. Every operator can phase-modulate any operator through a full 4x4 modulation matrix, including self-feedback on the diagonal. Each operator has its own ratio, level, and waveform, feeding a shared amplitude ADSR.</p>
-<h2 id="modulation-matrix">Modulation matrix<a class="headerlink" href="#modulation-matrix" title="Permanent link">&para;</a></h2>
-<p>The 4x4 matrix routes operator outputs into operator phase inputs. Rows are sources, columns are destinations, so cell <strong>M2&gt;1</strong> is "operator 2 modulates operator 1". The diagonal cells (M1&gt;1, M2&gt;2, M3&gt;3, M4&gt;4) are self-feedback.</p>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Range</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>M1&gt;1 ... M4&gt;4</strong></td>
-<td>0 to 8</td>
-<td>0 (M2&gt;1 = 2)</td>
-<td>Modulation amount for each matrix cell</td>
-</tr>
-</tbody>
-</table>
-<p>A default patch has operator 2 modulating operator 1, the classic two-operator FM voice. Raise the diagonal for brighter, more aggressive timbres.</p>
+<p>FM0 is a 16-voice, four-operator FM synthesizer built into MAGDA. Every operator can phase-modulate any operator through a full 4x4 modulation matrix, including self-feedback on the diagonal. Each operator has its own ratio, level, and waveform, feeding a shared amplitude ADSR. An optional filter can sit after the operators or join the matrix as a fifth node. It plays in poly, mono, or legato modes.</p>
+<h2 id="faceplate">Faceplate<a class="headerlink" href="#faceplate" title="Permanent link">&para;</a></h2>
+<p>The faceplate has three panels:</p>
+<ul>
+<li><strong>OPS</strong>, <strong>AMP ENV</strong>, and <strong>VOICE</strong> - three tabs sharing the first panel: the operators, the amplitude envelope, and the performance controls</li>
+<li><strong>MATRIX</strong> - the modulation amounts</li>
+<li><strong>FILTER</strong> and <strong>FILTER ENV</strong> - the filter and its envelope</li>
+</ul>
+<p>The sidebar's <strong>Show the operators</strong> toggle hides the first panel and <strong>Show the matrix</strong> hides the matrix, to make the device narrower.</p>
 <h2 id="operators">Operators<a class="headerlink" href="#operators" title="Permanent link">&para;</a></h2>
-<p>Each of the four operators has these controls.</p>
+<p>The <strong>OPS</strong> tab has a row per operator, under the column heads <strong>WAVE</strong>, <strong>RATIO</strong>, <strong>LEVEL</strong>, and <strong>RST</strong>.</p>
 <table>
 <thead>
 <tr>
@@ -2319,14 +2452,16 @@
 </tr>
 <tr>
 <td><strong>Wave</strong></td>
-<td>Sine / Tri / Saw / Square / Noise</td>
+<td>Sine / Triangle / Saw / Square / Noise</td>
 <td>Sine</td>
 <td>Operator waveform</td>
 </tr>
 </tbody>
 </table>
-<p>Each operator also has an <strong>Enable</strong> toggle (on by default; disabling stops it both sounding and modulating) and a <strong>Reset</strong> toggle that resets its phase on note-on.</p>
-<h2 id="amp-voice-and-velocity">Amp, voice, and velocity<a class="headerlink" href="#amp-voice-and-velocity" title="Permanent link">&para;</a></h2>
+<p>Click the waveform's icon to pick another wave from a menu. The dot beside it turns the operator on and off (on by default); a disabled operator stops both sounding and modulating, and its row greys out. Tick <strong>RST</strong> to reset the operator's phase on note-on.</p>
+<p>The last row, <strong>Filter</strong>, holds the filter's <strong>F Level</strong> (see <a href="#the-filter-in-the-matrix">The filter in the matrix</a>).</p>
+<h2 id="modulation-matrix">Modulation matrix<a class="headerlink" href="#modulation-matrix" title="Permanent link">&para;</a></h2>
+<p>The <strong>MATRIX</strong> panel routes operator outputs into operator phase inputs. Rows are sources, labelled <strong>1</strong> to <strong>4</strong>, and columns are destinations, labelled <strong>→1</strong> to <strong>→4</strong>. The cell in row 2, column <strong>→1</strong> is "operator 2 modulates operator 1"; its parameter is named <strong>M21</strong>. The diagonal cells (M11, M22, M33, M44) are self-feedback.</p>
 <table>
 <thead>
 <tr>
@@ -2338,43 +2473,165 @@
 </thead>
 <tbody>
 <tr>
-<td><strong>Amp Attack</strong></td>
+<td><strong>M11 ... M44</strong></td>
+<td>0 to 8</td>
+<td>0 (M21 = 2)</td>
+<td>Modulation amount for each matrix cell</td>
+</tr>
+</tbody>
+</table>
+<p>A default patch has operator 2 modulating operator 1, the classic two-operator FM voice. Raise the diagonal for brighter, more aggressive timbres.</p>
+<p>The extra row and column marked <strong>F</strong>, in blue, belong to the filter, and act only while it sits in the matrix.</p>
+<h2 id="filter">Filter<a class="headerlink" href="#filter" title="Permanent link">&para;</a></h2>
+<p>The filter is off by default. Turn it on with the dot on the <strong>FILTER</strong> tab. Switching it on or off, or changing its engine, type, or poles, while a note plays fades rather than clicking.</p>
+<p>The icons at the right of the tabs choose its position: on the output, where it filters the operators' mix, or in the matrix (see below). Under them, pick the engine, <strong>SVF</strong>, <strong>Ladder</strong>, or <strong>Comb</strong>. The SVF adds a type, <strong>LP</strong>, <strong>HP</strong>, <strong>BP</strong>, or <strong>Notch</strong>, picked from icons, and <strong>Poles</strong> (2, 4, or 6) for its steepness. The comb has <strong>+</strong> and <strong>-</strong> modes instead. A response curve sits beside the tiles.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Range</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cutoff</strong></td>
+<td>20 Hz to 20 kHz (log)</td>
+<td>2000</td>
+<td>Filter frequency</td>
+</tr>
+<tr>
+<td><strong>Reso</strong></td>
+<td>0 to 1</td>
+<td>0.3</td>
+<td>Resonance</td>
+</tr>
+<tr>
+<td><strong>Drive</strong></td>
+<td>0 to 1</td>
+<td>0</td>
+<td>Pre-filter saturation</td>
+</tr>
+<tr>
+<td><strong>Key</strong></td>
+<td>0 to 1</td>
+<td>0</td>
+<td>Octaves of cutoff per octave of the played note, around middle C</td>
+</tr>
+<tr>
+<td><strong>Env Amt</strong></td>
+<td>-4 to 4 oct</td>
+<td>0</td>
+<td>Filter envelope depth on cutoff (bipolar)</td>
+</tr>
+<tr>
+<td><strong>Vel&gt;Cut</strong></td>
+<td>0 to 6 oct</td>
+<td>0</td>
+<td>Velocity to cutoff depth</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>FILTER ENV</strong> tab shows the filter's own ADSR as a graph above four tiles, with the same ranges as the <a href="#amplitude-envelope">amplitude envelope</a> and the same defaults.</p>
+<h3 id="the-filter-in-the-matrix">The filter in the matrix<a class="headerlink" href="#the-filter-in-the-matrix" title="Permanent link">&para;</a></h3>
+<p>In the matrix position the filter becomes a fifth node:</p>
+<ul>
+<li>The <strong>→F</strong> column sends operators into the filter, 0 to 1 each (M1F to M4F).</li>
+<li>The <strong>F</strong> row lets the filter's output phase-modulate the operators, 0 to 8 each like the matrix (MF1 to MF4).</li>
+<li><strong>F Level</strong> (-60 to 6 dB, default 0) adds the filter's output to the mix.</li>
+</ul>
+<p>The <strong>FILTER</strong> tab lists the operators sending to it, such as <em>IN 1 2</em>. In the output position the sends, returns, and <strong>F Level</strong> do nothing.</p>
+<h2 id="amplitude-envelope">Amplitude envelope<a class="headerlink" href="#amplitude-envelope" title="Permanent link">&para;</a></h2>
+<p>The <strong>AMP ENV</strong> tab shows the envelope as a graph above four tiles. Drag the handles on the graph, or edit the tiles.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Range</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Attack</strong></td>
 <td>1 to 2000 ms</td>
 <td>5</td>
 <td>ADSR attack</td>
 </tr>
 <tr>
-<td><strong>Amp Decay</strong></td>
+<td><strong>Decay</strong></td>
 <td>1 to 2000 ms</td>
 <td>300</td>
 <td>ADSR decay</td>
 </tr>
 <tr>
-<td><strong>Amp Sustain</strong></td>
+<td><strong>Sustain</strong></td>
 <td>0 to 1</td>
 <td>0.5</td>
 <td>Sustain level</td>
 </tr>
 <tr>
-<td><strong>Amp Release</strong></td>
+<td><strong>Release</strong></td>
 <td>1 to 4000 ms</td>
 <td>400</td>
 <td>ADSR release</td>
+</tr>
+</tbody>
+</table>
+<h2 id="voice">Voice<a class="headerlink" href="#voice" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Range</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Voice Mode</strong></td>
+<td>Poly / Mono / Legato</td>
+<td>Poly</td>
+<td>Voicing</td>
 </tr>
 <tr>
 <td><strong>Glide</strong></td>
 <td>0 to 2000 ms</td>
 <td>0</td>
-<td>Portamento (mono only; poly forces 0)</td>
+<td>Portamento (mono and legato only)</td>
 </tr>
 <tr>
-<td><strong>Vel Amount</strong></td>
+<td><strong>Bend</strong></td>
+<td>0 to 24 st</td>
+<td>2</td>
+<td>Pitch-wheel range</td>
+</tr>
+<tr>
+<td><strong>Gain</strong></td>
+<td>-24 to 6 dB</td>
+<td>-6</td>
+<td>Output level</td>
+</tr>
+<tr>
+<td><strong>Vel&gt;Amp</strong></td>
 <td>0 to 1</td>
 <td>1</td>
 <td>Velocity sensitivity depth</td>
 </tr>
 </tbody>
 </table>
+<p>The pitch wheel moves every operator together, so the ratios hold.</p>
+<h2 id="mpe">MPE<a class="headerlink" href="#mpe" title="Permanent link">&para;</a></h2>
+<p>FM0 responds to per-note expression, as an MPE clip plays it (see <a href="../../panels/piano-roll/#pitch-glides-mpe">Pitch Glides</a>):</p>
+<ul>
+<li><strong>Pitch bend</strong> on a member channel (2 to 16) moves only the note on that channel, at a fixed range of ±48 semitones.</li>
+<li><strong>Timbre</strong> (CC74) scales the modulation amounts, from half to double.</li>
+<li><strong>Pressure</strong> lifts the note's level by up to 6 dB.</li>
+</ul>
+<p>The pitch wheel on channel 1 is the ordinary wheel: it moves every note, by <strong>Bend</strong>. A keyboard set to send on any other channel has its wheel read as per-note bend at ±48 semitones, so set it to channel 1 to play with <strong>Bend</strong>.</p>
 <h2 id="macros-modulation-and-presets">Macros, modulation, and presets<a class="headerlink" href="#macros-modulation-and-presets" title="Permanent link">&para;</a></h2>
 <p>FM0 sits in the standard device slot, so its parameters accept <a href="../../modulation/macros/">macros</a> and <a href="../../modulation/overview/">modulators</a>, and patches save and recall through the <a href="../../panels/browsers/">preset system</a>.</p>
 <h2 id="ai-sound-design">AI sound design<a class="headerlink" href="#ai-sound-design" title="Permanent link">&para;</a></h2>
@@ -2460,6 +2717,8 @@
     
     
       <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="../../javascripts/site-header.js"></script>
       
     
   </body>

@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/devices/sampler/">
+        <link rel="canonical" href="https://docs.magda.land/devices/sampler/">
       
       
         <link rel="prev" href="../drum-grid/">
@@ -19,7 +19,7 @@
         <link rel="next" href="../faust-instrument/">
       
       
-      <link rel="icon" href="../../assets/images/magda-lisa.svg">
+      <link rel="icon" href="../../assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
@@ -88,71 +88,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="../../assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              Sampler
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -190,22 +133,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -502,7 +460,7 @@
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -524,51 +482,7 @@
         
   
   <span class="md-ellipsis">
-    Audio Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/plugin-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Plugin Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/ai-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    AI Settings
+    Audio & MIDI
     
   </span>
   
@@ -613,6 +527,50 @@
   
   <span class="md-ellipsis">
     Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI
     
   </span>
   
@@ -742,6 +700,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../arrangement-view/" class="md-nav__link">
         
   
@@ -826,6 +805,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../chord-track/" class="md-nav__link">
         
   
@@ -880,10 +880,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -895,8 +895,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -1006,10 +1006,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" >
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1021,8 +1021,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1196,10 +1196,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" checked>
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1211,8 +1211,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1256,10 +1256,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" >
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1271,8 +1271,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1290,6 +1290,28 @@
   
   <span class="md-ellipsis">
     Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
     
   </span>
   
@@ -1392,10 +1414,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" checked>
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1407,8 +1429,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1612,53 +1634,26 @@
         <li class="md-nav__item">
   <a href="#loading-samples" class="md-nav__link">
     <span class="md-ellipsis">
-      Loading Samples
+      Loading samples
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#controls" class="md-nav__link">
+  <a href="#sample-tab" class="md-nav__link">
     <span class="md-ellipsis">
-      Controls
+      Sample tab
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Controls">
+    <nav class="md-nav" aria-label="Sample tab">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#pitch" class="md-nav__link">
+  <a href="#expanding-the-waveform" class="md-nav__link">
     <span class="md-ellipsis">
-      Pitch
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#sample-region" class="md-nav__link">
-    <span class="md-ellipsis">
-      Sample Region
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#adsr-envelope" class="md-nav__link">
-    <span class="md-ellipsis">
-      ADSR Envelope
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#voices" class="md-nav__link">
-    <span class="md-ellipsis">
-      Voices
+      Expanding the waveform
     </span>
   </a>
   
@@ -1666,6 +1661,144 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pitch-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pitch tab
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#filter-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      Filter tab
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#amp-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      Amp tab
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#voice-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      Voice tab
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#zones" class="md-nav__link">
+    <span class="md-ellipsis">
+      Zones
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Zones">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#zone-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      Zone list
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#round-robin" class="md-nav__link">
+    <span class="md-ellipsis">
+      Round robin
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mapping-by-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mapping by name
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#zone-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      Zone map
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#importing-instruments" class="md-nav__link">
+    <span class="md-ellipsis">
+      Importing instruments
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Importing instruments">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sfz" class="md-nav__link">
+    <span class="md-ellipsis">
+      SFZ
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decentsampler" class="md-nav__link">
+    <span class="md-ellipsis">
+      DecentSampler
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sf2-and-sf3" class="md-nav__link">
+    <span class="md-ellipsis">
+      SF2 and SF3
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#macros-modulation-and-presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      Macros, modulation, and presets
+    </span>
+  </a>
   
 </li>
       
@@ -1778,10 +1911,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1793,8 +1926,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -1977,10 +2110,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" >
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1992,8 +2125,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -2182,6 +2315,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/troubleshooting/" class="md-nav__link">
         
   
@@ -2242,53 +2397,26 @@
         <li class="md-nav__item">
   <a href="#loading-samples" class="md-nav__link">
     <span class="md-ellipsis">
-      Loading Samples
+      Loading samples
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#controls" class="md-nav__link">
+  <a href="#sample-tab" class="md-nav__link">
     <span class="md-ellipsis">
-      Controls
+      Sample tab
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Controls">
+    <nav class="md-nav" aria-label="Sample tab">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#pitch" class="md-nav__link">
+  <a href="#expanding-the-waveform" class="md-nav__link">
     <span class="md-ellipsis">
-      Pitch
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#sample-region" class="md-nav__link">
-    <span class="md-ellipsis">
-      Sample Region
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#adsr-envelope" class="md-nav__link">
-    <span class="md-ellipsis">
-      ADSR Envelope
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#voices" class="md-nav__link">
-    <span class="md-ellipsis">
-      Voices
+      Expanding the waveform
     </span>
   </a>
   
@@ -2296,6 +2424,144 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pitch-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pitch tab
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#filter-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      Filter tab
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#amp-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      Amp tab
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#voice-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      Voice tab
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#zones" class="md-nav__link">
+    <span class="md-ellipsis">
+      Zones
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Zones">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#zone-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      Zone list
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#round-robin" class="md-nav__link">
+    <span class="md-ellipsis">
+      Round robin
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mapping-by-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mapping by name
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#zone-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      Zone map
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#importing-instruments" class="md-nav__link">
+    <span class="md-ellipsis">
+      Importing instruments
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Importing instruments">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sfz" class="md-nav__link">
+    <span class="md-ellipsis">
+      SFZ
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decentsampler" class="md-nav__link">
+    <span class="md-ellipsis">
+      DecentSampler
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sf2-and-sf3" class="md-nav__link">
+    <span class="md-ellipsis">
+      SF2 and SF3
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#macros-modulation-and-presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      Macros, modulation, and presets
+    </span>
+  </a>
   
 </li>
       
@@ -2319,39 +2585,276 @@
 
 
 <h1 id="sampler">Sampler<a class="headerlink" href="#sampler" title="Permanent link">&para;</a></h1>
-<p>The Sampler is MAGDA's built-in sample playback instrument with multi-voice support and synthesis controls.</p>
+<p>The Sampler is MAGDA's built-in sample player. It plays one sample chromatically across the keyboard, or a map of zones spread over keys and velocities. Every voice has its own pitch envelope, filter, and amplitude envelope. It also imports SFZ, DecentSampler, and SoundFont (SF2/SF3) instruments.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>Load an audio sample and play it chromatically across the keyboard. The Sampler supports up to 8 simultaneous voices (polyphony).</p>
-<h2 id="loading-samples">Loading Samples<a class="headerlink" href="#loading-samples" title="Permanent link">&para;</a></h2>
+<p>The Sampler has 8 voices. Every zone a note falls into plays on its own voice, so a note that answers two layered zones takes two. When all voices are busy, a playing voice is stolen for the new note.</p>
+<p>The faceplate has four tabs, <strong>Sample</strong>, <strong>Pitch</strong>, <strong>Filter</strong>, and <strong>Amp</strong>, each a plot with its controls beside it. The <strong>Show the zones</strong> toggle in the device's sidebar opens a left panel with two tabs: <strong>ZONES</strong>, the zone list, and <strong>VOICE</strong>.</p>
+<h2 id="loading-samples">Loading samples<a class="headerlink" href="#loading-samples" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Drag an audio file from the Media Explorer onto the Sampler device</li>
-<li>Or click the file browser button within the Sampler UI to select a file</li>
+<li>Drag an audio file from the Media Explorer or your file manager onto the Sampler.</li>
+<li>Or click the empty waveform area, which shows a <strong>+</strong> and <em>Drop a sample or click to load</em>, to open a file chooser. It accepts WAV, AIFF, FLAC, Ogg, and MP3 files, and the instrument formats described under <a href="#importing-instruments">Importing instruments</a>.</li>
 </ul>
-<h2 id="controls">Controls<a class="headerlink" href="#controls" title="Permanent link">&para;</a></h2>
-<h3 id="pitch">Pitch<a class="headerlink" href="#pitch" title="Permanent link">&para;</a></h3>
+<p>Once a sample is loaded, a strip over the waveform shows its name, its <strong>ROOT</strong> note, and a folder button that loads another. The root note comes from the file's metadata when it has one, and is C3 (note 60) otherwise. Drag or type in the root box to change it; it reads note names such as <code>C3</code>, <code>F#2</code>, or <code>Bb1</code>.</p>
+<p>Dropping one sample on the device replaces the current one. Dropping several files, or a folder, builds a zone map from them (see <a href="#mapping-by-name">Mapping by name</a>). Choosing several files in the file chooser does the same.</p>
+<h2 id="sample-tab">Sample tab<a class="headerlink" href="#sample-tab" title="Permanent link">&para;</a></h2>
+<p>The waveform draws the way an audio clip does, one lane per channel. A ruler runs along the top in seconds; right-click it to switch to samples. Use the scroll bar underneath to zoom and scroll.</p>
+<p>The <strong>START</strong>, <strong>END</strong>, <strong>LOOP IN</strong>, and <strong>LOOP OUT</strong> boxes beside the waveform set the playback region in frames. Type a value, or click the arrows to step one frame at a time. You can also drag the markers on the waveform.</p>
+<p>The <strong>loop</strong> switch beside the tabs turns looping on. While it is on, it lights, a held note repeats the stretch between the loop markers, and the waveform shows the loop region and its markers. While it is off, the waveform shows the start and end markers, and <strong>LOOP IN</strong> and <strong>LOOP OUT</strong> are greyed out and locked.</p>
+<h3 id="expanding-the-waveform">Expanding the waveform<a class="headerlink" href="#expanding-the-waveform" title="Permanent link">&para;</a></h3>
+<p>The expand button beside the loop switch (<em>Expand into the arrangement</em>) opens the waveform on its own across the arrangement area, with its ruler, scroll bar, and markers. While it is out, its place on the device reads <em>The waveform is in the arrangement</em>, and the Pitch, Filter, and Amp tabs stay usable. Click the collapse button in the expanded view, or press <span class="keys"><kbd class="key-escape">Esc</kbd></span>, to put it back.</p>
+<p>The expand button in the device header opens the <a href="#zone-map">zone map</a> over the waveform instead. Only one is ever out: clicking the other button swaps them.</p>
+<h2 id="pitch-tab">Pitch tab<a class="headerlink" href="#pitch-tab" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Range</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Pitch</strong></td>
+<td>-24 to 24 st</td>
+<td>0</td>
+<td>Transpose in semitones</td>
+</tr>
+<tr>
+<td><strong>Fine</strong></td>
+<td>-100 to 100 cents</td>
+<td>0</td>
+<td>Detune in cents</td>
+</tr>
+<tr>
+<td><strong>Env</strong></td>
+<td>-48 to 48 st</td>
+<td>0</td>
+<td>Pitch envelope depth</td>
+</tr>
+<tr>
+<td><strong>Attack</strong></td>
+<td>1 ms to 5 s</td>
+<td>1 ms</td>
+<td>Pitch envelope attack</td>
+</tr>
+<tr>
+<td><strong>Decay</strong></td>
+<td>1 ms to 5 s</td>
+<td>200 ms</td>
+<td>Pitch envelope decay</td>
+</tr>
+<tr>
+<td><strong>Sustain</strong></td>
+<td>0 to 100%</td>
+<td>0%</td>
+<td>Pitch envelope sustain level</td>
+</tr>
+<tr>
+<td><strong>Release</strong></td>
+<td>1 ms to 10 s</td>
+<td>100 ms</td>
+<td>Pitch envelope release</td>
+</tr>
+</tbody>
+</table>
+<p>The pitch envelope bends each note by up to <strong>Env</strong> semitones, for drum thumps, risers, and plucks from a single sample. A negative depth bends the note down, and the plot hangs the shape from the top. At 0 the envelope does nothing. Drag the handles on the plot to shape it.</p>
+<h2 id="filter-tab">Filter tab<a class="headerlink" href="#filter-tab" title="Permanent link">&para;</a></h2>
+<p>Each voice runs its own filter. Pick the engine from the dropdown in the tab's heading: <strong>Off</strong>, <strong>SVF</strong>, <strong>Ladder</strong>, <strong>Korg 35</strong>, <strong>Oberheim</strong>, <strong>Sallen-Key</strong>, <strong>Diode</strong>, or <strong>Comb</strong>. It starts <strong>Off</strong>, and the other controls dim until you choose one.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Range</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Mode</strong></td>
+<td>Depends on the engine</td>
+<td>LP</td>
+<td>Filter response, picked from icons</td>
+</tr>
+<tr>
+<td><strong>Poles</strong></td>
+<td>2 / 4 / 6</td>
+<td>2</td>
+<td>SVF steepness</td>
+</tr>
+<tr>
+<td><strong>Cutoff</strong></td>
+<td>20 Hz to 20 kHz</td>
+<td>1 kHz</td>
+<td>Filter frequency</td>
+</tr>
+<tr>
+<td><strong>Res</strong></td>
+<td>0 to 100%</td>
+<td>0%</td>
+<td>Resonance</td>
+</tr>
+<tr>
+<td><strong>Key</strong></td>
+<td>0 to 100%</td>
+<td>0%</td>
+<td>How far the cutoff follows the played note</td>
+</tr>
+<tr>
+<td><strong>Vel</strong></td>
+<td>0 to 100%</td>
+<td>0%</td>
+<td>How far velocity opens the cutoff</td>
+</tr>
+<tr>
+<td><strong>Env</strong></td>
+<td>-72 to 72 st</td>
+<td>0</td>
+<td>Filter envelope depth</td>
+</tr>
+<tr>
+<td><strong>Attack</strong></td>
+<td>1 ms to 5 s</td>
+<td>1 ms</td>
+<td>Filter envelope attack</td>
+</tr>
+<tr>
+<td><strong>Decay</strong></td>
+<td>1 ms to 5 s</td>
+<td>300 ms</td>
+<td>Filter envelope decay</td>
+</tr>
+<tr>
+<td><strong>Sustain</strong></td>
+<td>0 to 100%</td>
+<td>0%</td>
+<td>Filter envelope sustain level</td>
+</tr>
+<tr>
+<td><strong>Release</strong></td>
+<td>1 ms to 10 s</td>
+<td>100 ms</td>
+<td>Filter envelope release</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Mode</strong> is a row of icons for the responses the chosen engine has; hover one for its name. The SVF has <strong>LP</strong>, <strong>BP</strong>, <strong>HP</strong>, <strong>Notch</strong>, and <strong>Notch+</strong>, a notch at the cutoff between two resonant peaks half an octave either side. <strong>Comb</strong> has <strong>Comb+</strong> and <strong>Comb-</strong>. <strong>Poles</strong> applies to the SVF's LP, BP, HP, and Notch: more poles cut more steeply, with the resonance on the last stage.</p>
+<h2 id="amp-tab">Amp tab<a class="headerlink" href="#amp-tab" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Range</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Attack</strong></td>
+<td>1 ms to 5 s</td>
+<td>1 ms</td>
+<td>Time to reach full level after a note-on</td>
+</tr>
+<tr>
+<td><strong>Decay</strong></td>
+<td>1 ms to 5 s</td>
+<td>100 ms</td>
+<td>Time to fall from peak to sustain level</td>
+</tr>
+<tr>
+<td><strong>Sustain</strong></td>
+<td>0 to 100%</td>
+<td>100%</td>
+<td>Level held while the note is held</td>
+</tr>
+<tr>
+<td><strong>Release</strong></td>
+<td>1 ms to 10 s</td>
+<td>100 ms</td>
+<td>Time to fade out after note-off</td>
+</tr>
+<tr>
+<td><strong>Level</strong></td>
+<td>-60 to 12 dB</td>
+<td>0</td>
+<td>Output level</td>
+</tr>
+<tr>
+<td><strong>Velocity</strong></td>
+<td>0 to 100%</td>
+<td>100%</td>
+<td>Velocity to amplitude depth</td>
+</tr>
+</tbody>
+</table>
+<h2 id="voice-tab">Voice tab<a class="headerlink" href="#voice-tab" title="Permanent link">&para;</a></h2>
+<p>The <strong>VOICE</strong> tab in the left panel holds two controls:</p>
 <ul>
-<li><strong>Root note</strong> — The MIDI note at which the sample plays at its original pitch</li>
-<li><strong>Pitch</strong> — Transpose in semitones</li>
-<li><strong>Fine-tune</strong> — Detune in cents</li>
+<li><strong>Voice Mode</strong> - <strong>Poly</strong> plays a voice per note. <strong>Mono</strong> plays one note at a time and retriggers on each new note. <strong>Legato</strong> also plays one note at a time, but overlapping notes slide to the new pitch without retriggering. In Mono and Legato, a note plays the first zone that answers it.</li>
+<li><strong>Glide</strong> - portamento time in Mono and Legato, 0 to 2000 ms.</li>
 </ul>
-<h3 id="sample-region">Sample Region<a class="headerlink" href="#sample-region" title="Permanent link">&para;</a></h3>
+<h2 id="zones">Zones<a class="headerlink" href="#zones" title="Permanent link">&para;</a></h2>
+<p>A zone is a sample with its own root note, key and velocity ranges with fades, tune, gain, start and end markers, loop switch, and loop points, and a round-robin switch. Every zone a note's key and velocity fall into plays, scaled by its fades.</p>
+<p>With a single sample, the Sampler is one zone whose markers are device parameters: you can automate <strong>START</strong>, <strong>END</strong>, <strong>LOOP IN</strong>, and <strong>LOOP OUT</strong> and link them to macros and modulators. Once there is a zone list, each zone keeps its own markers, root, and loop, and the faceplate edits the selected zone. Editing the list back down to one zone returns it to the single-sample form.</p>
+<h3 id="zone-list">Zone list<a class="headerlink" href="#zone-list" title="Permanent link">&para;</a></h3>
+<p>The <strong>ZONES</strong> tab lists the zones the way a rack lists its chains. Each row shows the zone's file name, or <em>Zone N</em> while it has no sample. Click a row to select it; the strip over the waveform then reads the file name with <em>zone N of M</em>.</p>
+<p>The list has three views:</p>
+<table>
+<thead>
+<tr>
+<th>View</th>
+<th>What each row shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>MIX</strong></td>
+<td>A gain slider (-48 to 12 dB) and a button to remove the zone</td>
+</tr>
+<tr>
+<td><strong>KEY</strong></td>
+<td>The key range as a bar, with its fades on the shoulders</td>
+</tr>
+<tr>
+<td><strong>VEL</strong></td>
+<td>The velocity range as a bar, and the <strong>RR</strong> switch</td>
+</tr>
+</tbody>
+</table>
+<p>On a range bar, drag an end to set the range, the middle to move it, or a top corner to fade in or out. Double-click for the whole range.</p>
+<p><strong>Add zone</strong> at the foot of the list adds an empty zone. Drop a sample on a zone's row to fill it; the zone keeps its ranges, tune, and gain. Dropping samples elsewhere on the list adds each as a new zone. With a zone list, loading a single sample, by the folder button or by dropping it on the waveform, fills the selected zone instead of replacing the map.</p>
+<h3 id="round-robin">Round robin<a class="headerlink" href="#round-robin" title="Permanent link">&para;</a></h3>
+<p>Zones with <strong>RR</strong> on take turns. Of the RR zones a note falls into, only one plays, and the next note plays the next one. Zones with <strong>RR</strong> off always play. Use it to alternate between several takes of the same hit.</p>
+<h3 id="mapping-by-name">Mapping by name<a class="headerlink" href="#mapping-by-name" title="Permanent link">&para;</a></h3>
+<p>When you drop several samples or a folder, the Sampler reads a note from each file name: a note name such as <code>C3</code>, <code>F#2</code>, or <code>Db-1</code> (C3 is note 60), or a number from 0 to 127. A note name wins over a number. A file with neither uses the root note in its metadata; anything left over is placed one key at a time above the highest mapped note, or from C3 when nothing is.</p>
+<p>Each root's key range reaches halfway to its neighbours, and the lowest and highest zones extend to the ends of the keyboard. Several files on the same note become velocity layers that split the velocity range evenly, in file-name order.</p>
+<h3 id="zone-map">Zone map<a class="headerlink" href="#zone-map" title="Permanent link">&para;</a></h3>
+<p>The device header's expand button opens the zone map over the selected zone's waveform. Along the top are the selected zone's <strong>Root</strong>, <strong>Low key</strong>, <strong>High key</strong>, <strong>Low vel</strong>, <strong>High vel</strong>, <strong>Tune</strong> (-1200 to 1200 cents), and <strong>Gain</strong> (-48 to 12 dB).</p>
+<p>Below them is a grid of key across and velocity up, with each zone drawn as a box and its root as a tick on the box's floor. Drag a box's edges to change its ranges, or its middle to move it; the root moves with it. Right-click a zone for <strong>Remove zone</strong>, or select it and press <span class="keys"><kbd class="key-backspace">Backspace</kbd></span> or <span class="keys"><kbd class="key-delete">Del</kbd></span>.</p>
+<p>Drop one sample on the grid to add a zone on the key under the pointer, covering that key alone. Drop several, or a folder, to map them by name.</p>
+<h2 id="importing-instruments">Importing instruments<a class="headerlink" href="#importing-instruments" title="Permanent link">&para;</a></h2>
+<p>Drop or load an <code>.sfz</code>, <code>.dspreset</code> (DecentSampler), <code>.sf2</code>, or <code>.sf3</code> file to replace the Sampler's zones with the instrument's. The instrument's envelopes and filter go onto the device's own controls. A toast says how many zones came in and lists what the Sampler can't play under <em>Not imported</em>.</p>
+<p>Envelope, filter, and velocity settings the file doesn't set go back to their defaults, so the previous sound's filter doesn't carry over. <strong>Level</strong>, <strong>Pitch</strong>, <strong>Fine</strong>, <strong>Voice Mode</strong>, and <strong>Glide</strong> keep their values.</p>
+<h3 id="sfz">SFZ<a class="headerlink" href="#sfz" title="Permanent link">&para;</a></h3>
+<p>Settings inherit through <code>&lt;control&gt;</code>, <code>&lt;global&gt;</code>, <code>&lt;master&gt;</code>, <code>&lt;group&gt;</code>, and <code>&lt;region&gt;</code>, and <code>#define</code> and <code>#include</code> work. Each region becomes a zone with:</p>
 <ul>
-<li><strong>Start</strong> — Sample playback start point</li>
-<li><strong>End</strong> — Sample playback end point</li>
-<li>Drag the start/end markers in the waveform display to define the playback region</li>
+<li>key and velocity ranges, with crossfades</li>
+<li>root note (<code>pitch_keycenter</code>), tune, and transpose. SFZ calls note 60 C4, where MAGDA calls it C3.</li>
+<li>volume and amplitude, including the global, master, and group volumes</li>
+<li>offset and end, and loop mode. When the SFZ sets no loop, a loop stored in the WAV file plays.</li>
+<li>round robin from <code>seq_length</code></li>
 </ul>
-<h3 id="adsr-envelope">ADSR Envelope<a class="headerlink" href="#adsr-envelope" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Attack</strong> — Time for the sound to reach full level after a note-on</li>
-<li><strong>Decay</strong> — Time to fall from peak to sustain level</li>
-<li><strong>Sustain</strong> — Level held while the note is held</li>
-<li><strong>Release</strong> — Time to fade out after note-off</li>
-</ul>
-<h3 id="voices">Voices<a class="headerlink" href="#voices" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Polyphony</strong> — Up to 8 simultaneous voices</li>
-<li>When the voice limit is reached, the oldest note is stolen</li>
-</ul>
+<p>The amplitude, pitch, and filter envelopes, and the filter type, cutoff, resonance, key tracking, and velocity tracking, are device-wide on the Sampler, so they come from the first region. Regions that set them differently are listed in the toast.</p>
+<p>Layers switched by MIDI CC, MIDI program, or keyswitch keep only what plays at load time: each CC at its <code>set_cc</code> value, program 0, and the default keyswitch. Other features the Sampler can't play are listed in the toast rather than imported, among them LFOs, CC modulation, choke groups, velocity curves, release triggers, and random round robin (which plays in turn).</p>
+<h3 id="decentsampler">DecentSampler<a class="headerlink" href="#decentsampler" title="Permanent link">&para;</a></h3>
+<p>The same settings are read from a <code>.dspreset</code>'s groups and samples. Low-pass, band-pass, high-pass, and notch filter effects map onto the Sampler's filter; other effects are listed as not imported.</p>
+<h3 id="sf2-and-sf3">SF2 and SF3<a class="headerlink" href="#sf2-and-sf3" title="Permanent link">&para;</a></h3>
+<p>A SoundFont holds many presets, so a menu asks which one to import, grouped by bank when there is more than one bank. The chosen preset's samples are written as WAV files to a <code>SoundFonts</code> folder in MAGDA's data folder (set in <strong>Settings &gt; Paths</strong>), and the zones play those files. SF3 samples are decoded, and linked stereo pairs become one stereo file.</p>
+<p>Attenuation is scaled by 0.4, as FluidSynth and E-mu hardware do, which is how General MIDI banks are voiced. The envelopes and filter come from the zone that plays note 60.</p>
+<h2 id="macros-modulation-and-presets">Macros, modulation, and presets<a class="headerlink" href="#macros-modulation-and-presets" title="Permanent link">&para;</a></h2>
+<p>The Sampler sits in the standard device slot, so its parameters accept <a href="../../modulation/macros/">macros</a> and <a href="../../modulation/overview/">modulators</a>, and its settings save and recall through the <a href="../../panels/browsers/">preset system</a>.</p>
 
 
 
@@ -2433,6 +2936,8 @@
     
     
       <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="../../javascripts/site-header.js"></script>
       
     
   </body>

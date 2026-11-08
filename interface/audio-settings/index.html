@@ -10,21 +10,21 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/interface/audio-settings/">
+        <link rel="canonical" href="https://docs.magda.land/interface/audio-settings/">
       
       
         <link rel="prev" href="../preferences/">
       
       
-        <link rel="next" href="../plugin-settings/">
+        <link rel="next" href="../controllers/">
       
       
-      <link rel="icon" href="../../assets/images/magda-lisa.svg">
+      <link rel="icon" href="../../assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
       
-        <title>Audio Settings - MAGDA Manual</title>
+        <title>Audio & MIDI - MAGDA Manual</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#audio-settings" class="md-skip">
+        <a href="#audio-midi" class="md-skip">
           Skip to content
         </a>
       
@@ -88,71 +88,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="../../assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              Audio Settings
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -190,22 +133,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -504,7 +462,7 @@
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -535,7 +493,7 @@
           
   
   <span class="md-ellipsis">
-    Audio Settings
+    Audio & MIDI
     
   </span>
   
@@ -547,7 +505,7 @@
         
   
   <span class="md-ellipsis">
-    Audio Settings
+    Audio & MIDI
     
   </span>
   
@@ -570,9 +528,45 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#audio-device" class="md-nav__link">
+  <a href="#status-bar" class="md-nav__link">
     <span class="md-ellipsis">
-      Audio Device
+      Status bar
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#device" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#audio-inputs-and-audio-outputs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Audio Inputs and Audio Outputs
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Preview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#midi-inputs-and-midi-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      MIDI Inputs and MIDI Output
     </span>
   </a>
   
@@ -581,34 +575,7 @@
         <li class="md-nav__item">
   <a href="#linux-drivers" class="md-nav__link">
     <span class="md-ellipsis">
-      Linux Drivers
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#channel-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      Channel Configuration
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#midi" class="md-nav__link">
-    <span class="md-ellipsis">
-      MIDI
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#preferred-device" class="md-nav__link">
-    <span class="md-ellipsis">
-      Preferred Device
+      Linux drivers
     </span>
   </a>
   
@@ -618,50 +585,6 @@
   
 </nav>
       
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../plugin-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Plugin Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../ai-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    AI Settings
-    
-  </span>
-  
-
-      </a>
     </li>
   
 
@@ -701,6 +624,50 @@
   
   <span class="md-ellipsis">
     Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI
     
   </span>
   
@@ -830,6 +797,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../arrangement-view/" class="md-nav__link">
         
   
@@ -914,6 +902,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../chord-track/" class="md-nav__link">
         
   
@@ -968,10 +977,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -983,8 +992,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -1094,10 +1103,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" >
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1109,8 +1118,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1282,10 +1291,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" >
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1297,8 +1306,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1342,10 +1351,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" >
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1357,8 +1366,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1376,6 +1385,28 @@
   
   <span class="md-ellipsis">
     Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
     
   </span>
   
@@ -1476,10 +1507,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" >
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1491,8 +1522,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1752,10 +1783,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1767,8 +1798,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -1951,10 +1982,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" >
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1966,8 +1997,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -2156,6 +2187,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/troubleshooting/" class="md-nav__link">
         
   
@@ -2205,9 +2258,45 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#audio-device" class="md-nav__link">
+  <a href="#status-bar" class="md-nav__link">
     <span class="md-ellipsis">
-      Audio Device
+      Status bar
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#device" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#audio-inputs-and-audio-outputs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Audio Inputs and Audio Outputs
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Preview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#midi-inputs-and-midi-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      MIDI Inputs and MIDI Output
     </span>
   </a>
   
@@ -2216,34 +2305,7 @@
         <li class="md-nav__item">
   <a href="#linux-drivers" class="md-nav__link">
     <span class="md-ellipsis">
-      Linux Drivers
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#channel-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      Channel Configuration
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#midi" class="md-nav__link">
-    <span class="md-ellipsis">
-      MIDI
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#preferred-device" class="md-nav__link">
-    <span class="md-ellipsis">
-      Preferred Device
+      Linux drivers
     </span>
   </a>
   
@@ -2268,25 +2330,39 @@
   
 
 
-<h1 id="audio-settings">Audio Settings<a class="headerlink" href="#audio-settings" title="Permanent link">&para;</a></h1>
-<p>Open audio settings from <strong>Settings &gt; Audio Settings</strong>. The dialog is organised into the sections below.</p>
-<h2 id="audio-device">Audio Device<a class="headerlink" href="#audio-device" title="Permanent link">&para;</a></h2>
+<h1 id="audio-midi">Audio &amp; MIDI<a class="headerlink" href="#audio-midi" title="Permanent link">&para;</a></h1>
+<p>The <strong>Audio &amp; MIDI</strong> section of <a href="../preferences/">Settings</a> chooses the audio driver and interface MAGDA plays through, which of its channels are open, and which MIDI ports MAGDA uses. Every change here takes effect as you make it: there is nothing to apply, and the window offers only <strong>Done</strong>.</p>
+<p>MAGDA reopens the driver and interface you chose last time when it starts.</p>
+<h2 id="status-bar">Status bar<a class="headerlink" href="#status-bar" title="Permanent link">&para;</a></h2>
+<p>The bar at the top names the interface that is open, with its channel count (for example <code>2 in · 2 out</code>), sample rate, buffer size in samples, and the latency that buffer adds in milliseconds. Its dot is green while the interface is open.</p>
+<p>When the driver has a settings window of its own, as ASIO drivers on Windows do, a <strong>Control Panel…</strong> button opens it. Use it for options the driver keeps to itself, such as its buffer size.</p>
+<h2 id="device">Device<a class="headerlink" href="#device" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Driver</strong> — The audio system MAGDA talks to (Core Audio on macOS; ASIO, WASAPI or DirectSound on Windows; ALSA or JACK on Linux)</li>
-<li><strong>Output device</strong> — Select your audio interface or built-in output</li>
-<li><strong>Input device</strong> — Select the audio input for recording</li>
-<li><strong>Sample rate</strong> — 44100 Hz and 48000 Hz are common choices</li>
-<li><strong>Buffer size</strong> — Lower values reduce latency but increase CPU load</li>
+<li><strong>Driver</strong> — The audio system MAGDA talks to: Core Audio on macOS; ASIO, WASAPI or DirectSound on Windows; ALSA or JACK on Linux. The driver decides which interfaces the pickers below list.</li>
+<li><strong>Input Interface</strong> / <strong>Output Interface</strong> — The interface to record from and the one to play through. Drivers that open one interface for both directions show a single <strong>Interface</strong> picker.</li>
+<li><strong>Sample Rate</strong> — 44100 Hz and 48000 Hz are common choices.</li>
+<li><strong>Buffer Size</strong> — Lower values reduce latency but increase CPU load.</li>
 </ul>
-<div class="admonition tip">
-<p class="admonition-title">Tip</p>
-<p>MAGDA automatically optimizes buffer sizes when switching views: Live mode uses the lowest latency, while Mix and Arrange modes use larger buffers for stability.</p>
-</div>
 <div class="admonition note">
 <p class="admonition-title">Silence after changing the sample rate</p>
 <p>Many audio interfaces mute their outputs for a few seconds after a sample rate change while they re-sync their clock, even after the new rate is shown. Anything played in that window is lost, the metronome included, and the same happens with any other app on that interface. Wait a few seconds after switching before you press play or record.</p>
 </div>
-<h2 id="linux-drivers">Linux Drivers<a class="headerlink" href="#linux-drivers" title="Permanent link">&para;</a></h2>
+<p>If MAGDA closes unexpectedly while opening an audio driver, it starts the next time with the default driver instead and tells you which one it skipped. Choose a driver again here once you have dealt with the problem.</p>
+<h2 id="audio-inputs-and-audio-outputs">Audio Inputs and Audio Outputs<a class="headerlink" href="#audio-inputs-and-audio-outputs" title="Permanent link">&para;</a></h2>
+<p>The two channel lists show the open interface's inputs and outputs, stereo pairs first and then single channels. Tick the ones MAGDA should use: a ticked stereo pair opens both channels as a pair, and ticking the two channels of a pair separately opens them as two mono channels.</p>
+<p>Double-click a channel's name to rename it, or right-click it for <strong>Rename</strong> and <strong>Clear Name</strong>. MAGDA then shows your names in place of the driver's.</p>
+<h2 id="preview">Preview<a class="headerlink" href="#preview" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Audition browser files on</strong> — The output pair that browser auditioning plays through (see <a href="../../panels/browsers/#preview">Preview</a>). Point it at a cue or headphone output to audition without going through your main monitors.</li>
+</ul>
+<h2 id="midi-inputs-and-midi-output">MIDI Inputs and MIDI Output<a class="headerlink" href="#midi-inputs-and-midi-output" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>MIDI Inputs</strong> — Every MIDI input MAGDA can see, each with its own switch. Turn on the controllers and keyboards you play.</li>
+<li><strong>MIDI Output</strong> — The default MIDI output, or <strong>&lt;&lt; none &gt;&gt;</strong>.</li>
+<li><strong>Bluetooth MIDI…</strong> — Pairs a Bluetooth MIDI device, on systems that support it.</li>
+</ul>
+<p><a href="../connections/#midi-clock">MIDI clock</a> and <a href="../controllers/">controller profiles</a> choose their own ports in their sections of Settings.</p>
+<h2 id="linux-drivers">Linux drivers<a class="headerlink" href="#linux-drivers" title="Permanent link">&para;</a></h2>
 <p>Most Linux desktops run PipeWire, which accepts JACK, PulseAudio and ALSA clients. Pick the driver for how you want to work:</p>
 <table>
 <thead>
@@ -2300,7 +2376,7 @@
 <tr>
 <td><strong>JACK</strong></td>
 <td>Your interface</td>
-<td>Recording and production. Lowest latency through PipeWire (<code>pipewire-jack</code>) or a JACK server</td>
+<td>Recording and production. Lowest latency, through PipeWire (<code>pipewire-jack</code>) or a JACK server</td>
 </tr>
 <tr>
 <td><strong>ALSA</strong></td>
@@ -2314,26 +2390,12 @@
 </tr>
 </tbody>
 </table>
+<p>Under JACK, MAGDA lists a card's own physical inputs and outputs only, named <strong>channel 1</strong> onwards, and picks your hardware rather than another application. On PipeWire it uses PipeWire's JACK support directly, so you don't need to start MAGDA through <code>pw-jack</code>.</p>
 <p>There is no separate PulseAudio driver: the <strong>Pulseaudio output</strong> device under ALSA goes through PulseAudio, or through <code>pipewire-pulse</code> on PipeWire. It's listed when the ALSA PulseAudio plugin is installed (<code>libasound2-plugins</code> on Debian/Ubuntu, <code>alsa-plugins-pulseaudio</code> on Fedora/Arch).</p>
 <div class="admonition note">
 <p class="admonition-title">64 inputs and outputs under ALSA</p>
 <p>On PipeWire, ALSA's default device can show up as 64 inputs and 64 outputs instead of your interface, and playback may break. Switch the driver to <strong>JACK</strong> to see the real interface.</p>
 </div>
-<h2 id="channel-configuration">Channel Configuration<a class="headerlink" href="#channel-configuration" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong>Active output channels</strong> — Choose which output channels to use (stereo pair or multi-channel)</li>
-<li><strong>Active input channels</strong> — Choose which input channels are available for recording</li>
-<li><strong>Preview</strong> - the toggle beside each output stereo pair picks where browser auditioning is sent (see <a href="../../panels/browsers/#preview">Preview</a>). Exactly one pair is always the preview destination, so selecting a new pair moves it rather than adding a second. Point it at a cue or headphone output to audition without going through your main monitors</li>
-</ul>
-<h2 id="midi">MIDI<a class="headerlink" href="#midi" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong>MIDI input devices</strong> — Enable or disable connected MIDI controllers and keyboards</li>
-<li><strong>MIDI output devices</strong> — Enable or disable MIDI output to hardware synthesizers</li>
-</ul>
-<h2 id="preferred-device">Preferred Device<a class="headerlink" href="#preferred-device" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong>Use as preferred device</strong> — Check this box to remember your device selection and restore it automatically on startup. If the preferred device is unavailable, MAGDA falls back to the system default.</li>
-</ul>
 
 
 
@@ -2415,6 +2477,8 @@
     
     
       <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="../../javascripts/site-header.js"></script>
       
     
   </body>

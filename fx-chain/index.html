@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/fx-chain/">
+        <link rel="canonical" href="https://docs.magda.land/fx-chain/">
       
       
         <link rel="prev" href="../stem-separation/">
@@ -19,7 +19,7 @@
         <link rel="next" href="../plugin-parameters/">
       
       
-      <link rel="icon" href="../assets/images/magda-lisa.svg">
+      <link rel="icon" href="../assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
@@ -88,71 +88,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="../assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              FX Chain & Racks
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -190,22 +133,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -502,7 +460,7 @@
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -524,51 +482,7 @@
         
   
   <span class="md-ellipsis">
-    Audio Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../interface/plugin-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Plugin Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../interface/ai-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    AI Settings
+    Audio & MIDI
     
   </span>
   
@@ -613,6 +527,50 @@
   
   <span class="md-ellipsis">
     Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interface/plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI
     
   </span>
   
@@ -767,6 +725,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#device-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device Layout
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#device-power" class="md-nav__link">
     <span class="md-ellipsis">
       Device Power
@@ -809,9 +776,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#plugin-disk-presets" class="md-nav__link">
+  <a href="#plugin-presets" class="md-nav__link">
     <span class="md-ellipsis">
-      Plugin Disk Presets
+      Plugin Presets
     </span>
   </a>
   
@@ -821,6 +788,15 @@
   <a href="#track-chain-presets" class="md-nav__link">
     <span class="md-ellipsis">
       Track Chain Presets
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rack-presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      Rack Presets
     </span>
   </a>
   
@@ -877,15 +853,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#collapsible-devices" class="md-nav__link">
-    <span class="md-ellipsis">
-      Collapsible Devices
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -897,6 +864,39 @@
       External Hardware Inserts
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="External Hardware Inserts">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Routing
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#midi-cc-knobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      MIDI CC knobs
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#status-line" class="md-nav__link">
+    <span class="md-ellipsis">
+      Status line
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -953,6 +953,27 @@
   
   <span class="md-ellipsis">
     Plugin Parameters
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
     
   </span>
   
@@ -1053,6 +1074,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../chord-track/" class="md-nav__link">
         
   
@@ -1107,10 +1149,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1122,8 +1164,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -1233,10 +1275,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" >
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1248,8 +1290,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1421,10 +1463,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" >
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1436,8 +1478,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1481,10 +1523,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" >
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1496,8 +1538,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1515,6 +1557,28 @@
   
   <span class="md-ellipsis">
     Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../devices/strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
     
   </span>
   
@@ -1615,10 +1679,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" >
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1630,8 +1694,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1891,10 +1955,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1906,8 +1970,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -2090,10 +2154,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" >
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -2105,8 +2169,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -2295,6 +2359,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../reference/project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../reference/troubleshooting/" class="md-nav__link">
         
   
@@ -2363,6 +2449,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#device-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device Layout
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#device-power" class="md-nav__link">
     <span class="md-ellipsis">
       Device Power
@@ -2405,9 +2500,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#plugin-disk-presets" class="md-nav__link">
+  <a href="#plugin-presets" class="md-nav__link">
     <span class="md-ellipsis">
-      Plugin Disk Presets
+      Plugin Presets
     </span>
   </a>
   
@@ -2417,6 +2512,15 @@
   <a href="#track-chain-presets" class="md-nav__link">
     <span class="md-ellipsis">
       Track Chain Presets
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rack-presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      Rack Presets
     </span>
   </a>
   
@@ -2473,15 +2577,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#collapsible-devices" class="md-nav__link">
-    <span class="md-ellipsis">
-      Collapsible Devices
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -2493,6 +2588,39 @@
       External Hardware Inserts
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="External Hardware Inserts">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Routing
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#midi-cc-knobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      MIDI CC knobs
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#status-line" class="md-nav__link">
+    <span class="md-ellipsis">
+      Status line
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2552,67 +2680,82 @@
 <p>Each track has an <strong>FX chain</strong> — an ordered list of audio processors applied to the track's signal.</p>
 <p><img alt="Track Chain" src="../assets/images/panels/track-chain.png" /></p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>The FX chain is displayed in the bottom panel when a track or device is selected. Signal flows left to right through the chain.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>The chain header provides access to the <strong>track tree</strong> <img alt="tree" src="../assets/images/icons/tree.svg" width="16" />, a hierarchical view of all devices and racks on the track. You can also click the <strong>rack</strong> button <img alt="rack" src="../assets/images/icons/rack.svg" width="16" /> to create a new rack in the chain.</p>
-</div>
+<p>The FX chain is displayed in the bottom panel when a track or device is selected. Signal flows left to right through the chain. The header above the chain holds the track's own controls and presets; see <a href="../panels/track-chain/">Track Chain</a> for each button.</p>
 <p>The chain can contain:</p>
 <ul>
 <li><strong>Plugins</strong> — VST3, AU, or VST effect and instrument plugins</li>
 <li><strong>Built-in devices</strong> — MAGDA's own processors (see <a href="../devices/built-in/">Built-in Devices</a>)</li>
-<li><strong>Racks</strong> — Container devices with nested chains and parallel routing</li>
+<li><strong>Racks</strong> — Container devices with nested chains and parallel routing, including multiband racks</li>
 </ul>
 <h2 id="working-with-devices">Working with Devices<a class="headerlink" href="#working-with-devices" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Drag</strong> plugins from the <a href="../panels/browsers/">Plugin Browser</a> onto the chain to add them</li>
+<li><strong>Drag</strong> plugins from the <a href="../panels/browsers/">Plugin Browser</a> onto the chain to add them, or click the <strong>+</strong> at the end of the chain (<em>Add a device</em>) to pick one from a menu: <strong>Internal</strong> devices first, then plugins grouped by manufacturer</li>
 <li><strong>Drag</strong> devices to reorder them in the chain; hold <span class="keys"><kbd class="key-alt">Alt</kbd></span> while dragging to <strong>copy</strong> instead of move (the cursor shows a copy badge)</li>
-<li><strong>Click</strong> a device to select it and show its parameters; <span class="keys"><kbd class="key-command">Cmd</kbd></span>-click adds or removes a device from a multi-selection, <span class="keys"><kbd class="key-shift">Shift</kbd></span>-click selects a range</li>
+<li><strong>Click</strong> a device to select it; the selected device is highlighted in the accent colour. <span class="keys"><kbd class="key-command">Cmd</kbd></span>-click adds or removes a device from a multi-selection, <span class="keys"><kbd class="key-shift">Shift</kbd></span>-click selects a range</li>
 <li><strong><span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-d">D</kbd></span></strong> duplicates the selected device(s) in place</li>
-<li><strong>Right-click</strong> a device for options: bypass, remove, replace, move to rack</li>
-<li>Each device has <strong>Mod</strong> and <strong>Macro</strong> buttons to toggle the modulation and macro panels</li>
-<li>Plugin devices have a <strong>Learn</strong> button that maps a control in the plugin's own UI back to the matching parameter slot — see <a href="../plugin-parameters/#learn-mode">Plugin Parameters</a></li>
-<li>Each device header carries a <strong>Δ</strong> delta-solo button — see <a href="#delta-solo">Delta Solo</a></li>
+<li><strong><span class="keys"><kbd class="key-backspace">Backspace</kbd></span></strong> or <strong><span class="keys"><kbd class="key-delete">Del</kbd></span></strong> deletes the selected devices and racks. Devices have no delete button of their own</li>
+<li><strong>Right-click</strong> a device for <strong>Add to New Rack</strong> (or <strong>Add Selection to New Rack</strong> when several are selected) and <strong>Delete</strong>. Both act on the whole selection when the device you click is part of it, and deleting several devices is a single undo step</li>
+<li><strong>Double-click</strong> the background of a selected device to collapse it to a narrow strip; double-click again to expand it</li>
+<li>Plugin devices have a <strong>Locate</strong> button that finds the parameter matching a control you move in the plugin's own window — see <a href="../plugin-parameters/#locating-a-parameter">Plugin Parameters</a></li>
 </ul>
 <p>See <a href="../plugin-parameters/">Plugin Parameters</a> for per-plugin parameter visibility, custom units and ranges, and AI-assisted classification.</p>
-<h3 id="device-power">Device Power<a class="headerlink" href="#device-power" title="Permanent link">&para;</a></h3>
-<p>The power button in a device header takes the device out of the signal path. A chain's power button does the same for every device in it. Both states are part of the project: they survive save and reload, and they are honoured when you render — a device that is powered off is powered off in an exported or bounced file too.</p>
-<p>The gain slider in a device or rack header ignores the scroll wheel until you click it. This keeps a stray trackpad gesture over a device header scrolling the chain rather than changing its gain. Once you have clicked the slider the wheel adjusts it, until the pointer leaves.</p>
-<h3 id="delta-solo">Delta Solo<a class="headerlink" href="#delta-solo" title="Permanent link">&para;</a></h3>
-<p>The <strong>Δ</strong> button in a device header (tooltip <em>Delta Solo: processed signal minus dry input</em>) lets you hear only what that device changes: MAGDA subtracts the device's latency-aligned dry input from its processed output, so you audition the difference alone. It is the direct way to check exactly what a compressor, EQ, or saturator is doing to the signal.</p>
-<p>Delta solo and bypass are mutually exclusive: turning on delta solo powers the device on, and powering the device off clears delta solo. The button lights cyan while active. Racks have their own delta-solo button in the same position (see <a href="#rack-controls">Rack Controls</a>).</p>
-<h2 id="presets">Presets<a class="headerlink" href="#presets" title="Permanent link">&para;</a></h2>
-<p>Three preset systems share the device header:</p>
-<h3 id="magda-presets-mps">MAGDA Presets (.mps)<a class="headerlink" href="#magda-presets-mps" title="Permanent link">&para;</a></h3>
-<p>Each device exposes a preset menu in its header. Saving a preset captures <strong>everything MAGDA knows about the device</strong> — parameter values, plugin state, macros, modulators, sidechain wiring, gain — in a single <code>.mps</code> file.</p>
+<h3 id="device-layout">Device Layout<a class="headerlink" href="#device-layout" title="Permanent link">&para;</a></h3>
+<p>Every device in the chain has the same height. Its parts:</p>
 <ul>
-<li><strong>Save Preset</strong> — pops a name + category dialog. The selected category becomes a folder under the preset directory.</li>
-<li><strong>Load Preset</strong> — submenu organised by category. Loading replaces the live device's state in place; the device's id, name, and slot in the chain are preserved.</li>
-<li>The dialog auto-fills the most recently used name and category, so re-saving an iteration takes two clicks.</li>
+<li><strong>Header</strong> — on the left, the <strong>Macros</strong> and <strong>Mods</strong> buttons that open the device's <a href="../modulation/macros/">macro</a> and <a href="../modulation/modulators/">modulator</a> panels, plus routing buttons when the device has them (MIDI thru, sidechain source, multi-output routing). Then the <a href="#presets">preset box</a> and the device name. On the right, plugin devices carry <strong>Locate</strong> and a button that opens the plugin's own window. A small MIDI light flashes green when a note arrives on the track's MIDI input, but only while the track <a href="../tracks/#input-monitoring">monitors its input</a>. With monitoring off, incoming notes leave it dark.</li>
+<li><strong>Sidebar</strong> — down the left edge of the body, the toggles for the device's panels (for example its parameters or its faceplate) and the arrows that page through its parameters.</li>
+<li><strong>Side strip</strong> — down the right edge, the device's power button at the top, then its peak meter with the gain fader over it. Effects with a dry/wet mix also show a <strong>Dry / Wet Mix</strong> knob, and effects carry the <strong>Δ</strong> <a href="#delta-solo">delta-solo</a> button at the bottom. MIDI devices show a strip of incoming notes in place of the meter.</li>
+</ul>
+<p>A plugin's parameter grid shows one row fewer when the plugin sits inside a rack or a Drum Grid pad, so each value still fits under its name.</p>
+<h3 id="device-power">Device Power<a class="headerlink" href="#device-power" title="Permanent link">&para;</a></h3>
+<p>The power button at the top of a device's side strip takes the device out of the signal path. A chain's power button does the same for every device in it. Both states are part of the project: they survive save and reload, and they are honoured when you render — a device that is powered off is powered off in an exported or bounced file too.</p>
+<p>The gain fader in a device's or rack's side strip ignores the scroll wheel until you click it. This keeps a stray trackpad gesture over a device scrolling the chain rather than changing its gain. Once you have clicked the fader the wheel adjusts it, until the pointer leaves.</p>
+<h3 id="delta-solo">Delta Solo<a class="headerlink" href="#delta-solo" title="Permanent link">&para;</a></h3>
+<p>The <strong>Δ</strong> button at the bottom of an effect's side strip (tooltip <em>Delta Solo: processed signal minus dry input</em>) lets you hear only what that device changes: MAGDA subtracts the device's latency-aligned dry input from its processed output, so you audition the difference alone. It is the direct way to check exactly what a compressor, EQ, or saturator is doing to the signal.</p>
+<p>Delta solo and bypass are mutually exclusive: turning on delta solo powers the device on, and powering the device off clears delta solo. The button lights cyan while active.</p>
+<h2 id="presets">Presets<a class="headerlink" href="#presets" title="Permanent link">&para;</a></h2>
+<p>Every device, and the track chain header, shows a <strong>preset box</strong> naming the current preset, with a <strong>floppy disk</strong> beside it. On both headers the preset sits before the name, between separators. The name of the current preset is saved with the project, so the box still shows it after you switch tracks or reopen the project.</p>
+<h3 id="magda-presets-mps">MAGDA Presets (.mps)<a class="headerlink" href="#magda-presets-mps" title="Permanent link">&para;</a></h3>
+<p>A MAGDA preset captures <strong>everything MAGDA knows about the device</strong> — parameter values, plugin state, macros, modulators, sidechain wiring, gain — in a single <code>.mps</code> file.</p>
+<ul>
+<li><strong>Load</strong> — click the preset box. The menu lists the device's MAGDA presets, with categories as submenus and the current preset ticked. Loading replaces the device's state in place, keeping its slot in the chain.</li>
+<li><strong>Save</strong> — click the floppy disk. It always asks for a name, pre-filled with the current preset's, and an optional category, which becomes a folder under the preset directory. Keep the name and press <span class="keys"><kbd class="key-enter">Enter</kbd></span> to overwrite the preset (MAGDA asks first); type a new name to save a copy.</li>
+<li><strong>Reveal in Finder</strong> at the bottom of the menu opens the device's preset folder.</li>
 </ul>
 <p><code>.mps</code> is portable across MAGDA installations. The format is plugin-aware — loading a preset onto a slot whose plugin id doesn't match is rejected with a one-line error rather than silently overwriting state.</p>
-<h3 id="plugin-disk-presets">Plugin Disk Presets<a class="headerlink" href="#plugin-disk-presets" title="Permanent link">&para;</a></h3>
-<p>When the device is a third-party plugin (VST3 / AU), MAGDA also scans the standard <code>.vstpreset</code> / <code>.aupreset</code> directories on disk and exposes them as a second menu in the header. The native preset format is used directly — your existing factory and user banks are picked up without a copy step.</p>
-<p>The legacy "Program N" menu that VST3 plugins like Vital and Serum 2 expose has been retired — those entries resolve to identical state and provided no information. Disk presets are the only source.</p>
+<h3 id="plugin-presets">Plugin Presets<a class="headerlink" href="#plugin-presets" title="Permanent link">&para;</a></h3>
+<p>A third-party plugin (VST3 / AU) uses the same menu, with its own entries after your MAGDA presets:</p>
+<ul>
+<li><strong>Plugin Presets</strong> — the plugin's <code>.vstpreset</code> / <code>.aupreset</code> files, scanned from the standard preset directories. Your existing factory and user banks are picked up without a copy step.</li>
+<li><strong>Built-in Programs</strong> — the programs the plugin itself exposes, when it has more than one.</li>
+<li><strong>Save as .vstpreset...</strong> / <strong>Save as .aupreset...</strong> — save the plugin's current state as a plugin preset in its user preset folder.</li>
+<li><strong>Reveal Plugin Preset Folder</strong> and <strong>Rescan</strong>.</li>
+</ul>
+<p>The floppy disk always saves a MAGDA preset, on plugins as on every other device.</p>
 <h3 id="track-chain-presets">Track Chain Presets<a class="headerlink" href="#track-chain-presets" title="Permanent link">&para;</a></h3>
-<p>The track FX header carries a chain-level preset menu. A track-chain preset captures the <strong>entire chain</strong> — every device, every nested rack, every modulator binding — for a single track. Useful for stashing a finished mix-bus chain, a vocal chain, or a synth-and-FX combo and dropping it onto a fresh track later.</p>
+<p>The preset box on the track chain header holds track presets. A track preset captures the <strong>entire chain</strong> — every device, every nested rack, every modulator binding — for a single track. Useful for stashing a finished mix-bus chain, a vocal chain, or a synth-and-FX combo and dropping it onto a fresh track later.</p>
+<p>The box lists your track presets; loading one replaces the track's chain. The floppy disk asks for a name, pre-filled with the current one; use <code>/</code> to file it in a folder (for example <code>Bass/808 Stack</code>). Saving over an existing name asks first.</p>
+<p>You can also drag a preset from the media browser onto the chain: a track preset replaces the chain, and a device preset is inserted where you drop it.</p>
+<h3 id="rack-presets">Rack Presets<a class="headerlink" href="#rack-presets" title="Permanent link">&para;</a></h3>
+<p>Racks keep a small chevron beside their name. Its menu lists your rack presets, followed by <strong>Save "<em>name</em>"</strong> (once a preset is loaded), <strong>Save as MAGDA Rack Preset...</strong> and <strong>Reveal in Finder</strong>.</p>
 <h2 id="racks">Racks<a class="headerlink" href="#racks" title="Permanent link">&para;</a></h2>
 <p><img alt="Rack" src="../assets/images/devices/rack.png" /></p>
 <p>A rack is a container that holds one or more <strong>parallel chains</strong>. Signal flows into the rack, splits across chains, and mixes back together at the output.</p>
 <h3 id="creating-a-rack">Creating a Rack<a class="headerlink" href="#creating-a-rack" title="Permanent link">&para;</a></h3>
 <ul>
-<li>Click the <img alt="rack" src="../assets/images/icons/rack.svg" width="16" /> <strong>rack</strong> button in the chain header</li>
-<li>Right-click a device and select <strong>Move to Rack</strong> to wrap it in a new rack</li>
+<li>Click <img alt="rack" src="../assets/images/icons/rack.svg" width="16" /> <strong>Add rack</strong> in the track chain header, or <strong>Add multiband rack</strong> for a rack that splits the signal into frequency bands</li>
+<li>Right-click a device and choose <strong>Add to New Rack</strong> to wrap it in a new rack (<strong>Add Selection to New Rack</strong> wraps every selected device)</li>
 </ul>
 <h3 id="chains">Chains<a class="headerlink" href="#chains" title="Permanent link">&para;</a></h3>
-<p>Each rack contains one or more chains displayed as rows. Each chain has:</p>
+<p>A rack lists its chains on its left. With the <strong>MIX</strong> tab selected, each chain row has:</p>
 <ul>
 <li><strong>Volume</strong> — Level control for the chain's output</li>
 <li><strong>Pan</strong> — Stereo positioning of the chain</li>
 <li><strong>Mute</strong> (M) / <strong>Solo</strong> (S) — Mute or solo individual chains</li>
-<li><strong>Devices</strong> — Each chain has its own ordered list of devices</li>
+<li><strong>Power</strong> and <strong>remove</strong> buttons</li>
 </ul>
-<p>Click the <strong>+</strong> button next to "Chains" to add a new parallel chain. Double-click a chain's name to rename it.</p>
+<p>The <strong>KEY</strong>, <strong>VEL</strong> and <strong>FADE</strong> tabs show each chain's key range, velocity range, and range on the rack's <strong>Chain select</strong> control instead. The <strong>VEL</strong> tab also holds the round-robin switch. A rack inside a Drum Grid pad has no <strong>KEY</strong> tab, since the pad plays a single note.</p>
+<p>Click <strong>Add chain</strong> at the bottom of the list to add a new parallel chain. Double-click a chain's name to rename it. The selected chain's devices show beside the list.</p>
 <p>Select multiple chains with <span class="keys"><kbd class="key-command">Cmd</kbd></span>-click (toggle) or <span class="keys"><kbd class="key-shift">Shift</kbd></span>-click (range). When more than one chain is selected, editing volume, pan, mute, solo, or bypass on any selected chain applies to the whole selection — volume and pan shift each chain by the same amount from its own value, so their relative balance is preserved.</p>
 <h3 id="use-cases">Use Cases<a class="headerlink" href="#use-cases" title="Permanent link">&para;</a></h3>
 <ul>
@@ -2622,20 +2765,20 @@
 </ul>
 <h3 id="rack-controls">Rack Controls<a class="headerlink" href="#rack-controls" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Volume</strong> — Master output level for the entire rack</li>
-<li><strong>Mod / Macro buttons</strong> — Access the rack's own modulation and macro panels</li>
-<li><strong>Delta Solo (Δ)</strong> — Hear the whole rack's processed output minus its dry input (tooltip <em>Delta Solo: processed rack signal minus dry input</em>). Works on nested racks and stays available when the rack is collapsed. See <a href="#delta-solo">Delta Solo</a>.</li>
-<li><strong>Collapse/Expand</strong> — Click the rack header to toggle between collapsed and expanded views</li>
+<li><strong>Header</strong> — the rack's <strong>Macros</strong> and <strong>Mods</strong> buttons, which open its own macro and modulator panels, then the name and the rack's preset chevron. The rack header spans only the rack's left panels, so the headers of the devices inside it sit level with it.</li>
+<li><strong>Sidebar</strong> — toggles that show the chain list and the selected chain (and, on a multiband rack, its faceplate), with the <strong>Chain select</strong> control at the foot.</li>
+<li><strong>Side strip</strong> — the rack's power button, peak meter, and gain fader (<em>Rack Gain (dB)</em>).</li>
+<li><strong>Collapse/Expand</strong> — double-click the background of a selected rack.</li>
 </ul>
-<h3 id="collapsible-devices">Collapsible Devices<a class="headerlink" href="#collapsible-devices" title="Permanent link">&para;</a></h3>
-<p>Individual devices inside a rack can be collapsed to save space. Click the collapse button on a device to shrink it to a compact header. The rack resizes dynamically as devices are collapsed or expanded. Collapsed states are preserved when the chain rebuilds (e.g. when adding or removing devices).</p>
+<p>Racks have no delta-solo button. Delete a rack the same way as a device: <span class="keys"><kbd class="key-backspace">Backspace</kbd></span>, or right-click and choose <strong>Delete</strong>.</p>
 <h2 id="external-hardware-inserts">External Hardware Inserts<a class="headerlink" href="#external-hardware-inserts" title="Permanent link">&para;</a></h2>
-<p>MAGDA can route a track's signal out to outboard gear and back, treating a hardware unit as an insert in the chain. Two entries live under the <strong>External</strong> category in the <a href="../panels/browsers/">Plugin Browser</a>:</p>
+<p>MAGDA can route a track's signal out to outboard gear and back, treating a hardware unit as an insert in the chain. Two entries live under the <strong>External</strong> category in the <a href="../panels/browsers/">Plugin Browser</a>, and in the <strong>Internal</strong> list of the chain's <strong>+</strong> menu:</p>
 <ul>
 <li><strong>External FX</strong> — sends audio out to an outboard effect and returns its processed audio.</li>
 <li><strong>External Instrument</strong> — sends MIDI out to a hardware synth and returns its audio.</li>
 </ul>
-<p>Drag either onto a track's chain, then set its routing in the device slot:</p>
+<p>Add either to a track's chain, then set it up on its faceplate: the routing along the top, a row of MIDI CC knobs under it, and a status line at the foot.</p>
+<h3 id="routing">Routing<a class="headerlink" href="#routing" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2645,34 +2788,77 @@
 </thead>
 <tbody>
 <tr>
-<td><strong>Send to</strong> / <strong>MIDI to</strong></td>
-<td>The hardware output to feed (audio out for External FX, MIDI out for External Instrument)</td>
+<td><strong>Send to</strong></td>
+<td>External FX: the audio output that feeds the effect</td>
+</tr>
+<tr>
+<td><strong>MIDI to</strong></td>
+<td>External Instrument: the MIDI output the synth listens on, then its MIDI channel, <strong>Ch 1</strong> to <strong>Ch 16</strong>. MAGDA moves the track's notes onto that channel. The channel can be changed once a MIDI output is chosen</td>
 </tr>
 <tr>
 <td><strong>Return from</strong></td>
 <td>The audio input the hardware comes back on</td>
 </tr>
 <tr>
-<td><strong>Latency (ms)</strong></td>
-<td>Manual trim to align the return with the rest of the mix (default 0.0)</td>
+<td><strong>Latency</strong></td>
+<td>Extra delay in milliseconds to line the return up with the rest of the mix (default 0.0 ms). Click the value to type a new one. MAGDA already allows for the latency your audio interface reports, so this is only the time the hardware itself adds</td>
 </tr>
 </tbody>
 </table>
-<p>Picking a hardware port that is currently disabled enables it automatically, and ports that no longer feed any insert are disabled again for you. If two inserts fight over the same port, a warning line appears in the slot (for example <em>Return uses the same port as the send</em>).</p>
-<p>For an <strong>External Instrument</strong>, the track's own MIDI-out and audio-in selectors become read-only mirrors of the insert's routing, and MAGDA blocks the synth's MIDI from being recorded straight back in so you don't get doubled or hanging notes.</p>
+<p>The port pickers start at <strong>None</strong>. <strong>Send to</strong> and <strong>Return from</strong> list the channels ticked under <a href="../interface/audio-settings/#audio-inputs-and-audio-outputs">Settings &gt; Audio &amp; MIDI</a>, and <strong>MIDI to</strong> lists your computer's MIDI outputs. To check a route, put a <a href="../devices/effects/#utility">Test Tone</a> before an External FX: it replaces the track's signal with a tone, so you know exactly what reaches the hardware.</p>
+<p>For an <strong>External Instrument</strong>, the track's own MIDI-out and audio-in selectors become read-only mirrors of the insert's routing; change them on the insert. When the track takes all MIDI inputs, MAGDA ignores the synth's own MIDI port while the track isn't armed, so notes the synth sends back don't double or loop. Arm the track to play and record from the synth's keyboard.</p>
+<h3 id="midi-cc-knobs">MIDI CC knobs<a class="headerlink" href="#midi-cc-knobs" title="Permanent link">&para;</a></h3>
+<p>The <strong>MIDI CC</strong> row puts knobs for the hardware's own controls on the faceplate. Each knob sends one CC number, with values from 0 to 127.</p>
+<ul>
+<li>On an <strong>External FX</strong>, whose send is audio, the row has its own MIDI output and channel pickers: choose where the unit listens for CCs.</li>
+<li>On an <strong>External Instrument</strong>, the CCs go to the same MIDI output and channel as its notes, and the row shows where.</li>
+</ul>
+<p>Click the dashed <strong>+</strong> tile (<em>Add a CC knob</em>) to add a knob. It takes the lowest CC number the insert isn't sending yet. Knobs sit eight to a page, up to 32 on four pages; once there is more than one page, arrows at the right end of the row page through them. Click a knob to select it: a CC picker (<strong>CC 0</strong> to <strong>CC 127</strong>) and <strong>Remove</strong> appear in the status line, to change the number it sends or delete it.</p>
+<p>To pick the number by ear, click the <strong>Learn</strong> icon (<em>Learn: click a knob, then turn a hardware control</em>), click a knob, then turn a control on the hardware. The knob takes that control's CC number, and from then on the control moves the knob, like any <a href="../interface/controllers/#midi-learn">MIDI Learn</a> mapping. Choosing another number in the CC picker, or removing the knob, drops that link. Click the icon again to stop listening.</p>
+<p>Each knob is a device parameter named after its CC number (for example <em>CC 74</em>), so you can <a href="../automation/">automate</a> it or drive it from a <a href="../modulation/macros/">macro</a> or a <a href="../modulation/modulators/">modulator</a>. MAGDA sends the CC each time the knob's value changes.</p>
+<h3 id="status-line">Status line<a class="headerlink" href="#status-line" title="Permanent link">&para;</a></h3>
+<p>The line at the foot of the faceplate says what the insert is doing:</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><em>send</em> → <em>return</em>, green dot</td>
+<td>Both ends are routed</td>
+</tr>
+<tr>
+<td><strong>No return chosen</strong>, amber dot</td>
+<td>A send but no return</td>
+</tr>
+<tr>
+<td><strong>No send chosen</strong> / <strong>No MIDI port chosen</strong>, amber dot</td>
+<td>A return but no send (External FX / External Instrument)</td>
+</tr>
+<tr>
+<td><strong>Not routed</strong></td>
+<td>Neither end is set</td>
+</tr>
+</tbody>
+</table>
+<p>The dot turns amber and the line names the clash when the return uses the same port as the send (<em>Return uses the same port as the send</em>), or another switched-on insert uses the same send or return (for example <em>Send port also used on Bass</em>). While <strong>Learn</strong> is on, the dot is blue and the line prompts you through the steps instead.</p>
+<p>A preset saved from an External FX or External Instrument brings back its routing, latency and CC knobs, along with the knobs' values.</p>
 <div class="admonition note">
 <p class="admonition-title">Export captures the hardware automatically</p>
-<p>Because outboard gear isn't part of an offline render, MAGDA captures it for you. When you export a project that contains a routed insert, it first plays the export range once in real time to record the hardware returns (a progress box titled <em>Capturing External Hardware</em> appears, with a <strong>Cancel</strong> button), then substitutes those captures into the offline render. Nothing is added to your project and there is no freeze step to manage.</p>
+<p>Because outboard gear isn't part of an offline render, MAGDA captures it for you. When you <a href="../exporting/">export</a> a project that contains a routed insert, it first plays the export range once in real time to record the hardware returns (a progress box titled <em>Capturing External Hardware</em> appears, with a <strong>Cancel</strong> button), then substitutes those captures into the offline render. If the capture can't be set up or fails, the export stops with a message instead of writing silent hardware into the file. Nothing is added to your project and there is no freeze step to manage.</p>
 </div>
 <h2 id="post-fx-section">Post-FX Section<a class="headerlink" href="#post-fx-section" title="Permanent link">&para;</a></h2>
 <p>In addition to the main FX chain, every track and the master have a <strong>post-FX area</strong>, a stage that runs <em>after</em> the main chain. It is the natural home for meters and analyzers, but any effect can live there.</p>
-<p>Toggle the post-FX area from the buttons in the track chain header, then drop an <a href="../devices/analysis/">Oscilloscope or Spectrum Analyzer</a>, or any effect, into it. The panel opens automatically when a track has post-FX devices.</p>
+<p>Show or hide the post-FX panel with the post-FX button in the track chain header (<em>Show/hide the post-FX panel</em>). The <strong>Oscilloscope</strong>, <strong>Spectrum Analyzer</strong> and <strong>Levels</strong> buttons beside it add that <a href="../devices/analysis/">analyzer</a> to the post-FX area, or remove it; each button is lit while its analyzer is there. You can also drop any effect into the panel. The panel opens automatically when you select a track that has post-FX devices.</p>
 <h3 id="which-side-of-the-fader-it-runs-on">Which side of the fader it runs on<a class="headerlink" href="#which-side-of-the-fader-it-runs-on" title="Permanent link">&para;</a></h3>
 <p>By default the post-FX area runs <em>after</em> the track fader, so a meter there reads the level you are actually sending on. The <strong>PRE FADER</strong> / <strong>POST FADER</strong> tag under the <strong>+</strong> button on the panel's add strip shows the current side and switches it for that track. The whole section moves together; sends keep their own pre/post-fader setting either way.</p>
-<p>Master is always pre-fader, so the tag does not appear there. To choose the side new tracks start on, use <strong>New tracks run post-FX after the fader</strong> in <a href="../interface/preferences/">Preferences</a>.</p>
+<p>Master is always pre-fader, so the tag does not appear there. To choose the side tracks start on in new projects, use <strong>New projects: post-FX after fader</strong> in <strong>Settings &gt; General</strong>.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>Each analyzer kind is unique per track in the post-FX area — one Oscilloscope and one Spectrum Analyzer at most — while regular effects can repeat.</p>
+<p>Each analyzer kind is unique per track in the post-FX area — one Oscilloscope, one Spectrum Analyzer and one Levels meter at most — while regular effects can repeat.</p>
 </div>
 <h2 id="gain-staging">Gain Staging<a class="headerlink" href="#gain-staging" title="Permanent link">&para;</a></h2>
 <p>Gain staging trims the output of every device in a chain so the whole chain holds a target headroom, without adjusting each one by hand.</p>
@@ -2764,6 +2950,8 @@
     
     
       <script src="../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="../javascripts/site-header.js"></script>
       
     
   </body>

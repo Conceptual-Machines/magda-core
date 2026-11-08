@@ -1,263 +1,279 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/</loc>
+         <loc>https://docs.magda.land/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/arrangement-view/</loc>
+         <loc>https://docs.magda.land/ara/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/automation/</loc>
+         <loc>https://docs.magda.land/arrangement-view/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/chord-track/</loc>
+         <loc>https://docs.magda.land/automation/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/clips/</loc>
+         <loc>https://docs.magda.land/chord-track/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/fx-chain/</loc>
+         <loc>https://docs.magda.land/clips/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/is-magda-right-for-you/</loc>
+         <loc>https://docs.magda.land/exporting/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/localization/</loc>
+         <loc>https://docs.magda.land/fx-chain/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/mixer-view/</loc>
+         <loc>https://docs.magda.land/is-magda-right-for-you/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/plugin-parameters/</loc>
+         <loc>https://docs.magda.land/localization/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/recording-comping/</loc>
+         <loc>https://docs.magda.land/mixer-view/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/session-view/</loc>
+         <loc>https://docs.magda.land/plugin-parameters/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/stem-separation/</loc>
+         <loc>https://docs.magda.land/recording-comping/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/time-bend/</loc>
+         <loc>https://docs.magda.land/session-view/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/tracks/</loc>
+         <loc>https://docs.magda.land/stem-separation/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/transport/</loc>
+         <loc>https://docs.magda.land/time-bend/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/working-with-ai/</loc>
+         <loc>https://docs.magda.land/tracks/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/devices/analysis/</loc>
+         <loc>https://docs.magda.land/transport/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/devices/arpeggiator/</loc>
+         <loc>https://docs.magda.land/working-with-ai/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/devices/built-in/</loc>
+         <loc>https://docs.magda.land/devices/analysis/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/devices/chord-engine/</loc>
+         <loc>https://docs.magda.land/devices/arpeggiator/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/devices/drum-grid/</loc>
+         <loc>https://docs.magda.land/devices/built-in/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/devices/drum-kit/</loc>
+         <loc>https://docs.magda.land/devices/chord-engine/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/devices/effects/</loc>
+         <loc>https://docs.magda.land/devices/drum-grid/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/devices/faust-instrument/</loc>
+         <loc>https://docs.magda.land/devices/drum-kit/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/devices/fm0/</loc>
+         <loc>https://docs.magda.land/devices/effects/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/devices/mutable/</loc>
+         <loc>https://docs.magda.land/devices/faust-instrument/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/devices/physical-models/</loc>
+         <loc>https://docs.magda.land/devices/fm0/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/devices/poly-sequencer/</loc>
+         <loc>https://docs.magda.land/devices/mutable/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/devices/poly-synth/</loc>
+         <loc>https://docs.magda.land/devices/physical-models/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/devices/sampler/</loc>
+         <loc>https://docs.magda.land/devices/poly-sequencer/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/devices/step-sequencer/</loc>
+         <loc>https://docs.magda.land/devices/poly-synth/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/getting-started/first-session/</loc>
+         <loc>https://docs.magda.land/devices/sampler/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/getting-started/installation/</loc>
+         <loc>https://docs.magda.land/devices/step-sequencer/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/interface/ai-settings/</loc>
+         <loc>https://docs.magda.land/devices/strum/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/interface/audio-settings/</loc>
+         <loc>https://docs.magda.land/getting-started/first-session/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/interface/connections/</loc>
+         <loc>https://docs.magda.land/getting-started/installation/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/interface/controllers/</loc>
+         <loc>https://docs.magda.land/interface/ai-settings/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/interface/menus/</loc>
+         <loc>https://docs.magda.land/interface/audio-settings/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/interface/overview/</loc>
+         <loc>https://docs.magda.land/interface/connections/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/interface/plugin-settings/</loc>
+         <loc>https://docs.magda.land/interface/controllers/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/interface/preferences/</loc>
+         <loc>https://docs.magda.land/interface/menus/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/modulation/linking/</loc>
+         <loc>https://docs.magda.land/interface/overview/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/modulation/macros/</loc>
+         <loc>https://docs.magda.land/interface/plugin-settings/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/modulation/modulators/</loc>
+         <loc>https://docs.magda.land/interface/preferences/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/modulation/overview/</loc>
+         <loc>https://docs.magda.land/modulation/linking/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/panels/ai-assistant/</loc>
+         <loc>https://docs.magda.land/modulation/macros/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/panels/browsers/</loc>
+         <loc>https://docs.magda.land/modulation/modulators/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/panels/chord-panel/</loc>
+         <loc>https://docs.magda.land/modulation/overview/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/panels/drum-grid-editor/</loc>
+         <loc>https://docs.magda.land/panels/ai-assistant/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/panels/editors/</loc>
+         <loc>https://docs.magda.land/panels/browsers/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/panels/inspector/</loc>
+         <loc>https://docs.magda.land/panels/chord-panel/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/panels/media-library/</loc>
+         <loc>https://docs.magda.land/panels/drum-grid-editor/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/panels/piano-roll/</loc>
+         <loc>https://docs.magda.land/panels/editors/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/panels/track-chain/</loc>
+         <loc>https://docs.magda.land/panels/inspector/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/panels/waveform-editor/</loc>
+         <loc>https://docs.magda.land/panels/media-library/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/reference/controller-profile-format/</loc>
+         <loc>https://docs.magda.land/panels/piano-roll/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/reference/dsl/</loc>
+         <loc>https://docs.magda.land/panels/track-chain/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/reference/file-formats/</loc>
+         <loc>https://docs.magda.land/panels/waveform-editor/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/reference/keyboard-shortcuts/</loc>
+         <loc>https://docs.magda.land/reference/controller-profile-format/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/reference/lua-scripting/</loc>
+         <loc>https://docs.magda.land/reference/dsl/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/reference/osc-addresses/</loc>
+         <loc>https://docs.magda.land/reference/file-formats/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/reference/remote-api-operations/</loc>
+         <loc>https://docs.magda.land/reference/keyboard-shortcuts/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/reference/remote-api/</loc>
+         <loc>https://docs.magda.land/reference/lua-scripting/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
     <url>
-         <loc>https://Conceptual-Machines.github.io/magda-core/reference/troubleshooting/</loc>
+         <loc>https://docs.magda.land/reference/osc-addresses/</loc>
+         <lastmod>2026-11-08</lastmod>
+    </url>
+    <url>
+         <loc>https://docs.magda.land/reference/project-migrations/</loc>
+         <lastmod>2026-11-08</lastmod>
+    </url>
+    <url>
+         <loc>https://docs.magda.land/reference/remote-api-operations/</loc>
+         <lastmod>2026-11-08</lastmod>
+    </url>
+    <url>
+         <loc>https://docs.magda.land/reference/remote-api/</loc>
+         <lastmod>2026-11-08</lastmod>
+    </url>
+    <url>
+         <loc>https://docs.magda.land/reference/troubleshooting/</loc>
          <lastmod>2026-11-08</lastmod>
     </url>
 </urlset>

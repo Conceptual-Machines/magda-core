@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/panels/drum-grid-editor/">
+        <link rel="canonical" href="https://docs.magda.land/panels/drum-grid-editor/">
       
       
         <link rel="prev" href="../piano-roll/">
@@ -19,7 +19,7 @@
         <link rel="next" href="../waveform-editor/">
       
       
-      <link rel="icon" href="../../assets/images/magda-lisa.svg">
+      <link rel="icon" href="../../assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
@@ -88,71 +88,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="../../assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              Drum Grid Editor
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -190,22 +133,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -502,7 +460,7 @@
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -524,51 +482,7 @@
         
   
   <span class="md-ellipsis">
-    Audio Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/plugin-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Plugin Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../interface/ai-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    AI Settings
+    Audio & MIDI
     
   </span>
   
@@ -613,6 +527,50 @@
   
   <span class="md-ellipsis">
     Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI
     
   </span>
   
@@ -742,6 +700,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../arrangement-view/" class="md-nav__link">
         
   
@@ -826,6 +805,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../chord-track/" class="md-nav__link">
         
   
@@ -882,10 +882,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" checked>
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -897,8 +897,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -1010,10 +1010,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" checked>
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1025,8 +1025,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1131,9 +1131,27 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#velocity-and-control-lanes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Velocity and Control Lanes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#auditioning-hits" class="md-nav__link">
     <span class="md-ellipsis">
       Auditioning Hits
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pad-rows" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pad Rows
     </span>
   </a>
   
@@ -1266,10 +1284,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" >
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1281,8 +1299,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1326,10 +1344,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" >
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1341,8 +1359,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1360,6 +1378,28 @@
   
   <span class="md-ellipsis">
     Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
     
   </span>
   
@@ -1460,10 +1500,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" >
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1475,8 +1515,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1736,10 +1776,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1751,8 +1791,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -1935,10 +1975,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" >
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1950,8 +1990,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -2140,6 +2180,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/troubleshooting/" class="md-nav__link">
         
   
@@ -2189,9 +2251,27 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#velocity-and-control-lanes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Velocity and Control Lanes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#auditioning-hits" class="md-nav__link">
     <span class="md-ellipsis">
       Auditioning Hits
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pad-rows" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pad Rows
     </span>
   </a>
   
@@ -2236,44 +2316,48 @@
 
 <h1 id="drum-grid-editor">Drum Grid Editor<a class="headerlink" href="#drum-grid-editor" title="Permanent link">&para;</a></h1>
 <p><img alt="Drum Grid Editor" src="../../assets/images/panels/drum-grid.png" /></p>
-<p>Displayed in the bottom panel when a drum clip is selected or a DrumGrid device is active. Shows a step-sequencer-style grid:</p>
+<p>Displayed in the bottom panel when you select a MIDI clip on a track whose instrument opens in the Drum Grid — a <a href="../../devices/drum-grid/">Drum Grid</a> device does by default. Switch between this editor and the Piano Roll with the two tabs at the left of the header. Right-click the <strong>Drum Grid</strong> tab and choose <strong>Use Drum Grid by default for</strong> <em>instrument</em> to make another instrument open here too.</p>
+<p>Shows a step-sequencer-style grid:</p>
 <ul>
 <li><strong>Rows</strong> represent drum pads / MIDI notes</li>
 <li><strong>Columns</strong> represent time steps</li>
-<li><strong>Click</strong> cells to toggle hits on/off</li>
-<li><strong>Velocity</strong> per hit is adjustable</li>
+<li><strong>Click</strong> an empty cell to add a hit; <strong>double-click</strong> a hit to remove it</li>
+<li><span class="keys"><kbd class="key-shift">Shift</kbd></span> <strong>+ drag</strong> along a row to stamp a run of hits, one per grid step</li>
+<li><strong>Velocity</strong> per hit is adjustable in the velocity lane, or with <span class="keys"><kbd class="key-shift">Shift</kbd></span> <strong>+ wheel</strong> (see <a href="#auditioning-hits">Auditioning Hits</a>)</li>
 <li><strong>Live input highlight</strong> — with the track's input monitoring on, pad rows light up as you play them and the played row scrolls into view</li>
 </ul>
 <div class="admonition note">
 <p class="admonition-title">Header controls</p>
 <ul>
-<li><strong>Grid resolution</strong> — Draggable numerator/denominator for grid subdivision</li>
-<li><strong>AUTO</strong> — Automatically adjust grid resolution based on zoom level</li>
-<li><strong>SNAP</strong> — Toggle snap-to-grid</li>
-<li><strong>Slice</strong> — Split each selected note into equal pieces (see <a href="../piano-roll/#slicing-notes">Slicing Notes</a>)</li>
-<li><strong>Time Bend</strong> — Redistribute selected note timing along a curve (see <a href="../../time-bend/#drum-grid-editor">Time Bend</a>)</li>
-<li><strong>Overlay tracks</strong> — Show other tracks' notes as a ghost overlay, same as in the <a href="../piano-roll/#overlay-tracks-ghost-notes">Piano Roll</a>. Ghost hits land on the row matching their pitch; notes that do not map to a pad row are skipped.</li>
-<li><strong>Loop</strong> - Toggle the clip's own source loop on or off</li>
-<li><strong>Fullscreen</strong> — Pinned to the far right, this toggle expands the editor to fill the window. Click again to restore. Shared with the Piano Roll.</li>
+<li><strong>Piano Roll</strong> / <strong>Drum Grid</strong> — Switch editors for the clip</li>
+<li><strong>Overlay tracks</strong> — Show other tracks' notes as a ghost overlay (<em>Layer clips from other tracks</em>), same as in the <a href="../piano-roll/#overlay-tracks-ghost-notes">Piano Roll</a>. Ghost hits land on the row matching their pitch; notes that do not map to a pad row are skipped.</li>
+<li><strong>Edit tools</strong> — <strong>Pointer</strong>, <strong>Pencil</strong>, <strong>Slice</strong>, <strong>Glue</strong>, and <strong>Erase</strong> (keys <span class="keys"><kbd class="key-1">1</kbd></span> to <span class="keys"><kbd class="key-5">5</kbd></span>), shared with the Piano Roll. With <strong>Erase</strong>, click or sweep over hits to remove them.</li>
+<li><strong>Time Bend</strong> — Show the clip's time bend (see <a href="../../time-bend/#drum-grid-editor">Time Bend</a>)</li>
+<li><strong>Key</strong> — The song key chip, shared with the Piano Roll</li>
+<li><strong>Loop</strong> — Toggle the clip's own source loop on or off</li>
+<li><strong>Grid division</strong>, <strong>AUTO</strong>, <strong>SNAP</strong> — Pick the grid subdivision, let it follow the zoom level, and toggle snap-to-grid</li>
+<li><strong>Clip power</strong> — Enable or disable the clip</li>
+<li><strong>Maximise</strong> — Pinned to the far right, this toggle expands the editor to fill the window. Click again to restore. Shared with the Piano Roll.</li>
 </ul>
 </div>
 <div class="admonition note">
 <p class="admonition-title">Sidebar controls</p>
 <ul>
-<li><strong>Audition</strong> - Toggle hit preview (see <a href="#auditioning-hits">Auditioning Hits</a>)</li>
+<li><strong>Chord track</strong> — Show the chord track's chords in a lane above the grid</li>
+<li><strong>Monitor</strong> — Hear hits as you click them (see <a href="#auditioning-hits">Auditioning Hits</a>)</li>
 <li><strong>Fold</strong> — Collapse the grid to only the pads in use, hiding empty lanes (<strong>Fold to used pads</strong>)</li>
-<li><strong>CC</strong> — Add a CC or pitchbend lane to the drawer, the same way as in the <a href="../piano-roll/#control-lanes">Piano Roll</a>. The menu offers <strong>Pitchbend</strong>, common controllers (<strong>CC 1 (Mod Wheel)</strong>, <strong>CC 7 (Volume)</strong>, <strong>CC 11 (Expression)</strong>, <strong>CC 64 (Sustain)</strong>), and <strong>Custom CC...</strong></li>
 </ul>
 </div>
-<div class="admonition note">
-<p class="admonition-title">Footer controls</p>
-<ul>
-<li><img alt="bar chart" src="../../assets/images/icons/bar_chart.svg" width="16" /> <strong>Velocity</strong> — Toggle the velocity lane at the bottom of the editor</li>
-</ul>
-</div>
+<p>Right-click the grid for <strong>Copy</strong>, <strong>Paste</strong>, <strong>Duplicate</strong>, <strong>Delete</strong>, <strong>Slice...</strong> (see <a href="../piano-roll/#slicing-notes">Slicing Notes</a>), the default length and velocity for new hits, and <strong>Quantize</strong>.</p>
+<h2 id="velocity-and-control-lanes">Velocity and Control Lanes<a class="headerlink" href="#velocity-and-control-lanes" title="Permanent link">&para;</a></h2>
+<p>The drawer at the bottom of the editor holds the velocity lane. Drag the bars to set hit velocities. Click a pad row's name to select the row: the velocity lane then shows only that row's hits (<em>VEL · selected row</em>).</p>
+<p>The buttons at the left of the drawer switch it to CC and pitchbend lanes, which you add with the <strong>+</strong> button the same way as in the <a href="../piano-roll/#control-lanes">Piano Roll</a>. The menu offers <strong>Pitchbend</strong>, common controllers (<strong>CC 1 (Mod Wheel)</strong>, <strong>CC 7 (Volume)</strong>, <strong>CC 11 (Expression)</strong>, <strong>CC 64 (Sustain)</strong>), and <strong>Custom CC...</strong></p>
 <h2 id="auditioning-hits">Auditioning Hits<a class="headerlink" href="#auditioning-hits" title="Permanent link">&para;</a></h2>
-<p>The speaker toggle in the top-left gutter previews hits through the track's instrument. With it lit, clicking a cell or pressing a pad sounds that note. It works the same as in the <a href="../piano-roll/#auditioning-notes">Piano Roll</a>, and the setting is shared between the two editors. The pad-row play buttons always audition, whatever the toggle state.</p>
+<p>The <strong>Monitor</strong> toggle in the sidebar previews hits through the track's instrument. With it lit, clicking a cell or pressing a pad sounds that note. It works the same as in the <a href="../piano-roll/#auditioning-notes">Piano Roll</a>, and the setting is shared between the two editors. The play button at the end of each pad row always auditions, whatever the toggle state.</p>
 <p><span class="keys"><kbd class="key-shift">Shift</kbd></span> <strong>+ wheel</strong> over a hit edits its velocity, exactly as in the <a href="../piano-roll/#editing-velocity-with-the-wheel">Piano Roll</a>.</p>
+<h2 id="pad-rows">Pad Rows<a class="headerlink" href="#pad-rows" title="Permanent link">&para;</a></h2>
+<p>Each pad that holds a sound has a mute button on its row, which mutes the pad's <a href="../../mixer-view/#drum-grid-pad-channels">mixer channel</a>.</p>
+<p>When any pad carries a role, the rows group under <strong>KICK</strong>, <strong>SNARE</strong>, <strong>HATS</strong>, and <strong>PERC</strong> headers, in role order; pads without a role join <strong>PERC</strong>. Click a header to fold its group.</p>
 <h2 id="row-labels-and-roles">Row Labels and Roles<a class="headerlink" href="#row-labels-and-roles" title="Permanent link">&para;</a></h2>
 <p>Each pad row can carry a custom name and an instrument <strong>role</strong>. The role is a semantic label (what the pad <em>is</em>: a kick, a snare, a closed hat) and shows as a small coloured pill next to the row, abbreviated to a short tag like <code>K</code>, <code>S</code>, or <code>HH</code>.</p>
 <p>Right-click a row to set both:</p>
@@ -2346,7 +2430,7 @@
 <li><strong>Apply template</strong> - apply a built-in template or one of your saved drumkits to the current grid.</li>
 </ul>
 <p>Drumkits store pad metadata (notes, labels, roles), not the samples themselves.</p>
-<p>See <a href="../../devices/drum-grid/">Drum Grid</a> for the DrumGrid device itself, including per-pad sample loading, FX chains, and envelopes.</p>
+<p>See <a href="../../devices/drum-grid/">Drum Grid</a> for the DrumGrid device itself, including per-pad sample loading, each pad's chain, and envelopes. Each pad that holds a sound also has its own channel in the <a href="../../mixer-view/#drum-grid-pad-channels">Mixer</a>.</p>
 
 
 
@@ -2428,6 +2512,8 @@
     
     
       <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="../../javascripts/site-header.js"></script>
       
     
   </body>

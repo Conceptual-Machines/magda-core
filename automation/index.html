@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/automation/">
+        <link rel="canonical" href="https://docs.magda.land/automation/">
       
       
         <link rel="prev" href="../modulation/linking/">
@@ -19,7 +19,7 @@
         <link rel="next" href="../time-bend/">
       
       
-      <link rel="icon" href="../assets/images/magda-lisa.svg">
+      <link rel="icon" href="../assets/images/magda-icon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
     
     
@@ -88,71 +88,14 @@
     </div>
     
     
-      
-
-  
-
-<header class="md-header md-header--shadow" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
-      
-  <img src="../assets/images/magda-lisa.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            MAGDA Manual
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              Automation
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
+      <magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="https://docs.magda.land/">MAGDA Manual</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </label>
+  <header slot="extra" class="magda-header__search" role="none">
     
       <label class="md-header__button md-icon" for="__search">
-        
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
       </label>
       <div class="md-search" data-md-component="search" role="dialog">
@@ -190,22 +133,37 @@
   </div>
 </div>
     
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  
+    <form class="md-header__option" data-md-component="palette">
+  
     
-      <div class="md-header__source">
-        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    magda-core
-  </div>
-</a>
-      </div>
     
-  </nav>
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+    <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
   
 </header>
+<script src="https://magda.land/site-header.js"></script>
     
     <div class="md-container" data-md-component="container">
       
@@ -502,7 +460,7 @@
         
   
   <span class="md-ellipsis">
-    Preferences
+    Settings
     
   </span>
   
@@ -524,51 +482,7 @@
         
   
   <span class="md-ellipsis">
-    Audio Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../interface/plugin-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Plugin Settings
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../interface/ai-settings/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    AI Settings
+    Audio & MIDI
     
   </span>
   
@@ -613,6 +527,50 @@
   
   <span class="md-ellipsis">
     Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interface/plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI
     
   </span>
   
@@ -742,6 +700,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../ara/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    ARA Plugins
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../arrangement-view/" class="md-nav__link">
         
   
@@ -826,6 +805,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../exporting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Exporting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../chord-track/" class="md-nav__link">
         
   
@@ -880,10 +880,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -895,8 +895,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
             <span class="md-nav__icon md-icon"></span>
             Panels
           </label>
@@ -1006,10 +1006,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18_5" >
         
           
-          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_18_5" id="__nav_18_5_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1021,8 +1021,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_18_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18_5">
             <span class="md-nav__icon md-icon"></span>
             Editors
           </label>
@@ -1194,10 +1194,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19" >
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+          <label class="md-nav__link" for="__nav_19" id="__nav_19_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1209,8 +1209,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19">
             <span class="md-nav__icon md-icon"></span>
             Devices
           </label>
@@ -1254,10 +1254,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_2" >
         
           
-          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_2" id="__nav_19_2_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1269,8 +1269,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_2">
             <span class="md-nav__icon md-icon"></span>
             MIDI Devices
           </label>
@@ -1288,6 +1288,28 @@
   
   <span class="md-ellipsis">
     Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../devices/strum/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strum
     
   </span>
   
@@ -1388,10 +1410,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_19_3" >
         
           
-          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_19_3" id="__nav_19_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -1403,8 +1425,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17_3">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_19_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_19_3">
             <span class="md-nav__icon md-icon"></span>
             Instruments
           </label>
@@ -1664,10 +1686,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_20" >
         
           
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+          <label class="md-nav__link" for="__nav_20" id="__nav_20_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1679,8 +1701,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_20">
             <span class="md-nav__icon md-icon"></span>
             Modulation
           </label>
@@ -2051,10 +2073,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_24" >
         
           
-          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+          <label class="md-nav__link" for="__nav_24" id="__nav_24_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -2066,8 +2088,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_22">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_24_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_24">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -2239,6 +2261,28 @@
   
   <span class="md-ellipsis">
     File Formats
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/project-migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Migrations
     
   </span>
   
@@ -2480,41 +2524,25 @@
 <li>Right-click any parameter slider → <strong>Show Automation Lane</strong>, or</li>
 <li>Right-click an automation-aware control (macro knob, LFO Rate slider) and pick the same item.</li>
 </ul>
-<p>The lane appears below the track. Drag points to edit the curve; double-click to add or remove points; right-click points for shape options.</p>
+<p>The lane appears below the track. Drag points to edit the curve; double-click to add or remove points; right-click a point to type its value, or a segment to make it a hard corner.</p>
 <p>Multiple lanes can stack on the same track — one per automated parameter — and modulators, macros, and automation can all drive the same parameter at once. Their effects combine.</p>
-<p>A device parameter gets its lane from the same place you link modulation: right-click the parameter and choose <strong>Show Automation Lane</strong>. (Parameters on a post-FX device cannot be automated, so the item is disabled there.)</p>
+<p>A device parameter gets its lane from the same place you link modulation: right-click the parameter and choose <strong>Show Automation Lane</strong>. (Parameters on a post-FX device cannot be automated, so the item isn't offered there.)</p>
 <h2 id="curve-shapes">Curve Shapes<a class="headerlink" href="#curve-shapes" title="Permanent link">&para;</a></h2>
-<p>A segment is the line between two points. Right-click a segment to change its shape:</p>
-<table>
-<thead>
-<tr>
-<th>Shape</th>
-<th>Behaviour</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Linear</strong></td>
-<td>Straight line between the two points</td>
-</tr>
-<tr>
-<td><strong>Bezier</strong></td>
-<td>Smooth curve; drag the handles to shape it</td>
-</tr>
-<tr>
-<td><strong>Step</strong></td>
-<td>Holds the first value, then jumps at the next point</td>
-</tr>
-<tr>
-<td><strong>Hard Corner</strong></td>
-<td>Two straight segments meeting at a sharp, draggable apex</td>
-</tr>
-</tbody>
-</table>
+<p>A segment is the line between two points. Each segment has a handle in its middle:</p>
+<ul>
+<li><strong>Drag the handle</strong> to bend the segment into a curve.</li>
+<li><strong>Double-click the handle</strong> to straighten it again.</li>
+<li><strong>Right-click a segment</strong> and choose <strong>Hard Corner</strong> to turn it into two straight lines meeting at a sharp apex; drag the handle to move the apex. Choose it again to go back to a curve.</li>
+</ul>
+<p><span class="keys"><kbd class="key-shift">Shift</kbd></span>-click to stamp a <strong>step</strong>: a flat block one grid division wide at the value you clicked, with a sheer edge on each side.</p>
 <h2 id="editing-points">Editing Points<a class="headerlink" href="#editing-points" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Add / remove a point</strong> — double-click in the lane.</li>
+<li><strong>Add / remove a point</strong> — double-click an empty spot in the lane to add one; double-click a point to remove it.</li>
+<li><strong>Move points</strong> — drag a point; drag across an empty part of the lane to select several, and drag any of them to move them together.</li>
+<li><strong>Draw freehand</strong> — hold <span class="keys"><kbd class="key-command">Cmd</kbd></span> (<span class="keys"><kbd class="key-control">Ctrl</kbd></span> on Windows/Linux) and drag.</li>
+<li><strong>Delete</strong> — select points and press <span class="keys"><kbd class="key-delete">Del</kbd></span> or <span class="keys"><kbd class="key-backspace">Backspace</kbd></span>. <span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-a">A</kbd></span> (<span class="keys"><kbd class="key-control">Ctrl</kbd><span>+</span><kbd class="key-a">A</kbd></span>) selects every point.</li>
 <li><strong>Inline value</strong> — right-click a point to type its value directly, in the lane's real units (dB, pan %, Hz, …). Press <span class="keys"><kbd class="key-enter">Enter</kbd></span> to commit.</li>
+<li><strong>Simplify</strong> — select three or more points, right-click and choose <strong>Simplify Selected Points</strong> to thin them out while keeping the shape.</li>
 <li><strong>Point Inspector</strong> — select one or more points to open the inspector, which shows the target name and point count, an editable <strong>Value</strong> field, and the <strong>Position</strong> (beat) of a single selected point. Editing the value across a multi-selection applies the change as a delta, preserving the relative shape.</li>
 </ul>
 <h2 id="lane-header-controls">Lane Header Controls<a class="headerlink" href="#lane-header-controls" title="Permanent link">&para;</a></h2>
@@ -2557,6 +2585,7 @@
 <li>Hold <span class="keys"><kbd class="key-alt">Alt</kbd></span> and <strong>drag</strong> to draw a clip of a specific length (a plain <span class="keys"><kbd class="key-alt">Alt</kbd></span>-click makes the default one-bar clip).</li>
 <li><strong>Right-click</strong> a clip for <strong>Edit Curve</strong>, <strong>Duplicate</strong>, <strong>Loop</strong> (a checkmark toggle that repeats the clip's curve to fill its length), and <strong>Delete</strong>.</li>
 </ul>
+<p>Select an automation clip to see it in the Inspector: its name (double-click to rename), its <strong>Start</strong>, <strong>End</strong> and <strong>Length</strong>, and a <strong>Loop</strong> switch with the loop's length. Right-click the name to change the clip's colour.</p>
 <p><strong>Double-click a clip</strong> to open the automation-clip editor. Its header carries:</p>
 <table>
 <thead>
@@ -2584,18 +2613,20 @@
 <h3 id="baking-modulation">Baking Modulation<a class="headerlink" href="#baking-modulation" title="Permanent link">&para;</a></h3>
 <p>You can convert a live modulator (an LFO or envelope linked to a parameter) into automation you can edit by hand. Right-click the linked parameter and choose <strong>Bake Modulation to Automation</strong> to write the modulator's movement into lane points, or <strong>Bake Modulation to Automation Clip</strong> to capture it as an automation clip.</p>
 <h2 id="master-automation">Master Automation<a class="headerlink" href="#master-automation" title="Permanent link">&para;</a></h2>
-<p>The master channel has its own automation band above the master strip. Click the <strong>Automation</strong> button in the master header (or right-click the header) to open the master automation menu, where you can show or hide existing master lanes, hide them all, or <strong>Add New Lane</strong> for:</p>
+<p>The master channel has its own automation band above the master strip. Click the <strong>Automation</strong> button in the master header (or right-click the header) to open the master automation menu, where you can show or hide existing master lanes, hide them all, or use <strong>Add New Lane...</strong> for:</p>
 <ul>
 <li><strong>Track Volume</strong> — the master output level</li>
 <li><strong>Tempo</strong> — see below</li>
 <li>any parameter of a device on the master chain, plus master macros and modulators</li>
 </ul>
-<p><span class="keys"><kbd class="key-alt">Alt</kbd></span>-click the Automation button to toggle every automation lane in the edit on or off at once.</p>
+<p><span class="keys"><kbd class="key-alt">Alt</kbd></span>-click the Automation button to show or hide every automation lane in the edit at once.</p>
 <p>These master lanes include <strong>edit-scoped targets</strong> like tempo and master volume that aren't tied to a specific device.</p>
 <h2 id="tempo-automation">Tempo Automation<a class="headerlink" href="#tempo-automation" title="Permanent link">&para;</a></h2>
 <p>Tempo can be automated over time as a curve in the master automation band. Open the master automation menu, choose <strong>Add New Lane → Tempo</strong>, and the tempo lane appears in the master band. Edit it like any other lane — drag points, set curve shapes, type exact BPM values via the point inspector. The curve drives the project's tempo, so the song speeds up and slows down along the curve during playback.</p>
+<p>Tempo automation is ignored while <a href="../transport/#ableton-link">Ableton Link</a> is on or MAGDA follows a <a href="../transport/#midi-clock">MIDI clock</a>.</p>
 <h2 id="automation-modes">Automation Modes<a class="headerlink" href="#automation-modes" title="Permanent link">&para;</a></h2>
-<p>The transport bar shows the automation icon <img alt="automation icon" src="../assets/icons/automation.svg" width="14" /> next to the play/stop controls, with a single letter under it indicating the active mode:</p>
+<p>The transport bar's automation button <img alt="automation icon" src="../assets/icons/automation.svg" width="14" /> sits right after Record. Click it to arm automation writing: it lights up, and <strong>AUTOMATION WRITE</strong> (or <strong>TOUCH</strong> or <strong>LATCH</strong>) shows in the transport when there is room. Click it again, or press <strong>Stop</strong> in the transport, to disarm it. While it is disarmed, lanes only play back.</p>
+<p>Right-click the button to choose the mode. The letter under the icon shows the one chosen:</p>
 <table>
 <thead>
 <tr>
@@ -2604,10 +2635,6 @@
 </tr>
 </thead>
 <tbody>
-<tr>
-<td>(none)</td>
-<td>Off — read-only playback</td>
-</tr>
 <tr>
 <td><strong>W</strong></td>
 <td>Write</td>
@@ -2622,7 +2649,7 @@
 </tr>
 </tbody>
 </table>
-<p>Click the icon to cycle through the modes. The choice controls <strong>how parameter movements during playback are written into a lane</strong>.</p>
+<p>The mode controls <strong>how parameter movements during playback are written into a lane</strong>.</p>
 <table>
 <thead>
 <tr>
@@ -2632,7 +2659,7 @@
 </thead>
 <tbody>
 <tr>
-<td><strong>Off</strong></td>
+<td><strong>Disarmed</strong></td>
 <td>No recording. Lanes play back; user gestures don't write anything.</td>
 </tr>
 <tr>
@@ -2654,7 +2681,7 @@
 <li><strong>Write</strong> for a first pass on an empty lane — sketching the shape from scratch.</li>
 <li><strong>Touch</strong> for nudging a single section of an existing curve without erasing the parts you don't touch.</li>
 <li><strong>Latch</strong> for "set and hold" gestures — sweep a filter to its destination, release, and the rest of the lane is rewritten at that target value.</li>
-<li><strong>Off</strong> when you've finished writing and want playback only. Same effect as a per-DAW "Read" mode.</li>
+<li><strong>Disarm</strong> the button when you've finished writing and want playback only. Same effect as a "Read" mode in other DAWs.</li>
 </ul>
 <h2 id="touch-and-the-override-highlight">Touch and the Override Highlight<a class="headerlink" href="#touch-and-the-override-highlight" title="Permanent link">&para;</a></h2>
 <p>In Touch and Latch modes, the parameter you're holding paints a coloured highlight around its slider. That highlight is your visual cue that the parameter is currently <strong>overriding</strong> the lane — you, not the curve, are in charge of that value right now. When you release:</p>
@@ -2676,9 +2703,12 @@
 <h2 id="duplicating-clips-with-automation">Duplicating Clips with Automation<a class="headerlink" href="#duplicating-clips-with-automation" title="Permanent link">&para;</a></h2>
 <p>When you duplicate a clip, you can decide whether its automation comes along. Right-click a clip and choose <strong>Duplicate With Automation</strong> to carry the lane data into the copy, or <strong>Duplicate Without Automation</strong> to leave it behind. See <a href="../clips/#editing-clips">Clips — Editing Clips</a>.</p>
 <h2 id="removing-automation">Removing Automation<a class="headerlink" href="#removing-automation" title="Permanent link">&para;</a></h2>
-<p>To remove a single point: right-click → <strong>Delete Point</strong>.
-To clear the whole lane: right-click in the lane → <strong>Clear Lane</strong>.
-To hide the lane (keeping the curve): right-click the lane header → <strong>Hide Lane</strong>. Show it again from the parameter's right-click menu.</p>
+<ul>
+<li>To remove a point: double-click it, or select it and press <span class="keys"><kbd class="key-delete">Del</kbd></span>.</li>
+<li>To remove a lane and its curve: click <strong>Delete automation lane</strong> in the lane header.</li>
+<li>To hide a lane (keeping the curve): right-click the lane header → <strong>Hide Lane</strong>. Show it again from the parameter's right-click menu or the track's Automation menu.</li>
+</ul>
+<p>The lane header's right-click menu also has <strong>Simplify Curve</strong>, which thins out a lane with many points.</p>
 
 
 
@@ -2760,6 +2790,8 @@ To hide the lane (keeping the curve): right-click the lane header → <strong>Hi
     
     
       <script src="../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+        <script src="../javascripts/site-header.js"></script>
       
     
   </body>
