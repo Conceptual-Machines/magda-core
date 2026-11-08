@@ -1413,11 +1413,10 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         mainView->getTimelineController().dispatch(SetEditPositionEvent{0.0});
     };
     transportPanel->onGoToPrev = [this]() {
-        mainView->getTimelineController().dispatch(SetEditPositionEvent{0.0});
+        mainView->getTimelineController().dispatch(GoToPreviousMarkerEvent{});
     };
     transportPanel->onGoToNext = [this]() {
-        const auto& state = mainView->getTimelineController().getState();
-        mainView->getTimelineController().dispatch(SetEditPositionEvent{state.timelineLength});
+        mainView->getTimelineController().dispatch(GoToNextMarkerEvent{});
     };
     transportPanel->onPlayheadEdit = [this](double beats) {
         double bpm = mainView->getTimelineController().getState().tempo.bpm;
