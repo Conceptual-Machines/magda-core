@@ -212,6 +212,9 @@ juce_add_module(${CMAKE_CURRENT_SOURCE_DIR}/third_party/juce-llm/juce_llm)
 # llama.cpp — embedded local inference. OFF builds a stub whose model loads fail,
 # so the llama.cpp submodule need not be initialised (#3235).
 option(MAGDA_LOCAL_LLM "Build embedded local inference (llama.cpp)" ON)
+set(MAGDA_LLM_VULKAN "AUTO" CACHE STRING
+    "llama.cpp Vulkan backend on Windows and Linux: AUTO (when the SDK is found), ON or OFF")
+set_property(CACHE MAGDA_LLM_VULKAN PROPERTY STRINGS AUTO ON OFF)
 if(MAGDA_LOCAL_LLM)
     set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -220,18 +223,41 @@ if(MAGDA_LOCAL_LLM)
     if(APPLE)
         set(GGML_METAL ON CACHE BOOL "" FORCE)
         set(GGML_METAL_EMBED_LIBRARY ON CACHE BOOL "" FORCE)
+        # Baseline SSE4.2 + AVX instead of -march=native, which tunes to the build machine:
+        # on an Intel Mac cross-build it resolves to the Apple host.
+        if(CMAKE_OSX_ARCHITECTURES MATCHES "x86_64"
+           OR (NOT CMAKE_OSX_ARCHITECTURES AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64"))
+            set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+            set(GGML_AVX2   OFF CACHE BOOL "" FORCE)
+            set(GGML_FMA    OFF CACHE BOOL "" FORCE)
+            set(GGML_F16C   OFF CACHE BOOL "" FORCE)
+            set(GGML_BMI2   OFF CACHE BOOL "" FORCE)
+        endif()
     else()
+        # Backends load at run time: the CPU backend picks the variant this CPU
+        # supports, and a machine without a Vulkan loader skips the GPU instead of failing to start.
         set(GGML_METAL OFF CACHE BOOL "" FORCE)
-    endif()
-    # Baseline SSE4.2 + AVX instead of -march=native, which tunes to the build machine:
-    # SIGILL on older CPUs, and on an Intel Mac cross-build it resolves to the Apple host.
-    if(NOT APPLE OR CMAKE_OSX_ARCHITECTURES MATCHES "x86_64"
-       OR (NOT CMAKE_OSX_ARCHITECTURES AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64"))
         set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
-        set(GGML_AVX2   OFF CACHE BOOL "" FORCE)
-        set(GGML_FMA    OFF CACHE BOOL "" FORCE)
-        set(GGML_F16C   OFF CACHE BOOL "" FORCE)
-        set(GGML_BMI2   OFF CACHE BOOL "" FORCE)
+        set(GGML_BACKEND_DL ON CACHE BOOL "" FORCE)
+        set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
+        set(BUILD_SHARED_LIBS ON)
+
+        set(MAGDA_LLM_VULKAN_FOUND OFF)
+        if(NOT MAGDA_LLM_VULKAN STREQUAL "OFF")
+            find_package(Vulkan COMPONENTS glslc QUIET)
+            find_package(SPIRV-Headers CONFIG QUIET HINTS "$ENV{VULKAN_SDK}")
+            if(Vulkan_FOUND AND Vulkan_glslc_FOUND AND SPIRV-Headers_FOUND)
+                set(MAGDA_LLM_VULKAN_FOUND ON)
+            elseif(MAGDA_LLM_VULKAN STREQUAL "ON")
+                message(FATAL_ERROR "MAGDA_LLM_VULKAN=ON needs the Vulkan SDK (loader, glslc, SPIRV-Headers)")
+            else()
+                message(WARNING "Vulkan SDK not found: local models run on the CPU only")
+            endif()
+        endif()
+        set(GGML_VULKAN ${MAGDA_LLM_VULKAN_FOUND} CACHE BOOL "" FORCE)
+
+        # llama.cpp writes its libraries and backend modules here unconditionally; copied next to the app.
+        set(MAGDA_LLAMA_RUNTIME_DIR "${CMAKE_BINARY_DIR}/bin")
     endif()
     # Vendored llama.cpp is a C++17 codebase and pins no standard of its own, so it
     # inherits this project's. It does not compile at ours: C++23 clang rejects its
@@ -241,6 +267,7 @@ if(MAGDA_LOCAL_LLM)
     set(CMAKE_CXX_STANDARD 17)
     add_subdirectory(third_party/llama.cpp)
     set(CMAKE_CXX_STANDARD ${MAGDA_CXX_STANDARD})
+    unset(BUILD_SHARED_LIBS)
 
     if(MSVC AND TARGET llama)
         # Vendored llama.cpp leans on implicit numeric conversions (size_t->int,

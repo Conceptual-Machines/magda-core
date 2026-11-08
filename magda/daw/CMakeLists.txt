@@ -1097,3 +1097,13 @@ if(WIN32)
         COMMENT "Copying runtime DLLs (libxml2 + deps) alongside app executable"
     )
 endif()
+
+# llama.cpp loads its CPU and Vulkan backends from the executable's folder.
+if(MAGDA_LLAMA_RUNTIME_DIR)
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_LLAMA_RUNTIME_DIR}"
+            "$<TARGET_FILE_DIR:magda_daw_app>"
+        COMMENT "Copying llama.cpp libraries and backends alongside app executable"
+    )
+endif()

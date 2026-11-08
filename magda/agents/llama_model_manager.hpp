@@ -28,7 +28,7 @@ class LlamaModelManager {
     struct Config {
         std::string modelPath;
         int contextSize = 4096;
-        int gpuLayers = -1;  // -1 = all layers on GPU (Metal)
+        int gpuLayers = -1;  // -1 = all layers on GPU (Metal, or Vulkan on Windows and Linux)
     };
 
     bool loadModel(const Config& config, std::string* errorMessage = nullptr);

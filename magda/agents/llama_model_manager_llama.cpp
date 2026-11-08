@@ -9,9 +9,11 @@
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
 #define _SILENCE_CXX20_OLD_SHARED_PTR_ATOMIC_SUPPORT_DEPRECATION_WARNING
 
+#include <ggml-backend.h>
 #include <llama.h>
 
 #include <chrono>
+#include <mutex>
 #include <utility>
 #include <vector>
 
@@ -53,6 +55,12 @@ bool LlamaModelManager::loadModel(const Config& config, std::string* errorMessag
         llama_model_free(model_);
         model_ = nullptr;
     }
+
+#ifdef GGML_BACKEND_DL
+    // Windows and Linux load the CPU and Vulkan backends from the app's folder.
+    static std::once_flag backendsLoaded;
+    std::call_once(backendsLoaded, [] { ggml_backend_load_all(); });
+#endif
 
     // Load model
     auto modelParams = llama_model_default_params();
