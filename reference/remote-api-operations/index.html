@@ -1,0 +1,4376 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="User manual for MAGDA — a free, open-source digital audio workstation">
+      
+      
+      
+        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/reference/remote-api-operations/">
+      
+      
+        <link rel="prev" href="../remote-api/">
+      
+      
+        <link rel="next" href="../dsl/">
+      
+      
+      <link rel="icon" href="../../assets/images/magda-lisa.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
+    
+    
+      
+        <title>Remote API Operations - MAGDA Manual</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.8608ea7d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#remote-api-operations" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
+      
+  <img src="../../assets/images/magda-lisa.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MAGDA Manual
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Remote API Operations
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    magda-core
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="https://magda.land" title="MAGDA Manual" class="md-nav__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
+      
+  <img src="../../assets/images/magda-lisa.svg" alt="logo">
+
+    </a>
+    MAGDA Manual
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    magda-core
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../is-magda-right-for-you/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Is MAGDA Right for You?
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/first-session/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    First Session
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../localization/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Localization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Interface Layout
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Interface Layout
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/overview/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/menus/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Menus
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/preferences/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Preferences
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/audio-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Audio Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugin Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/controllers/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Controllers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/connections/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tracks/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Tracks
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clips/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Clips
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../stem-separation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Stem Separation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fx-chain/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    FX Chain & Racks
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plugin-parameters/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugin Parameters
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arrangement-view/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Arrangement View
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../session-view/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Session View
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mixer-view/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Mixer View
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recording-comping/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Recording & Comping
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../chord-track/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Chord Track
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../working-with-ai/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Working with AI
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        
+          
+          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Panels
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_16">
+            <span class="md-nav__icon md-icon"></span>
+            Panels
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/inspector/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Inspector
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/browsers/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugin & Media Browser
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/media-library/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Media Library
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/ai-assistant/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI Assistant
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Editors
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_16_5">
+            <span class="md-nav__icon md-icon"></span>
+            Editors
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/editors/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/piano-roll/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Piano Roll
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/drum-grid-editor/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Drum Grid Editor
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/waveform-editor/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Waveform Editor
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/track-chain/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Track Chain
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/chord-panel/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Chord Panel
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        
+          
+          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Devices
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_17">
+            <span class="md-nav__icon md-icon"></span>
+            Devices
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/built-in/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    MIDI Devices
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_17_2">
+            <span class="md-nav__icon md-icon"></span>
+            MIDI Devices
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/arpeggiator/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/chord-engine/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Chord Engine
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/step-sequencer/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Step Sequencer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/poly-sequencer/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Poly Sequencer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Instruments
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_17_3">
+            <span class="md-nav__icon md-icon"></span>
+            Instruments
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/poly-synth/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Poly Synth
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/fm0/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    FM0
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/drum-kit/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Drum Kit
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/physical-models/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Physical Models
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/mutable/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Mutable Ports
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/drum-grid/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Drum Grid
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/sampler/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Sampler
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/faust-instrument/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Faust Instrument
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/effects/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Effects
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/analysis/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Analysis
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        
+          
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Modulation
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
+            <span class="md-nav__icon md-icon"></span>
+            Modulation
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modulation/overview/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modulation/modulators/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Modulators
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modulation/macros/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Macros
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modulation/linking/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Linking Parameters
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../automation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Automation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../time-bend/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Time Bend
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../transport/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Transport
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Reference
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_22">
+            <span class="md-nav__icon md-icon"></span>
+            Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../remote-api/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Remote API
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Remote API Operations
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Remote API Operations
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#system" class="md-nav__link">
+    <span class="md-ellipsis">
+      system
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      engine
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#meters" class="md-nav__link">
+    <span class="md-ellipsis">
+      meters
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#jobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      jobs
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tracks" class="md-nav__link">
+    <span class="md-ellipsis">
+      tracks
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#capture" class="md-nav__link">
+    <span class="md-ellipsis">
+      capture
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#project" class="md-nav__link">
+    <span class="md-ellipsis">
+      project
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#trackpresets" class="md-nav__link">
+    <span class="md-ellipsis">
+      trackPresets
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chordtrack" class="md-nav__link">
+    <span class="md-ellipsis">
+      chordTrack
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      routing
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sends" class="md-nav__link">
+    <span class="md-ellipsis">
+      sends
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sidechains" class="md-nav__link">
+    <span class="md-ellipsis">
+      sidechains
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#clips" class="md-nav__link">
+    <span class="md-ellipsis">
+      clips
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#devices" class="md-nav__link">
+    <span class="md-ellipsis">
+      devices
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pads" class="md-nav__link">
+    <span class="md-ellipsis">
+      pads
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#devicepresets" class="md-nav__link">
+    <span class="md-ellipsis">
+      devicePresets
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mods" class="md-nav__link">
+    <span class="md-ellipsis">
+      mods
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#macros" class="md-nav__link">
+    <span class="md-ellipsis">
+      macros
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#racks" class="md-nav__link">
+    <span class="md-ellipsis">
+      racks
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chains" class="md-nav__link">
+    <span class="md-ellipsis">
+      chains
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      selection
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#transport" class="md-nav__link">
+    <span class="md-ellipsis">
+      transport
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#session" class="md-nav__link">
+    <span class="md-ellipsis">
+      session
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#automation" class="md-nav__link">
+    <span class="md-ellipsis">
+      automation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#grooves" class="md-nav__link">
+    <span class="md-ellipsis">
+      grooves
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#focused" class="md-nav__link">
+    <span class="md-ellipsis">
+      focused
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#midi" class="md-nav__link">
+    <span class="md-ellipsis">
+      midi
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#subscriptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      subscriptions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      Errors
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dsl/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    DSL Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../controller-profile-format/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Controller Profile Format
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../osc-addresses/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    OSC Address Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lua-scripting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Lua Scripting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../keyboard-shortcuts/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Keyboard Shortcuts
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../file-formats/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    File Formats
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#system" class="md-nav__link">
+    <span class="md-ellipsis">
+      system
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      engine
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#meters" class="md-nav__link">
+    <span class="md-ellipsis">
+      meters
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#jobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      jobs
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tracks" class="md-nav__link">
+    <span class="md-ellipsis">
+      tracks
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#capture" class="md-nav__link">
+    <span class="md-ellipsis">
+      capture
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#project" class="md-nav__link">
+    <span class="md-ellipsis">
+      project
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#trackpresets" class="md-nav__link">
+    <span class="md-ellipsis">
+      trackPresets
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chordtrack" class="md-nav__link">
+    <span class="md-ellipsis">
+      chordTrack
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      routing
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sends" class="md-nav__link">
+    <span class="md-ellipsis">
+      sends
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sidechains" class="md-nav__link">
+    <span class="md-ellipsis">
+      sidechains
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#clips" class="md-nav__link">
+    <span class="md-ellipsis">
+      clips
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#devices" class="md-nav__link">
+    <span class="md-ellipsis">
+      devices
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pads" class="md-nav__link">
+    <span class="md-ellipsis">
+      pads
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#devicepresets" class="md-nav__link">
+    <span class="md-ellipsis">
+      devicePresets
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mods" class="md-nav__link">
+    <span class="md-ellipsis">
+      mods
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#macros" class="md-nav__link">
+    <span class="md-ellipsis">
+      macros
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#racks" class="md-nav__link">
+    <span class="md-ellipsis">
+      racks
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chains" class="md-nav__link">
+    <span class="md-ellipsis">
+      chains
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      selection
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#transport" class="md-nav__link">
+    <span class="md-ellipsis">
+      transport
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#session" class="md-nav__link">
+    <span class="md-ellipsis">
+      session
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#automation" class="md-nav__link">
+    <span class="md-ellipsis">
+      automation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#grooves" class="md-nav__link">
+    <span class="md-ellipsis">
+      grooves
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#focused" class="md-nav__link">
+    <span class="md-ellipsis">
+      focused
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#midi" class="md-nav__link">
+    <span class="md-ellipsis">
+      midi
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#subscriptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      subscriptions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      Errors
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="remote-api-operations">Remote API Operations<a class="headerlink" href="#remote-api-operations" title="Permanent link">&para;</a></h1>
+<p>Every operation the <a href="../remote-api/">Remote API</a> offers, generated from MAGDA's operation
+registry. The same catalogue is published as an <a href="https://spec.open-rpc.org/">OpenRPC 1.3</a>
+document, <a href="../magda-openrpc.json"><code>magda-openrpc.json</code></a>, for client generators and API tools. A
+running MAGDA returns the same operations and schemas from <code>system.describe</code>.</p>
+<p>Parameters go by name in <code>params</code>. The types below are a summary: the OpenRPC document carries
+each parameter's and result's full JSON Schema, including ranges, enums and size limits. <strong>Scope</strong>
+is the permission the named client needs. A <em>transport-scoped</em> method is carried out by the
+WebSocket connection itself rather than the project, and has no MCP tool.</p>
+<p>Any method can also fail with the errors listed at the end of this page.</p>
+<h2 id="system"><code>system</code><a class="headerlink" href="#system" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>system.describe</code></td>
+<td>List the API version and every available operation</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="engine"><code>engine</code><a class="headerlink" href="#engine" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>engine.health</code></td>
+<td>Read engine binding, callback load, xruns, and recent problems</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>engine.renderRange</code></td>
+<td>Render an explicit project range to an absolute path</td>
+<td><code>edit</code></td>
+<td><code>path</code> string<br><code>range</code> object<br><code>format</code> "wav" | "flac" | "opus" | "mp3"<br><code>sampleRate</code> 44100 | 48000 | 88200 | 96000 | 176400 | 192000<br><code>bitDepth</code> 16 | 24 | 32<br><code>dither</code> "none" | "tpdf" | "shaped"<br><code>normalise</code> boolean<br><code>normaliseToDb</code> number<br><code>includeMasterEffects</code> boolean<br><code>includeTrackEffects</code> boolean<br><code>realTime</code> boolean<br><code>tailSeconds</code> number<br><code>overwritePolicy</code> "fail" | "replace"</td>
+<td><code>bitrateKbps</code> enum<br><code>vbrQuality</code> integer</td>
+</tr>
+<tr>
+<td><code>engine.masterCapture.start</code></td>
+<td>Capture the true master callback output</td>
+<td><code>edit</code></td>
+<td><code>path</code> string<br><code>format</code> "wav" | "flac"<br><code>bitDepth</code> 16 | 24 | 32<br><code>overwritePolicy</code> "fail" | "replace"</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>engine.masterCapture.stop</code></td>
+<td>Stop and finalise one owned master capture</td>
+<td><code>edit</code></td>
+<td><code>jobId</code> string</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>engine.masterCapture.status</code></td>
+<td>Read master-capture capability and activity</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="meters"><code>meters</code><a class="headerlink" href="#meters" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>meters.read</code></td>
+<td>Read one bounded track and master peak snapshot</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="jobs"><code>jobs</code><a class="headerlink" href="#jobs" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>jobs.list</code></td>
+<td>List asynchronous jobs owned by this connection</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>jobs.get</code></td>
+<td>Inspect one asynchronous job owned by this connection</td>
+<td><code>read</code></td>
+<td><code>jobId</code> string</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>jobs.cancel</code></td>
+<td>Cancel one owned asynchronous job</td>
+<td><code>read</code></td>
+<td><code>jobId</code> string</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tracks"><code>tracks</code><a class="headerlink" href="#tracks" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tracks.freeze</code></td>
+<td>Freeze a track: render it offline and play the render in its place</td>
+<td><code>edit</code></td>
+<td><code>trackId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>tracks.unfreeze</code></td>
+<td>Unfreeze a track so its devices play live again</td>
+<td><code>edit</code></td>
+<td><code>trackId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>tracks.list</code></td>
+<td>List tracks</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>tracks.get</code></td>
+<td>Get one track</td>
+<td><code>read</code></td>
+<td><code>trackId</code> one of several shapes</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>tracks.create</code></td>
+<td>Create a track</td>
+<td><code>edit</code></td>
+<td><code>name</code> string<br><code>type</code> "audio" | "group" | "aux" | "chord"</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>tracks.createFromPreset</code></td>
+<td>Create a track from a saved track-chain preset</td>
+<td><code>edit</code></td>
+<td><code>presetId</code> string</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>tracks.applyPreset</code></td>
+<td>Apply an opaque chain preset to an existing track</td>
+<td><code>edit</code></td>
+<td><code>trackId</code> integer<br><code>presetId</code> string</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>tracks.update</code></td>
+<td>Update track mixer, display, or input state</td>
+<td><code>edit</code></td>
+<td><code>trackId</code> integer</td>
+<td><code>name</code> string<br><code>volume</code> number<br><code>pan</code> number<br><code>muted</code> boolean<br><code>soloed</code> boolean<br><code>colourArgb</code> integer<br><code>recordArmed</code> boolean<br><code>inputMonitor</code> "off" | "in" | "auto"</td>
+</tr>
+<tr>
+<td><code>tracks.delete</code></td>
+<td>Delete a track</td>
+<td><code>edit</code></td>
+<td><code>trackId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>tracks.group</code></td>
+<td>Group tracks under a new group track</td>
+<td><code>edit</code></td>
+<td><code>trackIds</code> array of integer<br><code>name</code> string</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>tracks.move</code></td>
+<td>Move a track to a one-based position in the track list</td>
+<td><code>edit</code></td>
+<td><code>trackId</code> integer<br><code>position</code> integer</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="capture"><code>capture</code><a class="headerlink" href="#capture" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>capture.recentMaster</code></td>
+<td>KEEP: what was just played, as notes on the track that heard them when a MIDI device was played, else as master audio on a new track. A transport pass lands where it was heard, a phrase played while stopped at the playhead; at most bars bars (default: the Capture Length setting). Fails when the capture buffer is off</td>
+<td><code>edit</code></td>
+<td>—</td>
+<td><code>bars</code> integer</td>
+</tr>
+</tbody>
+</table>
+<h2 id="project"><code>project</code><a class="headerlink" href="#project" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>project.get</code></td>
+<td>Get safe project metadata</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>project.new</code></td>
+<td>Create an untitled project</td>
+<td><code>edit</code></td>
+<td>—</td>
+<td><code>discardUnsavedChanges</code> boolean</td>
+</tr>
+<tr>
+<td><code>project.close</code></td>
+<td>Close the current project</td>
+<td><code>edit</code></td>
+<td>—</td>
+<td><code>discardUnsavedChanges</code> boolean</td>
+</tr>
+<tr>
+<td><code>project.open</code></td>
+<td>Open a project from an absolute path</td>
+<td><code>edit</code></td>
+<td><code>path</code> string<br><code>dirtyPolicy</code> "fail" | "discard"<br><code>autosavePolicy</code> "fail" | "recover" | "ignore"<br><code>missingMediaPolicy</code> "fail" | "allow"<br><code>unavailableDevicePolicy</code> "fail" | "allow"</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>project.save</code></td>
+<td>Save the project to its existing target</td>
+<td><code>edit</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>project.saveAs</code></td>
+<td>Save to an absolute path</td>
+<td><code>edit</code></td>
+<td><code>path</code> string<br><code>overwritePolicy</code> "fail" | "replace"<br><code>mediaPolicy</code> "copy" | "move"</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>project.setTempo</code></td>
+<td>Set the project tempo</td>
+<td><code>edit</code></td>
+<td><code>tempo</code> number</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>project.setTimeSignature</code></td>
+<td>Set the project time signature</td>
+<td><code>edit</code></td>
+<td><code>numerator</code> integer<br><code>denominator</code> 1 | 2 | 4 | 8 | 16 | 32</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>project.setLoopRange</code></td>
+<td>Set the project loop range in beats</td>
+<td><code>edit</code></td>
+<td><code>startBeat</code> number<br><code>endBeat</code> number</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="trackpresets"><code>trackPresets</code><a class="headerlink" href="#trackpresets" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>trackPresets.list</code></td>
+<td>List saved track-chain presets by opaque id</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="chordtrack"><code>chordTrack</code><a class="headerlink" href="#chordtrack" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>chordTrack.get</code></td>
+<td>Get the singleton chord track and ordered progression</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>chordTrack.ensure</code></td>
+<td>Create the singleton chord track when absent</td>
+<td><code>edit</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>chordTrack.replaceProgression</code></td>
+<td>Replace the chord track's structured progression</td>
+<td><code>edit</code></td>
+<td><code>chords</code> array of object</td>
+<td><code>voicing</code> "root"<br><code>inversion</code> 0<br><code>octave</code> integer</td>
+</tr>
+<tr>
+<td><code>chordTrack.detect</code></td>
+<td>Detect a structured progression in a MIDI clip range</td>
+<td><code>read</code></td>
+<td><code>sourceClipId</code> integer<br><code>startBeat</code> number<br><code>endBeat</code> number<br><code>windowBeats</code> number</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>chordTrack.extract</code></td>
+<td>Detect and atomically materialise a chord-track progression</td>
+<td><code>edit</code></td>
+<td><code>sourceClipId</code> integer<br><code>startBeat</code> number<br><code>endBeat</code> number<br><code>windowBeats</code> number<br><code>destinationStartBeat</code> number<br><code>populatedPolicy</code> "fail" | "replace" | "merge"<br><code>voicing</code> "root"<br><code>octave</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>chordTrack.sendToTrack</code></td>
+<td>Bake an addressed progression to a normal MIDI track</td>
+<td><code>edit</code></td>
+<td><code>sourceClipId</code> integer<br><code>targetTrackId</code> integer<br><code>startBeat</code> number<br><code>occupiedPolicy</code> "fail" | "replace"<br><code>voicing</code> "source"<br><code>instrumentPolicy</code> "preserve_target" | "require_existing"</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="routing"><code>routing</code><a class="headerlink" href="#routing" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>routing.endpoints.list</code></td>
+<td>List safe audio and MIDI routing endpoints</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>routing.get</code></td>
+<td>Get one track's audio and MIDI routing</td>
+<td><code>read</code></td>
+<td><code>trackId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>routing.set</code></td>
+<td>Atomically set track audio and MIDI routes and MIDI channels. Any number of tracks may send their MIDI Out to one track; a channel of 0 is any in, as it is out</td>
+<td><code>edit</code></td>
+<td><code>trackId</code> integer</td>
+<td><code>audioInputEndpointId</code> string<br><code>midiInputEndpointId</code> string<br><code>audioOutputEndpointId</code> string<br><code>midiOutputEndpointId</code> string<br><code>midiInputChannel</code> integer<br><code>midiOutputChannel</code> integer</td>
+</tr>
+</tbody>
+</table>
+<h2 id="sends"><code>sends</code><a class="headerlink" href="#sends" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sends.list</code></td>
+<td>List one track's sends</td>
+<td><code>read</code></td>
+<td><code>trackId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>sends.create</code></td>
+<td>Create an atomic track send</td>
+<td><code>edit</code></td>
+<td><code>trackId</code> integer<br><code>destinationEndpointId</code> string</td>
+<td><code>level</code> number<br><code>enabled</code> boolean<br><code>position</code> "pre_fader" | "post_fader"</td>
+</tr>
+<tr>
+<td><code>sends.update</code></td>
+<td>Update an atomic track send</td>
+<td><code>edit</code></td>
+<td><code>sendId</code> string</td>
+<td><code>destinationEndpointId</code> string<br><code>level</code> number<br><code>enabled</code> boolean<br><code>position</code> "pre_fader" | "post_fader"</td>
+</tr>
+<tr>
+<td><code>sends.remove</code></td>
+<td>Remove an atomic track send</td>
+<td><code>edit</code></td>
+<td><code>sendId</code> string</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="sidechains"><code>sidechains</code><a class="headerlink" href="#sidechains" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sidechains.list</code></td>
+<td>List device and rack sidechains and their capabilities</td>
+<td><code>read</code></td>
+<td>—</td>
+<td><code>trackId</code> one of several shapes</td>
+</tr>
+<tr>
+<td><code>sidechains.get</code></td>
+<td>Inspect one device or rack sidechain and its capabilities</td>
+<td><code>read</code></td>
+<td><code>ownerPath</code> object</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>sidechains.set</code></td>
+<td>Atomically configure or clear one device or rack sidechain</td>
+<td><code>edit</code></td>
+<td><code>ownerPath</code> object</td>
+<td><code>sourceEndpointId</code> one of several shapes<br><code>type</code> "audio" | "midi"<br><code>tapPoint</code> "preFx" | "postFader"<br><code>gainDb</code> number<br><code>enabled</code> boolean<br><code>listen</code> boolean<br><code>channelMapping</code> "automatic"</td>
+</tr>
+</tbody>
+</table>
+<h2 id="clips"><code>clips</code><a class="headerlink" href="#clips" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>clips.list</code></td>
+<td>List clips with optional track and view filters</td>
+<td><code>read</code></td>
+<td>—</td>
+<td><code>trackId</code> integer<br><code>view</code> "arrangement" | "session"</td>
+</tr>
+<tr>
+<td><code>clips.get</code></td>
+<td>Get one clip</td>
+<td><code>read</code></td>
+<td><code>clipId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clips.createMidi</code></td>
+<td>Create a MIDI clip</td>
+<td><code>edit</code></td>
+<td><code>lengthBeats</code> number<br><code>placement</code> object</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clips.loadSample</code></td>
+<td>Load an audio file as a clip, as a drop onto a track does</td>
+<td><code>edit</code></td>
+<td><code>samplePath</code> string<br><code>placement</code> object</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clips.addMidiNote</code></td>
+<td>Add a note to a MIDI clip</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer<br><code>note</code> integer<br><code>velocity</code> integer<br><code>startBeat</code> number<br><code>lengthBeats</code> number</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clips.listMidiEvents</code></td>
+<td>List every expressive MIDI event in a clip</td>
+<td><code>read</code></td>
+<td><code>clipId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clips.addMidiEvents</code></td>
+<td>Atomically add MIDI events</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer<br><code>events</code> array of one of several shapes</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clips.updateMidiEvents</code></td>
+<td>Atomically update MIDI events by id</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer<br><code>events</code> array of one of several shapes</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clips.replaceMidiEvents</code></td>
+<td>Atomically replace every MIDI event in a clip</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer<br><code>events</code> array of one of several shapes</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clips.deleteMidiEvents</code></td>
+<td>Atomically delete MIDI events by id</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer<br><code>eventIds</code> array of integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clips.delete</code></td>
+<td>Delete a clip</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clips.move</code></td>
+<td>Move a clip to an arrangement position or session slot</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer<br><code>destination</code> object</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clips.resize</code></td>
+<td>Resize a clip from its start or end edge</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer<br><code>lengthBeats</code> number<br><code>edge</code> "start" | "end"</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clips.duplicate</code></td>
+<td>Duplicate a clip to an arrangement position or session slot</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer<br><code>destination</code> object</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clips.update</code></td>
+<td>Update clip name, enabled state, or groove (played as a time bend)</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer</td>
+<td><code>name</code> string<br><code>enabled</code> boolean<br><code>grooveTemplate</code> string</td>
+</tr>
+<tr>
+<td><code>clips.updateAudio</code></td>
+<td>Update an audio clip's playback mode, looping, source tempo, stretch, reverse, and fades</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer</td>
+<td><code>playback</code> "free" | "beat"<br><code>looping</code> boolean<br><code>sourceBpm</code> number<br><code>stretch</code> "off" | "signalsmith" | "soundtouch" | "soundtouch_hq"<br><code>reversed</code> boolean<br><code>fadeInSeconds</code> number<br><code>fadeOutSeconds</code> number<br><code>fadeInCurve</code> "linear" | "convex" | "concave" | "s_curve"<br><code>fadeOutCurve</code> "linear" | "convex" | "concave" | "s_curve"</td>
+</tr>
+<tr>
+<td><code>clips.transpose</code></td>
+<td>Transpose every note in a MIDI clip by semitones</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer<br><code>semitones</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clips.quantize</code></td>
+<td>Quantize a MIDI clip's notes to a beat grid; all notes when noteIndices is absent</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer<br><code>gridResolution</code> number</td>
+<td><code>noteIndices</code> array of integer<br><code>mode</code> "start" | "length" | "start_and_length"</td>
+</tr>
+<tr>
+<td><code>clips.sliceNotes</code></td>
+<td>Slice a MIDI clip's notes into equal subdivisions; all notes when noteIndices is absent</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer<br><code>subdivisions</code> integer</td>
+<td><code>noteIndices</code> array of integer</td>
+</tr>
+</tbody>
+</table>
+<h2 id="devices"><code>devices</code><a class="headerlink" href="#devices" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>devices.list</code></td>
+<td>List safe device and rack graph metadata</td>
+<td><code>read</code></td>
+<td>—</td>
+<td><code>trackId</code> integer</td>
+</tr>
+<tr>
+<td><code>devices.catalog</code></td>
+<td>List devices that can be added, by catalogue id</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>devices.applyPreset</code></td>
+<td>Apply an opaque preset to an existing device</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object<br><code>presetId</code> string</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>devices.replace</code></td>
+<td>Atomically replace a device while preserving its chain slot</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object<br><code>catalogId</code> string</td>
+<td><code>presetId</code> string</td>
+</tr>
+<tr>
+<td><code>devices.add</code></td>
+<td>Add a device from the catalogue to a track's FX chain or a rack chain</td>
+<td><code>edit</code></td>
+<td><code>catalogId</code> string</td>
+<td><code>trackId</code> integer<br><code>parentPath</code> object<br><code>index</code> integer</td>
+</tr>
+<tr>
+<td><code>devices.remove</code></td>
+<td>Remove a device</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>devices.setBypassed</code></td>
+<td>Set a device's bypass state</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object<br><code>bypassed</code> boolean</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>devices.setInsert</code></td>
+<td>Route an External Insert and set its MIDI CC knobs</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object</td>
+<td><code>sendDevice</code> string<br><code>returnDevice</code> string<br><code>midiChannel</code> integer<br><code>ccDevice</code> string<br><code>manualAdjustMs</code> number<br><code>ccKnobs</code> array of integer</td>
+</tr>
+<tr>
+<td><code>devices.move</code></td>
+<td>Move a device within its chain</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object<br><code>toIndex</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>devices.listParameters</code></td>
+<td>List a device's parameters, in real units, with customization flags</td>
+<td><code>read</code></td>
+<td><code>devicePath</code> object</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>devices.setParameter</code></td>
+<td>Set one device parameter, in real units</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object<br><code>parameterIndex</code> integer<br><code>value</code> number</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>devices.setParameterConfig</code></td>
+<td>Update a device's saved parameter customization: the visible / mini-mixer / AI-agent selections and the per-plugin AI prompt</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object</td>
+<td><code>visibleParameters</code> array of integer<br><code>miniMixerParameters</code> array of integer<br><code>aiAgentParameters</code> array of integer<br><code>aiPrompt</code> string<br><code>parameterOverrides</code> array of object</td>
+</tr>
+<tr>
+<td><code>devices.openEditor</code></td>
+<td>Open a device's plugin editor window</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="pads"><code>pads</code><a class="headerlink" href="#pads" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pads.list</code></td>
+<td>List all 64 slots of a Drum Grid</td>
+<td><code>read</code></td>
+<td><code>gridPath</code> object</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>pads.create</code></td>
+<td>Create an empty pad chain</td>
+<td><code>edit</code></td>
+<td><code>gridPath</code> object<br><code>padIndex</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>pads.setDevice</code></td>
+<td>Replace a pad voice with a catalogue device</td>
+<td><code>edit</code></td>
+<td><code>gridPath</code> object<br><code>padIndex</code> integer<br><code>catalogId</code> string</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>pads.setSample</code></td>
+<td>Replace a pad voice with a sampler using a host-local audio file</td>
+<td><code>edit</code></td>
+<td><code>gridPath</code> object<br><code>padIndex</code> integer<br><code>samplePath</code> string</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>pads.clear</code></td>
+<td>Clear one pad</td>
+<td><code>edit</code></td>
+<td><code>gridPath</code> object<br><code>padIndex</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>pads.swap</code></td>
+<td>Swap two single-note pads</td>
+<td><code>edit</code></td>
+<td><code>gridPath</code> object<br><code>padA</code> integer<br><code>padB</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>pads.update</code></td>
+<td>Edit pad notes, level, pan, switches, and output bus</td>
+<td><code>edit</code></td>
+<td><code>gridPath</code> object<br><code>padIndex</code> integer</td>
+<td><code>lowNote</code> integer<br><code>highNote</code> integer<br><code>rootNote</code> integer<br><code>levelDb</code> number<br><code>pan</code> number<br><code>muted</code> boolean<br><code>solo</code> boolean<br><code>bypassed</code> boolean</td>
+</tr>
+</tbody>
+</table>
+<h2 id="devicepresets"><code>devicePresets</code><a class="headerlink" href="#devicepresets" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>devicePresets.list</code></td>
+<td>List presets for a device by opaque id</td>
+<td><code>read</code></td>
+<td><code>devicePath</code> object</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="mods"><code>mods</code><a class="headerlink" href="#mods" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mods.list</code></td>
+<td>List modulators on a device</td>
+<td><code>read</code></td>
+<td><code>devicePath</code> object</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>mods.create</code></td>
+<td>Create a device modulator</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object<br><code>type</code> "lfo" | "envelope" | "random" | "follower"</td>
+<td><code>waveform</code> "sine" | "triangle" | "square" | "saw" | "reverse_saw" | "custom"<br><code>name</code> string<br><code>rate</code> number<br><code>enabled</code> boolean<br><code>tempoSync</code> boolean<br><code>syncDivision</code> enum<br><code>oneShot</code> boolean<br><code>attackMs</code> number<br><code>decayMs</code> number<br><code>sustain</code> number<br><code>releaseMs</code> number<br><code>parameterIndex</code> integer<br><code>amount</code> number<br><code>bipolar</code> boolean</td>
+</tr>
+<tr>
+<td><code>mods.update</code></td>
+<td>Update a device modulator</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object<br><code>modId</code> integer</td>
+<td><code>name</code> string<br><code>type</code> "lfo" | "envelope" | "random" | "follower"<br><code>waveform</code> "sine" | "triangle" | "square" | "saw" | "reverse_saw" | "custom"<br><code>rate</code> number<br><code>enabled</code> boolean<br><code>tempoSync</code> boolean<br><code>syncDivision</code> enum<br><code>oneShot</code> boolean<br><code>attackMs</code> number<br><code>decayMs</code> number<br><code>sustain</code> number<br><code>releaseMs</code> number</td>
+</tr>
+<tr>
+<td><code>mods.remove</code></td>
+<td>Remove a device modulator</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object<br><code>modId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>mods.link</code></td>
+<td>Link a modulator to an AI-enabled device parameter</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object<br><code>modId</code> integer<br><code>parameterIndex</code> integer<br><code>amount</code> number</td>
+<td><code>bipolar</code> boolean</td>
+</tr>
+<tr>
+<td><code>mods.unlink</code></td>
+<td>Remove a modulator's parameter link</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object<br><code>modId</code> integer<br><code>parameterIndex</code> integer</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="macros"><code>macros</code><a class="headerlink" href="#macros" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>macros.list</code></td>
+<td>List device macros and their links</td>
+<td><code>read</code></td>
+<td><code>devicePath</code> object</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>macros.setValue</code></td>
+<td>Set a device macro value</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object<br><code>macroIndex</code> integer<br><code>value</code> number</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>macros.link</code></td>
+<td>Link a macro to an AI-enabled device parameter</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object<br><code>macroIndex</code> integer<br><code>parameterIndex</code> integer<br><code>amount</code> number</td>
+<td><code>bipolar</code> boolean</td>
+</tr>
+<tr>
+<td><code>macros.unlink</code></td>
+<td>Remove a macro's parameter link</td>
+<td><code>edit</code></td>
+<td><code>devicePath</code> object<br><code>macroIndex</code> integer<br><code>parameterIndex</code> integer</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="racks"><code>racks</code><a class="headerlink" href="#racks" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>racks.create</code></td>
+<td>Create a rack on a track or inside a rack chain</td>
+<td><code>edit</code></td>
+<td><code>name</code> string</td>
+<td><code>trackId</code> integer<br><code>parentPath</code> object<br><em>Exactly one of:</em> <code>trackId</code>, <code>parentPath</code></td>
+</tr>
+<tr>
+<td><code>racks.remove</code></td>
+<td>Remove a rack at any nesting depth</td>
+<td><code>edit</code></td>
+<td>—</td>
+<td><code>trackId</code> integer<br><code>rackId</code> integer<br><code>rackPath</code> object<br><em>Exactly one of:</em> <code>trackId</code> + <code>rackId</code>, <code>rackPath</code></td>
+</tr>
+<tr>
+<td><code>racks.setBypassed</code></td>
+<td>Set rack bypass</td>
+<td><code>edit</code></td>
+<td><code>bypassed</code> boolean</td>
+<td><code>trackId</code> integer<br><code>rackId</code> integer<br><code>rackPath</code> object<br><em>Exactly one of:</em> <code>trackId</code> + <code>rackId</code>, <code>rackPath</code></td>
+</tr>
+<tr>
+<td><code>racks.update</code></td>
+<td>Update a rack at any nesting depth</td>
+<td><code>edit</code></td>
+<td><code>rackPath</code> object</td>
+<td><code>bypassed</code> boolean<br><code>volumeDb</code> number<br><code>chainSelector</code> number</td>
+</tr>
+</tbody>
+</table>
+<h2 id="chains"><code>chains</code><a class="headerlink" href="#chains" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>chains.create</code></td>
+<td>Create a chain inside a rack at any nesting depth</td>
+<td><code>edit</code></td>
+<td><code>rackPath</code> object<br><code>name</code> string</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>chains.remove</code></td>
+<td>Remove a chain from a rack at any nesting depth</td>
+<td><code>edit</code></td>
+<td><code>chainPath</code> object</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>chains.update</code></td>
+<td>Update a chain at any nesting depth</td>
+<td><code>edit</code></td>
+<td><code>chainPath</code> object</td>
+<td><code>name</code> string<br><code>outputIndex</code> integer<br><code>muted</code> boolean<br><code>solo</code> boolean<br><code>bypassed</code> boolean<br><code>volumeDb</code> number<br><code>pan</code> number<br><code>zones</code> object</td>
+</tr>
+</tbody>
+</table>
+<h2 id="selection"><code>selection</code><a class="headerlink" href="#selection" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>selection.get</code></td>
+<td>Get the current selection</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>selection.set</code></td>
+<td>Replace the current track, clip, or note selection</td>
+<td><code>edit</code></td>
+<td><code>trackId</code> one of several shapes<br><code>clipId</code> integer | null<br><code>clipIds</code> array of integer<br><code>automationLaneId</code> integer | null<br><code>automationClipId</code> integer | null<br><code>noteClipId</code> integer | null<br><code>noteIndices</code> array of integer</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="transport"><code>transport</code><a class="headerlink" href="#transport" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>transport.get</code></td>
+<td>Get transport state</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>transport.play</code></td>
+<td>Start playback</td>
+<td><code>transport</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>transport.stop</code></td>
+<td>Stop playback</td>
+<td><code>transport</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>transport.setRecording</code></td>
+<td>Set recording state</td>
+<td><code>transport</code></td>
+<td><code>recording</code> boolean</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>transport.setLoopEnabled</code></td>
+<td>Set transport loop state</td>
+<td><code>transport</code></td>
+<td><code>enabled</code> boolean</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>transport.seek</code></td>
+<td>Seek the transport in beats</td>
+<td><code>transport</code></td>
+<td><code>positionBeats</code> number</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>transport.seekRelative</code></td>
+<td>Move the transport by beats or bars, clamped at zero</td>
+<td><code>transport</code></td>
+<td>—</td>
+<td><code>deltaBeats</code> number<br><code>deltaBars</code> integer<br><em>Exactly one of:</em> <code>deltaBeats</code>, <code>deltaBars</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="session"><code>session</code><a class="headerlink" href="#session" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>session.get</code></td>
+<td>Get scenes, tracks, and every session slot state</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>session.createScene</code></td>
+<td>Create a durable session scene</td>
+<td><code>edit</code></td>
+<td>—</td>
+<td><code>index</code> integer<br><code>name</code> string<br><code>colourArgb</code> integer</td>
+</tr>
+<tr>
+<td><code>session.updateScene</code></td>
+<td>Atomically update session scene metadata</td>
+<td><code>edit</code></td>
+<td><code>sceneId</code> integer</td>
+<td><code>name</code> string<br><code>colourArgb</code> integer<br><em>At least one of:</em> <code>name</code>, <code>colourArgb</code></td>
+</tr>
+<tr>
+<td><code>session.moveScene</code></td>
+<td>Move a session scene by stable id</td>
+<td><code>edit</code></td>
+<td><code>sceneId</code> integer<br><code>toIndex</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>session.duplicateScene</code></td>
+<td>Duplicate a scene with explicit clip-copy behaviour</td>
+<td><code>edit</code></td>
+<td><code>sceneId</code> integer<br><code>copyClips</code> boolean</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>session.deleteScene</code></td>
+<td>Delete a scene with an explicit populated-slot policy</td>
+<td><code>edit</code></td>
+<td><code>sceneId</code> integer<br><code>populatedPolicy</code> "fail" | "deleteClips" | "moveClips"</td>
+<td><code>destinationSceneId</code> integer<br><em>Allowed combinations: see <code>x-params-schema</code>.</em></td>
+</tr>
+<tr>
+<td><code>session.launchClip</code></td>
+<td>Launch a session clip</td>
+<td><code>session</code></td>
+<td><code>clipId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>session.stopClip</code></td>
+<td>Stop a session clip</td>
+<td><code>session</code></td>
+<td><code>clipId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>session.stopTrack</code></td>
+<td>Stop the active session clip on a track</td>
+<td><code>session</code></td>
+<td><code>trackId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>session.stopAll</code></td>
+<td>Stop all session clips</td>
+<td><code>session</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>session.launchScene</code></td>
+<td>Launch a session scene</td>
+<td><code>session</code></td>
+<td><code>sceneIndex</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>session.updateClipSettings</code></td>
+<td>Atomically update session clip launch behaviour</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer</td>
+<td><code>launchMode</code> "trigger" | "toggle"<br><code>launchQuantize</code> enum<br><code>followAction</code> "none" | "next" | "previous" | "random" | "stop" | "again"<br><code>followActionDelayBeats</code> number<br><code>followActionLoopCount</code> integer<br><em>At least one of:</em> <code>launchMode</code>, <code>launchQuantize</code>, <code>followAction</code>, <code>followActionDelayBeats</code>, <code>followActionLoopCount</code></td>
+</tr>
+<tr>
+<td><code>session.returnToArrangement</code></td>
+<td>Return one or every track to arrangement playback</td>
+<td><code>session</code></td>
+<td>—</td>
+<td><code>trackId</code> integer</td>
+</tr>
+<tr>
+<td><code>session.recordingCapabilities</code></td>
+<td>Inspect Session recording support and stop policy</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>session.armSlotRecording</code></td>
+<td>Arm or unarm an empty addressed Session slot</td>
+<td><code>session</code></td>
+<td><code>trackId</code> integer<br><code>sceneId</code> integer<br><code>armed</code> boolean<br><code>occupiedPolicy</code> "fail"</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>session.beginSlotRecording</code></td>
+<td>Begin a queued slot take as an asynchronous job</td>
+<td><code>session</code></td>
+<td><code>trackId</code> integer<br><code>sceneId</code> integer<br><code>occupiedPolicy</code> "fail"</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>session.stopSlotRecording</code></td>
+<td>Stop a slot take and complete its recording job</td>
+<td><code>session</code></td>
+<td><code>jobId</code> string</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>session.beginPerformanceCapture</code></td>
+<td>Capture launched Session performance into Arrangement as an asynchronous job</td>
+<td><code>session</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>session.stopPerformanceCapture</code></td>
+<td>Stop and commit a Session performance capture</td>
+<td><code>session</code></td>
+<td><code>jobId</code> string</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="automation"><code>automation</code><a class="headerlink" href="#automation" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>automation.listLanes</code></td>
+<td>List every automation lane in the project</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>automation.getLane</code></td>
+<td>Get an automation lane</td>
+<td><code>read</code></td>
+<td><code>laneId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>automation.createLane</code></td>
+<td>Create an automation lane</td>
+<td><code>edit</code></td>
+<td><code>target</code> object<br><code>type</code> "absolute" | "clip_based"</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>automation.addPoint</code></td>
+<td>Add a point to an automation lane</td>
+<td><code>edit</code></td>
+<td><code>laneId</code> integer<br><code>beatPosition</code> number<br><code>value</code> number<br><code>curve</code> "linear" | "bezier" | "step" | "hard_corner"</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>automation.setPoints</code></td>
+<td>Replace every point on an absolute automation lane</td>
+<td><code>edit</code></td>
+<td><code>laneId</code> integer<br><code>points</code> array of object</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>automation.clearLane</code></td>
+<td>Remove all points from an automation lane</td>
+<td><code>edit</code></td>
+<td><code>laneId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>automation.deleteLane</code></td>
+<td>Delete an automation lane and its clips</td>
+<td><code>edit</code></td>
+<td><code>laneId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>automation.listClips</code></td>
+<td>List automation clips, optionally filtered by lane</td>
+<td><code>read</code></td>
+<td>—</td>
+<td><code>laneId</code> integer</td>
+</tr>
+<tr>
+<td><code>automation.getClip</code></td>
+<td>Get an automation clip</td>
+<td><code>read</code></td>
+<td><code>clipId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>automation.createClip</code></td>
+<td>Create a clip on a clip-based automation lane</td>
+<td><code>edit</code></td>
+<td><code>laneId</code> integer<br><code>startBeat</code> number<br><code>lengthBeats</code> number</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>automation.deleteClip</code></td>
+<td>Delete an automation clip</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>automation.moveClip</code></td>
+<td>Move an automation clip</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer<br><code>startBeat</code> number</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>automation.resizeClip</code></td>
+<td>Resize an automation clip from either edge</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer<br><code>lengthBeats</code> number<br><code>edge</code> "start" | "end"</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>automation.duplicateClip</code></td>
+<td>Duplicate an automation clip after its source</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>automation.updateClip</code></td>
+<td>Update automation clip metadata, looping, or points</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer</td>
+<td><code>name</code> string<br><code>colourArgb</code> integer<br><code>looping</code> boolean<br><code>loopLengthBeats</code> number<br><code>points</code> array of object</td>
+</tr>
+</tbody>
+</table>
+<h2 id="grooves"><code>grooves</code><a class="headerlink" href="#grooves" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>grooves.list</code></td>
+<td>List groove template names</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>grooves.upsert</code></td>
+<td>Create or replace a groove template; latenessProportions is one entry per grid slot, -1..1 of the slot length</td>
+<td><code>edit</code></td>
+<td><code>name</code> string<br><code>notesPerBeat</code> integer<br><code>latenessProportions</code> array of number</td>
+<td><code>parameterized</code> boolean</td>
+</tr>
+</tbody>
+</table>
+<h2 id="focused"><code>focused</code><a class="headerlink" href="#focused" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>focused.get</code></td>
+<td>Get the focused device or rack and its macro page</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>focused.setMacro</code></td>
+<td>Write a normalized value to a macro on the focused device</td>
+<td><code>edit</code></td>
+<td><code>index</code> integer<br><code>value</code> number</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>focused.cycleDevice</code></td>
+<td>Move device focus to the previous or next top-level chain node</td>
+<td><code>edit</code></td>
+<td><code>direction</code> -1 | 1</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="midi"><code>midi</code><a class="headerlink" href="#midi" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>midi.listOutputPorts</code></td>
+<td>List available MIDI output port names</td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>midi.send</code></td>
+<td>Send one channel message to a MIDI output, as status-first raw bytes</td>
+<td><code>hardware-midi</code></td>
+<td><code>port</code> string<br><code>bytes</code> array of integer</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>midi.sendSysEx</code></td>
+<td>Send a SysEx payload to a MIDI output; F0/F7 framing is added</td>
+<td><code>hardware-midi</code></td>
+<td><code>port</code> string<br><code>bytes</code> array of integer</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="subscriptions"><code>subscriptions</code><a class="headerlink" href="#subscriptions" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>subscriptions.subscribe</code></td>
+<td>Start receiving change events for the given topics, with an initial snapshot <em>(transport-scoped)</em></td>
+<td><code>read</code></td>
+<td><code>topics</code> array of enum</td>
+<td><code>snapshot</code> boolean</td>
+</tr>
+<tr>
+<td><code>subscriptions.unsubscribe</code></td>
+<td>Stop receiving change events; no topics means every topic <em>(transport-scoped)</em></td>
+<td><code>read</code></td>
+<td>—</td>
+<td><code>topics</code> array of enum</td>
+</tr>
+<tr>
+<td><code>subscriptions.list</code></td>
+<td>List the topics this connection is subscribed to <em>(transport-scoped)</em></td>
+<td><code>read</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>subscriptions.resync</code></td>
+<td>Re-send a complete snapshot for the subscribed topics <em>(transport-scoped)</em></td>
+<td><code>read</code></td>
+<td>—</td>
+<td><code>topics</code> array of enum</td>
+</tr>
+</tbody>
+</table>
+<h2 id="errors">Errors<a class="headerlink" href="#errors" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>JSON-RPC code</th>
+<th><code>error.data.code</code></th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-32700</code></td>
+<td>—</td>
+<td>Malformed JSON.</td>
+</tr>
+<tr>
+<td><code>-32600</code></td>
+<td><code>invalid_request</code></td>
+<td>Invalid JSON-RPC framing or unsupported route.</td>
+</tr>
+<tr>
+<td><code>-32601</code></td>
+<td><code>unknown_operation</code></td>
+<td>Unknown method.</td>
+</tr>
+<tr>
+<td><code>-32602</code></td>
+<td><code>validation_failed</code></td>
+<td>params did not satisfy the method's input schema.</td>
+</tr>
+<tr>
+<td><code>-32603</code></td>
+<td><code>internal_error</code></td>
+<td>Unexpected server failure.</td>
+</tr>
+<tr>
+<td><code>-32001</code></td>
+<td><code>not_found</code></td>
+<td>A referenced project entity does not exist.</td>
+</tr>
+<tr>
+<td><code>-32002</code></td>
+<td><code>conflict</code></td>
+<td>State or revision conflicts with the request.</td>
+</tr>
+<tr>
+<td><code>-32003</code></td>
+<td><code>timeout</code></td>
+<td>The request missed its deadline.</td>
+</tr>
+<tr>
+<td><code>-32004</code></td>
+<td><code>cancelled</code></td>
+<td>Work was cancelled.</td>
+</tr>
+<tr>
+<td><code>-32005</code></td>
+<td>—</td>
+<td>Connection request rate or in-flight limit exceeded.</td>
+</tr>
+<tr>
+<td><code>-32006</code></td>
+<td><code>permission_denied</code></td>
+<td>The client's grant does not include the method's scope.</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/Conceptual-Machines/magda-core" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://magda.land" target="_blank" rel="noopener" title="MAGDA Website" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M352 256c0 22.2-1.2 43.6-3.3 64H163.4c-2.2-20.4-3.3-41.8-3.3-64s1.2-43.6 3.3-64h185.3c2.2 20.4 3.3 41.8 3.3 64m28.8-64h123.1c5.3 20.5 8.1 41.9 8.1 64s-2.8 43.5-8.1 64H380.8c2.1-20.6 3.2-42 3.2-64s-1.1-43.4-3.2-64m112.6-32H376.7c-10-63.9-29.8-117.4-55.3-151.6 78.3 20.7 142 77.5 171.9 151.6zm-149.1 0H167.7c6.1-36.4 15.5-68.6 27-94.7 10.5-23.6 22.2-40.7 33.5-51.5C239.4 3.2 248.7 0 256 0s16.6 3.2 27.8 13.8c11.3 10.8 23 27.9 33.5 51.5 11.6 26 20.9 58.2 27 94.7m-209 0H18.6c30-74.1 93.6-130.9 172-151.6-25.5 34.2-45.3 87.7-55.3 151.6M8.1 192h123.1c-2.1 20.6-3.2 42-3.2 64s1.1 43.4 3.2 64H8.1C2.8 299.5 0 278.1 0 256s2.8-43.5 8.1-64m186.6 254.6c-11.6-26-20.9-58.2-27-94.6h176.6c-6.1 36.4-15.5 68.6-27 94.6-10.5 23.6-22.2 40.7-33.5 51.5-11.2 10.7-20.5 13.9-27.8 13.9s-16.6-3.2-27.8-13.8c-11.3-10.8-23-27.9-33.5-51.5zM135.3 352c10 63.9 29.8 117.4 55.3 151.6-78.4-20.7-142-77.5-172-151.6zm358.1 0c-30 74.1-93.6 130.9-171.9 151.6 25.5-34.2 45.2-87.7 55.3-151.6h116.7z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+    
+  </body>
+</html>
