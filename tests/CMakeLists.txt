@@ -829,6 +829,14 @@ add_test(
         -P ${CMAKE_CURRENT_SOURCE_DIR}/magda_cli_headless_e2e.cmake
 )
 
+# llama.cpp is shared here; copy it before discovery, which runs the exe and is the earlier POST_BUILD step.
+if(MAGDA_LLAMA_RUNTIME_DIR)
+    add_custom_command(TARGET magda_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_LLAMA_RUNTIME_DIR}" "$<TARGET_FILE_DIR:magda_tests>"
+        COMMENT "Copying llama.cpp libraries and backends alongside magda_tests")
+endif()
+
 # For Catch2 test discovery (optional - automatically discovers individual test cases)
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.10")
     include(Catch)
@@ -1262,6 +1270,13 @@ if(WIN32)
             COMMAND_EXPAND_LISTS
             COMMENT "Copying runtime DLLs (libxml2 + deps) alongside ${test_target}")
     endforeach()
+endif()
+
+if(MAGDA_LLAMA_RUNTIME_DIR)
+    add_custom_command(TARGET magda_juce_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_LLAMA_RUNTIME_DIR}" "$<TARGET_FILE_DIR:magda_juce_tests>"
+        COMMENT "Copying llama.cpp libraries and backends alongside magda_juce_tests")
 endif()
 
 # The portable devices through the SDK's C ABI (#2940). Its own binary: the module defines the

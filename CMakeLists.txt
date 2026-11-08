@@ -256,10 +256,8 @@ if(MAGDA_LOCAL_LLM)
         endif()
         set(GGML_VULKAN ${MAGDA_LLM_VULKAN_FOUND} CACHE BOOL "" FORCE)
 
-        # One folder for llama.cpp's libraries and backend modules, copied next to the app.
-        set(MAGDA_LLAMA_RUNTIME_DIR "${CMAKE_BINARY_DIR}/llama-runtime")
-        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${MAGDA_LLAMA_RUNTIME_DIR}")
-        set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${MAGDA_LLAMA_RUNTIME_DIR}")
+        # llama.cpp writes its libraries and backend modules here unconditionally; copied next to the app.
+        set(MAGDA_LLAMA_RUNTIME_DIR "${CMAKE_BINARY_DIR}/bin")
     endif()
     # Vendored llama.cpp is a C++17 codebase and pins no standard of its own, so it
     # inherits this project's. It does not compile at ours: C++23 clang rejects its
@@ -270,8 +268,6 @@ if(MAGDA_LOCAL_LLM)
     add_subdirectory(third_party/llama.cpp)
     set(CMAKE_CXX_STANDARD ${MAGDA_CXX_STANDARD})
     unset(BUILD_SHARED_LIBS)
-    unset(CMAKE_RUNTIME_OUTPUT_DIRECTORY)
-    unset(CMAKE_LIBRARY_OUTPUT_DIRECTORY)
 
     if(MSVC AND TARGET llama)
         # Vendored llama.cpp leans on implicit numeric conversions (size_t->int,
