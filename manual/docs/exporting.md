@@ -67,4 +67,4 @@ The save dialog opens in your Documents folder with the project's name. If no MI
 
 - **Edit > Render Selected Clip(s)** and **Edit > Render Time Selection** render to audio clips in the project; see [Render](arrangement-view.md#render).
 - [Freezing a track](tracks.md#freezing-tracks) renders it to a file that plays in its place.
-- Programs connected through the [Remote API](reference/remote-api.md#system-diagnostics-jobs-and-rendering) can render a range with `engine.renderRange`.
+- Programs connected through the [Remote API](reference/remote-api.md) can render a range with [`engine.renderRange`](reference/remote-api-operations.md#engine).
