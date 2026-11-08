@@ -240,6 +240,11 @@ cli:
 	fi
 	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_cli
 
+# Regenerate the Remote API's OpenRPC document from the operation registry; a test fails when stale.
+.PHONY: openrpc
+openrpc: cli
+	"$(CLI_BINARY_DEBUG)" openrpc --out manual/docs/reference/magda-openrpc.json
+
 .PHONY: cli-boot
 cli-boot: cli
 	@echo "🎛️  Booting magda-cli headless..."

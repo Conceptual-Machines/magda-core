@@ -107,6 +107,7 @@ nav:
   - Transport: transport.md
   - Reference:
       - Remote API: reference/remote-api.md
+      - Remote API Operations: reference/remote-api-operations.md
       - DSL Reference: reference/dsl.md
       - Controller Profile Format: reference/controller-profile-format.md
       - OSC Address Reference: reference/osc-addresses.md
@@ -126,6 +127,9 @@ extra:
     - icon: fontawesome/solid/globe
       link: https://magda.land
       name: MAGDA Website
+
+hooks:
+  - hooks/openrpc.py
 
 extra_css:
   - stylesheets/extra.css
