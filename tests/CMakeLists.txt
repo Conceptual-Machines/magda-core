@@ -32,6 +32,7 @@ set(TEST_SOURCES
     midi/test_midi_split_glue.cpp
     midi/test_midi_key_scale.cpp
     midi/test_midi_offset.cpp
+    midi/test_midi_export_range.cpp
     clips/test_pianoroll_note_position.cpp
     clips/test_pianoroll_shown_content.cpp
     devices/test_nested_racks.cpp
