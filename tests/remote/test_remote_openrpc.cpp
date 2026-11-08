@@ -1,8 +1,10 @@
 // SPDX-FileCopyrightText: Conceptual Machines
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <set>
+#include <string>
 
 #include "magda/daw/api/remote_api.hpp"
 #include "magda/daw/api/remote_jsonrpc.hpp"
@@ -22,14 +24,9 @@ bool sameJson(const juce::var& a, const juce::var& b) {
 }
 
 /// One-based number of the first line where @p a and @p b differ.
-int firstDifferingLine(const juce::String& a, const juce::String& b) {
-    const auto left = juce::StringArray::fromLines(a);
-    const auto right = juce::StringArray::fromLines(b);
-    const int common = juce::jmin(left.size(), right.size());
-    for (int i = 0; i < common; ++i)
-        if (left[i] != right[i])
-            return i + 1;
-    return common + 1;
+int firstDifferingLine(const std::string& a, const std::string& b) {
+    const auto differs = std::ranges::mismatch(a, b).in1;
+    return 1 + static_cast<int>(std::count(a.begin(), differs, '\n'));
 }
 
 }  // namespace
@@ -40,9 +37,10 @@ TEST_CASE("The committed OpenRPC document matches the operation registry",
         juce::File(MAGDA_REPO_ROOT).getChildFile(juce::String(OPENRPC_DOCUMENT_PATH));
     REQUIRE(committed.existsAsFile());
 
-    // A Windows checkout may translate the file to CRLF.
-    const auto onDisk = committed.loadFileAsString().replace("\r\n", "\n");
-    const auto generated = openRpcText();
+    // A Windows checkout may translate the file to CRLF; juce::String::replace is too slow here.
+    auto onDisk = committed.loadFileAsString().toStdString();
+    std::erase(onDisk, '\r');
+    const auto generated = openRpcText().toStdString();
     if (onDisk != generated)
         FAIL(OPENRPC_DOCUMENT_PATH << " is stale from line "
                                    << firstDifferingLine(onDisk, generated)

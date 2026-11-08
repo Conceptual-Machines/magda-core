@@ -4,6 +4,7 @@
 #include "remote_openrpc.hpp"
 
 #include <algorithm>
+#include <string>
 #include <vector>
 
 #include "remote_api.hpp"
@@ -240,8 +241,12 @@ juce::var openRpcDocument(const juce::var& description) {
 
 juce::String openRpcText() {
     const auto document = openRpcDocument(OperationRegistry::instance().describe());
-    // JUCE's multi-line JSON ends lines with CRLF on every platform.
-    return juce::JSON::toString(document, juce::JSON::FormatOptions{}).replace("\r\n", "\n") + "\n";
+    // JUCE's multi-line JSON ends lines with CRLF on every platform, and JSON escapes a CR inside a
+    // string, so every raw CR is a line end. Erased in one pass: String::replace is quadratic here.
+    auto text = juce::JSON::toString(document, juce::JSON::FormatOptions{}).toStdString();
+    std::erase(text, '\r');
+    text += '\n';
+    return juce::String::fromUTF8(text.data(), static_cast<int>(text.size()));
 }
 
 }  // namespace magda::remote
