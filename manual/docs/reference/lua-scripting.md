@@ -3,7 +3,7 @@
 MAGDA hosts user **Lua 5.4** scripts to drive MIDI controllers and automate the DAW. Every script runs in a sandboxed runtime — no `io`, `os`, `package`, or `require`; just Lua's standard `string`, `math`, `table`, and `coroutine` libraries plus the `magda.*` API.
 
 !!! warning "API stability"
-    The `magda.*` surface is **unstable in 0.7**. Method names, argument shapes, and which fields are exposed on snapshot tables are likely to change in 0.8 as more controllers are scripted against it. Pin a script to a release if you want it to keep working.
+    The `magda.*` surface is still settling. Method names, argument shapes, and which fields are exposed on snapshot tables may change between releases as more controllers are scripted against it. Pin a script to a release if you want it to keep working.
 
 For an end-to-end overview of how to load scripts and the footer indicator, see [Controllers — Lua Controller Scripts](../interface/controllers.md#lua-controller-scripts).
 
@@ -62,7 +62,7 @@ Every function below lives under the global `magda` table. All are message-threa
 
 | Function | Returns | Description |
 |---|---|---|
-| `magda.app.version()` | string | MAGDA version (e.g. `"0.7.0"`) |
+| `magda.app.version()` | string | MAGDA version (e.g. `"1.0.0"`) |
 
 ### `magda.transport`
 
@@ -162,7 +162,7 @@ coalesces it away.
 
 | Function | Returns | Description |
 |---|---|---|
-| `magda.tracks.create(name [, type])` | integer | Track id; `type` is `"audio"` (default), `"group"`, `"aux"`, `"master"`, or `"multi_out"` |
+| `magda.tracks.create(name [, type])` | integer | Track id; `type` is `"audio"` (default), `"group"`, `"aux"`, `"separator"`, `"master"`, or `"multi_out"` |
 | `magda.tracks.delete(id)` | — | |
 | `magda.tracks.count()` | integer | |
 | `magda.tracks.list()` | array of tables | Each table: `{ id, name, type, volume, pan, muted, soloed, record_armed, frozen }`. Does not include the master track |
@@ -198,8 +198,14 @@ end
 | `magda.clips.list_on_track(track_id)` | array of integers | Clip ids on that track |
 | `magda.clips.list_arrangement()` | array of tables | Each table: `{ id, track_id, name, start_beats, length_beats }` |
 | `magda.clips.set_name(id, name)` | — | |
-| `magda.clips.set_groove(id, template_name)` | — | Apply a groove template by name |
+| `magda.clips.set_groove(id, template_name [, strength])` | — | Load a groove into the clip's [time bend](../time-bend.md) by name; `strength` (default 1) is the bend's AMOUNT. An empty name clears the bend. Raises an error for an unknown groove |
+| `magda.clips.add_midi_note(id, start_beats, note, length_beats [, velocity])` | boolean | Add a note; `velocity` defaults to 100 |
+| `magda.clips.quantize_notes(id, grid_beats, mode, {index, ...})` | boolean | Quantize the listed notes to a grid in beats; `mode` is `"start"`, `"length"` or `"both"` |
+| `magda.clips.slice_notes(id, subdivisions, {index, ...})` | boolean | Split each listed note into `subdivisions` equal parts (2 or more) |
+| `magda.clips.transpose_midi_clip(id, semitones)` | boolean | Transpose every note in a MIDI clip |
 | `magda.clips.colour(id)` | table or nil | `{ r, g, b }` with each component 0..127 (7-bit, sysex-ready) |
+
+Note indices are the ones `magda.selection.note_indices()` returns, counting from 0. The four note edits return false, and change nothing, when the clip isn't a MIDI clip or an argument is out of range (such as an empty index list). Each successful one is a single undo step.
 
 ### `magda.session`
 
@@ -243,6 +249,10 @@ For driving feedback (motorised faders, LED rings, screens) back to the controll
 | `magda.midi.send_sysex(port, {byte, byte, ...})` | boolean | F0/F7 framing is added by the binding — pass payload bytes only |
 | `magda.midi.outputs()` | array of strings | Names of every connected MIDI output port |
 | `magda.midi.default_output()` | string | The script's currently-assigned output port |
+| `magda.midi.inject_note_on(track_id, channel, note, velocity)` | boolean | Send a note-on straight into one MAGDA track |
+| `magda.midi.inject_note_off(track_id, channel, note [, velocity])` | boolean | Release a note sent with `inject_note_on` |
+
+A script's input port belongs to the script, so its notes don't reach your instruments on their own. Use the inject functions to play the selected track from a controller's keys or pads, for example in a note-layout mode.
 
 ## Examples
 
@@ -304,4 +314,4 @@ Working scripts ship inside the application:
 - `launchpad_mk2.lua` — the same surface for the Launchpad MK2
 - `launchkey_mini_mk4.lua` — full Launchkey Mini MK4 surface (transport, pads, knobs, scene switching)
 
-Add any of them from the Controllers dialog's Scripts tab with **+ Add script** — see [Controllers — Factory Scripts](../interface/controllers.md#factory-scripts). To adapt one, reveal it on disk and copy it into your own [scripts folder](../interface/controllers.md#scripts-folder) under a new name.
+Add any of them with **+ Add script** on **Settings > Controllers > Lua Scripts** — see [Controllers — Factory Scripts](../interface/controllers.md#factory-scripts). To adapt one, reveal it on disk and copy it into your own [scripts folder](../interface/controllers.md#scripts-folder) under a new name.

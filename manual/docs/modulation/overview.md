@@ -8,31 +8,36 @@ MAGDA provides two complementary modulation systems: **Modulators** and **Macros
 
 Modulators are signal generators that continuously vary a target parameter over time. MAGDA includes:
 
-- **LFO** — Low-frequency oscillator with multiple waveforms (sine, triangle, sawtooth, square, random)
-- **Bezier Curve Shape** — Freely editable modulation shape drawn with bezier curves for complex custom patterns
+- **LFO** — Low-frequency oscillator with sine, triangle, square, and saw shapes
+- **Curve** — A freely editable shape for complex custom patterns
+- **Envelope** — An ADSR envelope
+- **Random** — Stepped random values or continuous noise
+- **Follower** — Follows the level of an audio signal
 
 See [Modulators](modulators.md) for details.
 
 ## Macros
 
-Macros are user-defined knobs that can control multiple parameters at once. Each track has 16 macro knobs (across 2 pages) that provide quick access to the most important parameters.
+Macros are user-defined knobs that can control multiple parameters at once. Each track, rack, and device has 16 macro knobs (across 2 pages) that provide quick access to the most important parameters.
 
 See [Macros](macros.md) for details.
 
 ## Hierarchical Scope
 
-Modulators and macros are scoped to their parent track. A modulator on Track 1 can target any parameter within Track 1's device chain, but not parameters on other tracks.
+Modulators and macros live at three levels: on a **track**, on a **rack**, or on a single **device**. Each scope reaches only the parameters it owns — a track's modulators and macros can target the devices in that track's chain, but not parameters on other tracks. See [Same-Scope Rule](linking.md#same-scope-rule).
 
 ## Multi-Target and Multi-Source
 
 - A single modulator can drive **multiple target parameters** simultaneously
 - A single parameter can be driven by **multiple modulation sources**, with their effects combined
 
-## Global Modulator & Macro Panel
+## Track Modulator & Macro Panels
 
 ![Global Macros & Modulators](../assets/images/modulation/global-macros-mods.png){ width="400" }
 
-Each track's modulators and macros are managed from the modulation panel in the bottom section. The panel shows macro knobs on the left and active modulators (LFO, Curve) on the right, with page navigation for both.
+The **Track macros** and **Track modulators** buttons in the [track chain](../panels/track-chain.md) header open the track's macro and modulator panels at the start of the chain: macros first, then modulators, each followed by its editor when you click a card. Racks and devices have the same two panels, opened from the **Macros** and **Mods** buttons in their own headers. Each panel shows its cards on pages of eight, with arrows to page through them.
+
+The same panels appear in the [Inspector](../panels/inspector.md#mods-and-macros) when a track, rack, or device is selected, so you can edit modulation from either place.
 
 ## Internal Device Modulation
 

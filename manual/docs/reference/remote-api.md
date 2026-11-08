@@ -8,9 +8,10 @@ transports:
 - **MCP** for AI hosts. Every ordinary Remote API operation is exposed as an MCP
   tool, and common reads are also exposed as resources.
 
-This page documents API version **1.0**. Do not hard-code the catalogue or copy
-JSON schemas from this page: call `system.describe` over WebSocket, or use MCP's
-`tools/list`, to obtain the exact schemas implemented by the running build.
+This page documents API version **1.0**. Every operation is listed on
+[Remote API Operations](remote-api-operations.md). Don't hard-code that list:
+call `system.describe` over WebSocket, or use MCP's `tools/list`, to get the
+exact schemas of the running build.
 
 ## Enable the API
 
@@ -267,15 +268,15 @@ continuous samples.
 
 ## Asynchronous jobs
 
-Project open/save-as, rendering, master capture, and Session recording can
-return a `job_...` record instead of completing the work inline. Job states are
-`accepted`, `running`, `completed`, `cancelled`, `failed`, or `unsupported`.
-Progress is monotonic from `0` to `1`.
+Project open/save-as, rendering, track freezing, master capture, and Session
+recording can return a `job_...` record instead of completing the work inline.
+Job states are `accepted`, `running`, `completed`, `cancelled`, `failed`, or
+`unsupported`. Progress is monotonic from `0` to `1`.
 
 Use `jobs.get` or `jobs.list`, or subscribe to `jobs`. Use `jobs.cancel` to
-cancel work. Jobs belong to the connection that created them: another
-connection receives `not_found`, and disconnecting cancels active jobs and
-forgets their records. Completed records are retained for at most ten minutes,
+cancel work; it also needs the scope of the operation that started the job.
+Jobs belong to the connection that created them: another connection receives
+`not_found`, and disconnecting cancels active jobs and forgets their records. Completed records are retained for at most ten minutes,
 up to the newest 128 records.
 
 Artifacts are opaque `artifact_...` handles with a kind and media type. The API
@@ -349,211 +350,11 @@ Common MCP resources include:
 
 ## Operation catalogue
 
-The tables below are an index, not a substitute for the runtime JSON schemas.
-Unless stated otherwise, list/get/status operations require `read` and mutation
-operations require `edit`.
-
-### System, diagnostics, jobs, and rendering
-
-| Operation | Scope | Purpose |
-|-----------|-------|---------|
-| `system.describe` | `read` | Return the API version and complete operation/schema catalogue. |
-| `engine.health` | `read` | Read engine binding, callback load, xruns, and recent problems. |
-| `meters.read` | `read` | Read a bounded latest track/master peak snapshot. |
-| `jobs.list` | `read` | List asynchronous jobs owned by this connection. |
-| `jobs.get` | `read` | Inspect one owned job. |
-| `jobs.cancel` | producing operation's scope | Cancel one owned job. |
-| `engine.renderRange` | `edit` | Render a beat/second range to an absolute WAV, FLAC, Opus or MP3 path (`bitrateKbps` sets a lossy bitrate; `vbrQuality`, 0 to 9, encodes MP3 at a LAME VBR level instead). |
-| `engine.masterCapture.start` | `edit` | Start capturing the true master callback output. |
-| `engine.masterCapture.stop` | `edit` | Stop and finalize an owned master capture. |
-| `engine.masterCapture.status` | `read` | Read capture capability and current activity. |
-| `capture.recentMaster` | `edit` | Put the master's last bars on a new track where they were heard. |
-
-### Project and chord track
-
-| Operation | Scope | Purpose |
-|-----------|-------|---------|
-| `project.get` | `read` | Read safe current-project metadata. |
-| `project.new` | `edit` | Create an untitled project. |
-| `project.close` | `edit` | Close the current project with an explicit dirty policy. |
-| `project.open` | `edit` | Open an absolute path as an asynchronous job. |
-| `project.save` | `edit` | Save to the existing target. |
-| `project.saveAs` | `edit` | Save to an absolute path as an asynchronous job. |
-| `project.setTempo` | `edit` | Set tempo from 20 to 400 BPM. |
-| `project.setTimeSignature` | `edit` | Set numerator and denominator. |
-| `project.setLoopRange` | `edit` | Set the project loop range in beats. |
-| `chordTrack.get` | `read` | Read the singleton chord track and ordered progression. |
-| `chordTrack.detect` | `read` | Detect a structured progression in a MIDI clip range. |
-| `chordTrack.ensure` | `edit` | Create the singleton chord track if absent. |
-| `chordTrack.replaceProgression` | `edit` | Replace its structured progression. |
-| `chordTrack.extract` | `edit` | Detect and materialize a progression atomically. |
-| `chordTrack.sendToTrack` | `edit` | Bake a progression to a normal MIDI track. |
-
-### Tracks, routing, sends, and sidechains
-
-| Operation | Scope | Purpose |
-|-----------|-------|---------|
-| `trackPresets.list` | `read` | List saved track-chain presets by opaque id. |
-| `tracks.list` | `read` | List tracks. |
-| `tracks.get` | `read` | Read one track. |
-| `tracks.create` | `edit` | Create a track. |
-| `tracks.createFromPreset` | `edit` | Create a track from a saved chain preset. |
-| `tracks.applyPreset` | `edit` | Apply a saved chain preset to an existing track. |
-| `tracks.update` | `edit` | Update mixer, display, arm, monitor, or input state. |
-| `tracks.delete` | `edit` | Delete a track after reference-impact policy checks. |
-| `tracks.group` | `edit` | Group tracks under a new group track. |
-| `tracks.move` | `edit` | Move a track to a one-based list position. |
-| `routing.endpoints.list` | `read` | List safe logical audio and MIDI endpoints. |
-| `routing.get` | `read` | Read one track's audio and MIDI routes. |
-| `routing.set` | `edit` | Atomically set a track's routes and MIDI channels. |
-| `sends.list` | `read` | List one track's sends. |
-| `sends.create` | `edit` | Create a send. |
-| `sends.update` | `edit` | Update a send. |
-| `sends.remove` | `edit` | Remove a send. |
-| `sidechains.list` | `read` | List device/rack sidechains and capabilities. |
-| `sidechains.get` | `read` | Inspect one sidechain. |
-| `sidechains.set` | `edit` | Configure or clear one sidechain atomically. |
-
-### Clips and MIDI events
-
-| Operation | Scope | Purpose |
-|-----------|-------|---------|
-| `clips.list` | `read` | List clips, optionally filtered by track and view. |
-| `clips.get` | `read` | Read one clip. |
-| `clips.createMidi` | `edit` | Create a MIDI clip. |
-| `clips.loadSample` | `edit` | Load a host-local audio file as a clip. |
-| `clips.updateAudio` | `edit` | Set playback mode, source tempo, stretch, reverse, and fades. |
-| `clips.addMidiNote` | `edit` | Add one note to a MIDI clip. |
-| `clips.listMidiEvents` | `read` | List notes, CC, pitch bend, channel pressure, and poly aftertouch. |
-| `clips.addMidiEvents` | `edit` | Atomically add expressive MIDI events. |
-| `clips.updateMidiEvents` | `edit` | Atomically update events by id. |
-| `clips.replaceMidiEvents` | `edit` | Atomically replace every event. |
-| `clips.deleteMidiEvents` | `edit` | Atomically delete events by id. |
-| `clips.delete` | `edit` | Delete a clip. |
-| `clips.move` | `edit` | Move a clip to an Arrangement position or Session slot. |
-| `clips.resize` | `edit` | Resize from the start or end edge. |
-| `clips.duplicate` | `edit` | Duplicate to an Arrangement position or Session slot. |
-| `clips.update` | `edit` | Change name, enabled state, or groove assignment. |
-| `clips.transpose` | `edit` | Transpose MIDI notes by semitones. |
-| `clips.quantize` | `edit` | Quantize selected or all MIDI notes. |
-| `clips.sliceNotes` | `edit` | Slice selected or all MIDI notes into subdivisions. |
-
-### Devices, pads, racks, and modulation
-
-| Operation | Scope | Purpose |
-|-----------|-------|---------|
-| `devices.list` | `read` | List the safe flattened device/rack/chain graph. |
-| `devices.catalog` | `read` | List addable devices by catalogue id. |
-| `devicePresets.list` | `read` | List presets for an addressed device. |
-| `devices.add` | `edit` | Add a catalogue device to a track or rack chain. |
-| `devices.applyPreset` | `edit` | Apply an opaque preset to an existing device. |
-| `devices.replace` | `edit` | Replace a device while preserving its chain slot. |
-| `devices.remove` | `edit` | Remove a device. |
-| `devices.move` | `edit` | Move a device within its chain. |
-| `devices.setBypassed` | `edit` | Set bypass state. |
-| `devices.listParameters` | `read` | List real-unit parameter values and customization flags. |
-| `devices.setParameter` | `edit` | Set one AI-enabled parameter in real units. |
-| `devices.setParameterConfig` | `edit` | Configure visible, mini-mixer, and AI-agent parameters. |
-| `devices.openEditor` | `edit` | Open a plugin editor window. |
-| `pads.list` | `read` | List all 64 slots of an addressed Drum Grid. |
-| `pads.create` | `edit` | Create an empty pad chain. |
-| `pads.setDevice` | `edit` | Replace a pad voice with a catalogue device. |
-| `pads.setSample` | `edit` | Replace a pad voice with a host-local sample. |
-| `pads.clear` | `edit` | Clear a pad. |
-| `pads.swap` | `edit` | Swap two single-note pads. |
-| `pads.update` | `edit` | Update note range, level, pan, switches, and output bus. |
-| `racks.create` | `edit` | Create a rack on a track or in a nested chain. |
-| `racks.remove` | `edit` | Remove a rack at any nesting depth. |
-| `racks.setBypassed` | `edit` | Set rack bypass. |
-| `racks.update` | `edit` | Update a nested rack. |
-| `chains.create` | `edit` | Create a chain inside a rack. |
-| `chains.remove` | `edit` | Remove a nested rack chain. |
-| `chains.update` | `edit` | Update chain name, routing, mixer, or switch state. |
-| `mods.list` | `read` | List modulators on a device. |
-| `mods.create` | `edit` | Create an LFO, envelope, random, or follower modulator. |
-| `mods.update` | `edit` | Update a device modulator. |
-| `mods.remove` | `edit` | Remove a device modulator. |
-| `mods.link` | `edit` | Link a modulator to an AI-enabled parameter. |
-| `mods.unlink` | `edit` | Remove a modulator link. |
-| `macros.list` | `read` | List device macros and links. |
-| `macros.setValue` | `edit` | Set a normalized macro value. |
-| `macros.link` | `edit` | Link a macro to an AI-enabled parameter. |
-| `macros.unlink` | `edit` | Remove a macro link. |
-
-### Selection, transport, and Session
-
-| Operation | Scope | Purpose |
-|-----------|-------|---------|
-| `selection.get` | `read` | Read the current track, clip, and note selection. |
-| `selection.set` | `edit` | Replace the current selection. |
-| `transport.get` | `read` | Read transport state. |
-| `transport.play` | `transport` | Start playback. |
-| `transport.stop` | `transport` | Stop playback. |
-| `transport.setRecording` | `transport` | Set recording state. |
-| `transport.setLoopEnabled` | `transport` | Enable or disable the transport loop. |
-| `transport.seek` | `transport` | Seek to an absolute beat. |
-| `transport.seekRelative` | `transport` | Move by beats or bars, clamped at zero. |
-| `session.get` | `read` | Read scenes, tracks, and every Session slot state. |
-| `session.createScene` | `edit` | Create a durable scene. |
-| `session.updateScene` | `edit` | Update scene metadata. |
-| `session.moveScene` | `edit` | Move a scene by stable id. |
-| `session.duplicateScene` | `edit` | Duplicate a scene with explicit clip-copy behavior. |
-| `session.deleteScene` | `edit` | Delete a scene using an explicit populated-slot policy. |
-| `session.updateClipSettings` | `edit` | Update clip launch mode, quantization, and follow action. |
-| `session.launchClip` | `session` | Launch a Session clip. |
-| `session.stopClip` | `session` | Stop a Session clip. |
-| `session.stopTrack` | `session` | Stop the active Session clip on one track. |
-| `session.stopAll` | `session` | Stop every Session clip. |
-| `session.launchScene` | `session` | Launch a scene. |
-| `session.returnToArrangement` | `session` | Return one or all tracks to Arrangement playback. |
-| `session.recordingCapabilities` | `read` | Read Session recording support and stop policy. |
-| `session.armSlotRecording` | `session` | Arm or unarm an empty addressed slot. |
-| `session.beginSlotRecording` | `session` | Begin a slot take as an asynchronous job. |
-| `session.stopSlotRecording` | `session` | Stop a slot take and complete its job. |
-| `session.beginPerformanceCapture` | `session` | Capture a performance into Arrangement as a job. |
-| `session.stopPerformanceCapture` | `session` | Stop and commit performance capture. |
-
-### Automation and grooves
-
-| Operation | Scope | Purpose |
-|-----------|-------|---------|
-| `automation.listLanes` | `read` | List every automation lane. |
-| `automation.getLane` | `read` | Read one lane. |
-| `automation.createLane` | `edit` | Create an absolute or clip-based lane. |
-| `automation.addPoint` | `edit` | Add a normalized point. |
-| `automation.setPoints` | `edit` | Replace every point on an absolute lane. |
-| `automation.clearLane` | `edit` | Remove all points from a lane. |
-| `automation.deleteLane` | `edit` | Delete a lane and its clips. |
-| `automation.listClips` | `read` | List automation clips, optionally by lane. |
-| `automation.getClip` | `read` | Read one automation clip. |
-| `automation.createClip` | `edit` | Create a clip on a clip-based lane. |
-| `automation.deleteClip` | `edit` | Delete an automation clip. |
-| `automation.moveClip` | `edit` | Move an automation clip. |
-| `automation.resizeClip` | `edit` | Resize an automation clip from either edge. |
-| `automation.duplicateClip` | `edit` | Duplicate an automation clip after its source. |
-| `automation.updateClip` | `edit` | Update metadata, looping, or points. |
-| `grooves.list` | `read` | List groove template names. |
-| `grooves.upsert` | `edit` | Create or replace a groove template. |
-
-### Focused device and hardware MIDI
-
-| Operation | Scope | Purpose |
-|-----------|-------|---------|
-| `focused.get` | `read` | Read the focused device/rack and its macro page. |
-| `focused.setMacro` | `edit` | Set a normalized macro on the focused device. |
-| `focused.cycleDevice` | `edit` | Move focus to the previous or next top-level node. |
-| `midi.listOutputPorts` | `read` | List physical MIDI output names. |
-| `midi.send` | `hardware-midi` | Send one status-first channel message. |
-| `midi.sendSysEx` | `hardware-midi` | Send a SysEx payload; MAGDA adds `F0`/`F7`. |
-
-### WebSocket subscription methods
-
-| Operation | Scope | Purpose |
-|-----------|-------|---------|
-| `subscriptions.subscribe` | `read` | Subscribe to topics and optionally receive snapshots. |
-| `subscriptions.unsubscribe` | `read` | Stop selected subscriptions, or all when omitted. |
-| `subscriptions.list` | `read` | List this connection's subscribed topics. |
-| `subscriptions.resync` | `read` | Request complete snapshots for subscribed topics. |
+[Remote API Operations](remote-api-operations.md) lists every operation with its
+scope and parameters. It is generated from the same registry as
+`system.describe`, and the OpenRPC document behind it,
+[`magda-openrpc.json`](magda-openrpc.json), is there for client generators and
+API tools.
 
 ## Limits and security model
 

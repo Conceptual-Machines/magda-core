@@ -2,29 +2,36 @@
 
 ## No Audio Output
 
-1. Check **Settings > Audio** and verify the correct output device is selected
+1. Check **Settings > Audio & MIDI** and verify the correct driver and output interface are selected, and that the outputs you need are ticked under **Audio Outputs**
 2. Make sure your system volume is turned up
 3. Check that no tracks are muted and the master fader is up
 4. Try a different sample rate (e.g., 44100 Hz or 48000 Hz)
 
 ## High Latency
 
-1. Lower the buffer size in **Settings > Audio**
-2. Use an ASIO driver (Windows) or Core Audio (macOS) for best performance
+1. Lower the **Buffer Size** in **Settings > Audio & MIDI**
+2. Use an ASIO driver (Windows) or Core Audio (macOS) for best performance. On Linux, use JACK (see [Linux drivers](../interface/audio-settings.md#linux-drivers))
 3. Close other audio applications
-4. Switch to Live mode for the lowest latency profile
+
+## MAGDA Started With a Different Audio Driver
+
+If MAGDA closed unexpectedly while opening your audio driver, it starts the next time with the default driver instead, and an **Audio Driver Skipped** message names the driver it skipped. Choose a driver again in **Settings > Audio & MIDI**. If the same driver keeps failing, check for an update from its maker.
 
 ## Crashes on Startup
 
-1. Reset MAGDA's configuration (see below) — a bad preference, stale audio device, or failed model load can prevent MAGDA from reaching the main window
+1. Reset MAGDA's configuration (see below) — a bad setting, stale audio device, or failed model load can prevent MAGDA from reaching the main window
 2. Check the [GitHub Issues](https://github.com/Conceptual-Machines/magda-core/issues) for known problems
 3. File a bug report with your system details and the `magda.log` file from the Logs folder
 
 ## Plugin Issues
 
 1. Verify the plugin is compatible with your OS and architecture
-2. Re-scan plugins from **Settings > Plugins**
+2. Rescan plugins with **Rescan all** in **Settings > Plugins**. A plugin that crashed a scan is listed under **Excluded** there; **Remove** lets the next scan try it again
 3. Try loading the plugin in a fresh project
+
+When a plugin can't be loaded, as you add it or when a project opens, MAGDA shows a warning naming each plugin that failed and why, and the plugin's slot in the device chain shows **Failed to load**. Check that the plugin is still installed and authorised, then reopen the project.
+
+An ARA plugin such as Melodyne needs one **Rescan all** after updating from an older MAGDA before it can be used as ARA. See [Plugins](../interface/plugin-settings.md#scanning).
 
 ## Resetting MAGDA
 
@@ -38,13 +45,17 @@ If MAGDA misbehaves and the in-app settings can't help — typically when it cra
 | Windows | `%APPDATA%\MAGDA\config.json` |
 | Linux | `~/.config/MAGDA/config.json` |
 
+The config file stays here even if you move MAGDA's **Data** folder in [Settings > Paths](../interface/preferences.md#paths).
+
 ### What gets reset
 
-Deleting `config.json` wipes every user preference: audio device selection, recent projects, browser favourites, AI provider and model settings, UI language, custom track-colour palette, panel layout, and the "check for updates" state. Your projects (`.mgd` files) and any audio you've rendered are untouched.
+Deleting `config.json` wipes every user setting: audio device selection, recent projects, browser favourites, AI provider and model settings, keyboard shortcuts, UI language, custom track-colour palette, panel layout, and the "check for updates" state. Your projects (`.mgd` files) and any audio you've rendered are untouched.
+
+On Windows, the uninstaller offers to remove **Settings, logs and caches** (the `%APPDATA%\MAGDA` folder), ticked by default. It keeps `Documents\MAGDA`, where your presets, renders and themes live.
 
 ### Logs
 
-MAGDA writes a rolling log next to the config file under `Logs/magda.log`. When filing a bug report, attach the log — it usually contains the last few seconds before a crash.
+MAGDA writes a rolling log to `Logs/magda.log` in its data folder, which is next to the config file unless you have moved it. **Reveal** on the **Data** row in **Settings > Paths** opens that folder. When filing a bug report, attach the log — it usually contains the last few seconds before a crash.
 
 ### Waveform peak cache
 

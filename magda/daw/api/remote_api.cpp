@@ -3717,7 +3717,7 @@ OperationRegistry::OperationRegistry() {
         "required":["gridPath","padA","padB"],"additionalProperties":false
     })json",
                     okResult);
-    addPadOperation("pads.update", "Edit pad notes, level, pan, switches, and output bus",
+    addPadOperation("pads.update", "Edit pad notes, level, pan, and switches",
                     OperationAccess::Write, &handlers::padsUpdate, R"json({
         "type":"object","properties":{"gridPath":{},"padIndex":{"type":"integer","minimum":0,"maximum":63},
         "lowNote":{"type":"integer","minimum":24,"maximum":87},

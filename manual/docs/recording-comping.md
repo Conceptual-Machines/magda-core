@@ -14,18 +14,25 @@ A live **Recording...** preview is drawn over the timeline as you record, showin
 
 ## Capturing what you just heard
 
-MAGDA can keep the last few minutes of what you play, so an idea you played without recording is not lost. Click the **MEM** meter in the transport bar to turn it on; it stays on until you click it again. While it is on, it keeps the master output and the notes you play on MIDI devices, whether or not the transport is running.
+MAGDA can keep what you play, so an idea you played without recording is not lost. While capture is on, it keeps the master output and the notes you play on MIDI devices, whether or not the transport is running. Capture is off until you turn it on.
 
-The **MEM** meter in the transport bar shows it: the level of what is held, with what you just played drawn bright, how long that is, and how full the buffer is.
+Click **MEM**'s dot or its caption in the transport bar to turn capture on or off; the meter beside them doesn't respond to clicks. Turning capture off stops it writing but keeps what it already holds, so you can still open, play, select and import it. Turning it on again carries on from where it stopped.
 
-Click the capture button beside it (++cmd+shift+c++, or **Transport > Recent Capture**) to open the capture panel under the transport. It shows the audio and the notes over the whole buffer, oldest at the left, with what you just played already selected:
+The **MEM** meter shows what is held: its level, with what you just played drawn bright, then how long that is and how full the buffer is. It reads *off* while capture is off. The dot is lit while it is recording.
+
+Click the capture button beside the meter (++cmd+shift+c++, or **Transport > Recent Capture**) to open the capture panel under the transport. It shows the audio and the notes over the whole buffer, oldest at the left, with what you just played already selected:
 
 - **With the transport stopped**, that is your last phrase, back to a pause of a few seconds, with a second of tail for the release.
 - **Along with the transport**, it is the last bars of that pass. A stop or a loop wrap ends a pass.
 
-Drag across the lanes to select something else (double-click goes back), then press **Import Audio** to put the master audio on a new **Capture Audio** track, or **Import MIDI** to put the notes on a new **Capture MIDI** track. Notes from several MIDI devices go on a track each, named after the device. A stretch the transport played lands at the bars where you heard it; anything else lands at the playhead. The click is never included.
+Zoom and scroll with the ruler and scroll bar, as in the waveform editor. The play button plays the selection, or what is in view when nothing is selected. Drag across the lanes to select something else (click to clear, double-click to go back to what you just played), then press **Import Audio** to put the master audio on a new **Capture Audio** track, or **Import MIDI** to put the notes on a new **Capture MIDI** track. Notes from several MIDI devices go on a track each, named after the device. A stretch the transport played lands at the bars where you heard it; anything else lands at the playhead. The click is never included. Notes stay in the buffer after their MIDI device is unplugged.
 
-The **MEM** dot is lit while it is capturing. **Preferences > Engine** has the same switch, and **Capture Buffer** sets how much is kept: 5 minutes by default, up to 30, with what each length costs in memory. **Capture Length** caps what is selected for you, 8 bars by default.
+**Settings > General**, under **Engine**, has the same switch (*Keep what you play, so it can be captured afterwards*) and two lengths:
+
+- **Capture Buffer** — how much is kept: 5 minutes by default, up to 4 hours. The first minute is held in memory and anything longer in a file on disk; the setting shows the size each length takes.
+- **Capture Length** — caps what is selected for you, 8 bars by default.
+
+The file goes in the folder set under **Capture History** in **Settings > Paths**, in a `MAGDA Capture` subfolder; by default that is the system's temporary folder. Point it at a drive with room for long buffers. If the folder can't be used or is short of space, the history stays in memory, up to 30 minutes. Changing **Capture Buffer** or the folder starts a new history.
 
 ## Selecting a take
 

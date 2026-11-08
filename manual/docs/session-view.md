@@ -1,6 +1,6 @@
 # Session View
 
-The Session View is a grid-based clip launcher for real-time performance and idea sketching. Switch to it by clicking **Live** in the footer bar.
+The Session View is a grid-based clip launcher for real-time performance and idea sketching. Switch to it by clicking the **Session** button in the footer bar.
 
 ![Session View](assets/images/session/session-view.png)
 
@@ -12,79 +12,96 @@ The Session View is organized as a grid:
 - **Rows** represent scenes
 - Each cell is a **clip slot** that can hold an audio or MIDI clip
 
-The [chord track](chord-track.md) is always the first column on the left. Aux tracks sit in their own section on the right, next to the master, with a small gap between them and your other tracks. They stay put while the other columns scroll.
+The [chord track](chord-track.md) is always the first column on the left. Aux tracks sit in their own section on the right, next to the scenes column, with a small gap between them and your other tracks. They stay put while the other columns scroll.
 
 ```
- Track 1    Track 2    Track 3   │ Scene
-┌──────────┬──────────┬──────────┼────────┐
-│ Clip A   │          │ Clip D   │ ► 1    │
-├──────────┼──────────┼──────────┼────────┤
-│          │ Clip B   │ Clip E   │ ► 2    │
-├──────────┼──────────┼──────────┼────────┤
-│ Clip C   │          │          │ ► 3    │
-├──────────┼──────────┼──────────┼────────┤
-│ Fader    │ Fader    │ Fader    │ ■ Stop │
-└──────────┴──────────┴──────────┴────────┘
+     Track 1    Track 2    Track 3   │ SCENES
+    ┌──────────┬──────────┬──────────┼──────────┐
+    │ ▶ Clip A │ ▶        │ ▶ Clip D │ 1 ▶ Scene│
+    ├──────────┼──────────┼──────────┼──────────┤
+    │ ▶        │ ▶ Clip B │ ▶ Clip E │ 2 ▶ Scene│
+    ├──────────┼──────────┼──────────┼──────────┤
+    │    +     │    +     │    +     │    +     │
+    ├──────────┼──────────┼──────────┼──────────┤
+    │    ■     │    ■     │    ■     │ STOP ALL │
+    ├──────────┼──────────┼──────────┼──────────┤
+    │ meter    │ meter    │ meter    │ MASTER   │
+    │ vol  pan │ vol  pan │ vol  pan │ meter    │
+    │  M    S  │  M    S  │  M    S  │ vol      │
+    └──────────┴──────────┴──────────┴──────────┘
 ```
 
 - **Track headers** run across the top — click to select a track
-- **Scene launch buttons** on the right trigger all clips in a row simultaneously
-- **Stop All** button (■) stops all playing clips
-- **Mini mixer** fader row at the bottom provides quick mixing controls
+- **Scene buttons** in the **SCENES** column on the right launch every clip in their row
+- The **+** row below the last scene adds a scene
+- The **stop row** has a stop button (■) for each track, and **STOP ALL** stops every playing clip
+- **Mini mixer** strips at the bottom provide quick mixing controls, with the master's in the scenes column
+- The **toggle rail** runs down the left edge (see [Toggle Rail](#toggle-rail))
 
 ## Clip Slots
 
 Each cell in the grid is a clip slot. A slot can be empty or contain a clip.
 
-- **Click** an occupied slot to trigger (play) the clip
-- **Click** a playing slot to stop it
-- Only one clip per track plays at a time — triggering a new clip in the same column stops the previous one
-- A clip slot has an explicit **play** ▶ and **stop** ■ control on hover for unambiguous launch / stop separate from the clip body click
+- **Click** the launch triangle (▶) at the left of a slot to trigger its clip. Clicking it again while the clip plays triggers it again.
+- **Click** the left edge of an empty slot to stop the clip playing on that track, or to start recording into the slot when the track is armed.
+- **Click** the track's stop button (■) in the stop row to stop its clip.
+- Only one clip per track plays at a time — triggering a new clip in the same column stops the previous one.
+- **Double-click** a clip to open it in the editor at the bottom of the window. Double-clicking an empty slot creates a MIDI clip there.
+- **Right-click** a slot for **Create MIDI Clip**, **Copy**, **Cut**, **Duplicate**, **Paste**, **Delete Clip**, **Add Scene** and **Remove Scene**.
+
+A queued clip's border blinks until it starts, and a playing clip shows its progress across the slot.
 
 Not every track takes clips. An aux track's slots stay empty, and a group track's slots launch the clips of the tracks inside it rather than holding any of their own.
-- While recording into a slot, the clip previews in real time — incoming MIDI notes and captured audio peaks draw in the slot as the take happens
+
+While recording into a slot, the clip previews in real time — incoming MIDI notes and captured audio peaks draw in the slot as the take happens.
 
 ### Selecting Clips
 
-- **Click** a clip slot to select it
+- **Click** a clip's name to select it
 - **++shift++-click** another slot to extend the selection to a rectangular range
 - **++cmd++-click** (++ctrl++-click on Windows/Linux) to toggle individual slots in or out of the selection
-- Right-click a multi-selection to delete, duplicate, or change properties on every selected clip in one action
+- With several clips selected, **Duplicate** and **Delete Clip** in the right-click menu act on all of them
 
 ### Launch Fade
 
-Each session clip has an optional **launch fade** — a per-clip crossfade applied when the clip launches over the clip it replaces on the same track. Set the fade length in the clip's [Inspector](panels/inspector.md) under the launch section. Useful for pad and atmosphere clips where the hard cut between launches is jarring.
+Each session clip has an optional **launch fade** — a per-clip crossfade applied when the clip launches over the clip it replaces on the same track. Set its length with **Launch** in the **Fades** section of the clip's [Inspector](panels/inspector.md). Useful for pad and atmosphere clips where the hard cut between launches is jarring.
 
 ## Scenes
 
 A scene is a horizontal row across all tracks. Launching a scene triggers all clips in that row simultaneously, which is useful for transitioning between song sections during a live performance.
 
-- Click the **scene launch button** (►) on the right side to launch a scene
-- Use the **Stop All** button (■) to stop all playing clips at once
+- Click the number or triangle (▶) on a **scene button** to launch the scene; click its name to select it
+- Click **+** below the last scene to add one, or right-click a slot for **Add Scene** and **Remove Scene**
+- Use **STOP ALL** to stop all playing clips at once
 
 ## Mini Mixer
 
-At the bottom of the Session View, each track has a mini channel strip for quick mixing without leaving the clip launcher.
+At the bottom of the Session View, each track has a mini channel strip for quick mixing without leaving the clip launcher. From top to bottom:
 
-Each mini channel strip provides:
+- **Peak meter** — a horizontal meter across the top of the strip
+- **Volume** and **Pan** — side by side; drag a value to change it
+- **Mute** and **Solo**
+- **Record arm** and **Monitor** — in their own row, shown with the rail's record/monitor toggle
 
-- **Volume fader** — Adjust track level
-- **Pan knob** — Position in the stereo field
-- **Mute** (M) — Silence the track
-- **Solo** (S) — Listen to only this track
+With several tracks selected, dragging one strip's volume or pan moves every selected track by the same amount.
 
-A **master strip** is also available for the main output level.
-
-The fader row is resizable — drag the top edge to make it taller or shorter.
+The master's strip sits in the scenes column, level with the track strips: the **MASTER** label, its peak meter and its volume.
 
 ### Toggle Rail
 
-A toggle rail along the side of the mini mixer shows or hides its rows — I/O routing and sends among them — the same way the [Mixer View](mixer-view.md#toggle-rail) does. Keep the view compact or expand it for more detail.
+The rail along the left edge of the Session View shows or hides parts of the view, the same way the [Mixer View](mixer-view.md#toggle-rail) does:
+
+- **Show sends** — the sends section above the mixer strips. Drag the handle above it to make it taller or shorter.
+- **Narrow / Medium / Wide track width** — set every channel to that width. Right-click any of the three to edit the widths.
+- **Show I/O routing** — the input and output selectors
+- **Show record/monitor row** — the record arm and monitor row in each strip
+
+Right-click the sends or I/O area for the same choices in a menu: **Show I/O**, **Show Sends** and **Show Record/Monitor**.
 
 ## Drag and Drop
 
 - Drag audio files from the Media Explorer onto a clip slot to import them
-- Drag plugins onto a track header to add effects
+- Drag plugins onto a track to add effects
 
 ### Multi-Sample Drag and Drop
 
@@ -96,7 +113,8 @@ Select multiple samples in the [Media Explorer](panels/browsers.md) (++shift++-c
 ## Adding Clips
 
 - Drag and drop audio or MIDI files from the [Media Explorer](panels/browsers.md) onto an empty clip slot
-- Record into the arrangement and move clips to the session grid
+- Double-click an empty slot, or right-click it and choose **Create MIDI Clip**, to make a new MIDI clip
+- Record into an empty slot on an armed track
 
 !!! note
     Clip launching quantize and follow-action settings are configured in the [Clip Inspector](panels/inspector.md).

@@ -1,6 +1,6 @@
 # Plugin Parameters
 
-Third-party plugins rarely tell a host what their parameters actually mean — most expose every knob as a generic 0–100 % value. MAGDA takes a first pass at interpreting those values for you, and the **Parameter Configuration** dialog lets you refine or override the result for any plugin.
+Third-party plugins rarely tell a host what their parameters actually mean — most expose every knob as a generic 0–100 % value. MAGDA takes a first pass at interpreting those values for you, and the **Configure Parameters** dialog lets you refine or override the result for any plugin.
 
 The configuration is saved per plugin (by plugin unique ID), so it's applied automatically every time the plugin is loaded.
 
@@ -21,8 +21,8 @@ The dialog shows one row per parameter with the following columns:
 | Column | Description |
 |--------|-------------|
 | **Parameter** | Parameter name as reported by the plugin. |
-| **Visible** | Toggle whether the parameter shows up in MAGDA's chain, inspector, and AI prompts. Hide parameters you never touch to reduce clutter. |
-| **Mini FX** | Include the parameter in the device's compact mini view. |
+| **Visible** | Toggle whether the parameter shows up on the device in MAGDA's chain and in AI prompts. Hide parameters you never touch to reduce clutter. |
+| **Mini FX** | Show the parameter in the device's row of the mini FX chain, in the [mixer](mixer-view.md#mini-fx-chain) and the track [inspector](panels/inspector.md#track-inspector). Up to three are shown. |
 | **AI Agent** | Allow the [AI sound designer](panels/ai-assistant.md#ai-sound-design-for-third-party-plugins) to set this parameter. Independent of **Visible**. |
 | **Unit** | Display unit — Hz, dB, ms, %, semitones, or any custom string. |
 | **Range** | Minimum, centre, and maximum values in the parameter's own domain. Narrow the range so sliders and AI-generated values stay in the useful zone. |
@@ -33,12 +33,13 @@ The dialog shows one row per parameter with the following columns:
 - **Detect** — Run the deterministic heuristic pass (instant, offline). Picks up units and ranges that the plugin's own display strings give away.
 - **AI Detect** — Run the heuristic pass and then send anything it couldn't resolve to the configured LLM (see below).
 - **AI Prompt...** — Standing instructions added to every sound-design request for this plugin. The button shows a checkmark once a prompt is saved.
+- **Controls** — How this plugin's parameters draw on its device: **Text fields**, **Knobs**, or **Sliders**. **Use global** keeps the default, text fields.
 - **Reset** — Discard all inferred units, ranges, AI parameter selections, and the custom prompt for this plugin, putting every parameter back to a plain 0–100 % view.
 - **Apply** — Save changes without closing the dialog.
 - **OK / Cancel** — Save and close, or discard.
 
 !!! note "Internal devices"
-    MAGDA's own devices report proper units and ranges already, and their sound designers introspect every parameter, so the dialog drops the **Visible** and **AI Agent** columns for them and offers only the **Mini FX** choice.
+    MAGDA's own devices report proper units and ranges already, and their sound designers introspect every parameter, so the dialog drops the **Visible** and **AI Agent** columns and the **AI Prompt...** button for them, and offers only the **Mini FX** choice.
 
 ## AI Detect
 
@@ -47,22 +48,22 @@ Typing units and ranges by hand for a plugin with dozens of parameters is tediou
 The results populate the dialog so you can review them before applying — tweak anything you disagree with and hit **Apply**.
 
 !!! note
-    AI Detect uses whichever provider is configured in [AI Settings](interface/ai-settings.md). It works with both cloud providers and local inference.
+    AI Detect uses whichever provider is configured in [Settings > AI](interface/ai-settings.md). It works with both cloud providers and local inference.
 
-## Learn Mode
+## Locating a Parameter
 
-Big plugins can have hundreds of parameters spread across many pages in the device slot. Finding the one you want is tedious. Learn mode lets you point at a control in the plugin's own window and have MAGDA jump straight to its slot.
+Big plugins can have hundreds of parameters spread across many pages in the device slot. Finding the one you want is tedious. The **Locate** button lets you point at a control in the plugin's own window and have MAGDA jump straight to its slot.
 
-![MAGDA's device slot for Vital next to the plugin's own window — Learn mode jumps the slot to whichever parameter you click in the plugin GUI.](assets/images/devices/learn-mode.png)
+![MAGDA's device slot for Vital next to the plugin's own window — Locate jumps the slot to whichever parameter you move in the plugin GUI.](assets/images/devices/learn-mode.png)
 
 On any plugin device slot in the [FX chain](fx-chain.md):
 
 1. Open the plugin's own window.
-2. Click the **Learn** button in the device slot header — it highlights.
-3. Touch any control in the plugin's window.
+2. Click the **Locate** button in the device header — it highlights.
+3. Move any control in the plugin's window.
 4. MAGDA navigates to the parameter page that contains the matching parameter and highlights its slot.
 
-Click Learn again to exit. Use it to find the right parameter before setting up automation, modulation, or a macro link.
+Click **Locate** again to stop. Use it to find the right parameter before setting up automation, modulation, or a macro link.
 
 !!! note
-    Learn is only enabled while the plugin's own window is open, and is hidden for MAGDA's built-in devices.
+    **Locate** is only enabled while the plugin's own window is open, and is hidden for MAGDA's built-in devices. Closing the plugin window turns it off.
