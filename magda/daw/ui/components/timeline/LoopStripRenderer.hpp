@@ -9,54 +9,55 @@
 
 namespace magda::LoopStripRenderer {
 
-// Loop indicator shared by every ruler (arrangement + clip editors) so the loop
-// looks identical everywhere: a quiet gradient rail between two brighter rectangular
-// handles, filling [stripTop, stripTop + stripHeight]. The rectangular handles
-// mirror the time-range selection handles so the two read as the same kind of
-// thing (loop = green, selection = blue), and sit cleanly under the playhead's
-// triangle rather than competing with it.
-//
-// xStart/xEnd are component-local pixel positions; anything outside
-// [0, viewWidth] is skipped. `enabled` selects the bright green look vs. a
-// greyed-out inactive one.
-//
-// This is the ONE place the loop's visual style is defined. Do not re-implement
-// loop drawing in individual rulers; call this instead.
+/**
+ * @brief Draws the loop as a thin top line with a wedge hanging from each end, filling
+ * [stripTop, stripTop + stripHeight].
+ *
+ * Every ruler (arrangement and clip editors) calls this, so the loop's look lives here only.
+ * @p xStart and @p xEnd are component-local pixels; a disabled loop draws grey.
+ */
 inline void draw(juce::Graphics& g, float xStart, float xEnd, int stripTop, int stripHeight,
                  int viewWidth, bool enabled) {
-    if (stripHeight <= 0 || xEnd <= xStart)
+    const auto width = static_cast<float>(viewWidth);
+    if (stripHeight <= 0 || xEnd <= xStart || xEnd < 0.0f || xStart > width)
         return;
 
     const auto base =
         enabled ? ActiveTheme::getColour(ActiveTheme::LOOP_MARKER) : juce::Colour(0xFF808080);
     const auto top = static_cast<float>(stripTop);
     const auto bottom = static_cast<float>(stripTop + stripHeight);
-    const float mid = (top + bottom) * 0.5f;
-    const int railH = juce::jmax(2, stripHeight / 3);
-    const float railTop = mid - static_cast<float>(railH) / 2.0f;
+    const auto barH = static_cast<float>(juce::jmax(2, juce::roundToInt(stripHeight * 0.4f)));
+    const float barBottom = top + juce::jmin(barH, bottom - top);
+    // 45-degree wedges, narrowed so both fit inside a short loop.
+    const float wedgeW = juce::jmin(bottom - barBottom, (xEnd - xStart) * 0.5f);
 
-    // Quiet rail (clamped to the visible width).
-    const float x0 = juce::jmax(0.0f, xStart);
-    const float x1 = juce::jmin(static_cast<float>(viewWidth), xEnd);
-    if (x1 > x0) {
-        // A slight top-to-bottom gradient gives the rail a raised look
-        const float railBottom = railTop + static_cast<float>(railH);
-        g.setGradientFill(juce::ColourGradient(base.brighter(0.25f).withAlpha(0.5f), 0.0f, railTop,
-                                               base.darker(0.3f).withAlpha(0.3f), 0.0f, railBottom,
-                                               false));
-        g.fillRoundedRectangle(x0, railTop, x1 - x0, static_cast<float>(railH),
-                               static_cast<float>(railH) / 2.0f);
+    // An end far off-screen is pulled in to just past the edge, so extreme zoom never
+    // hands the rasteriser huge coordinates.
+    const float margin = wedgeW + 2.0f;
+    const bool leftWedge = xStart >= -margin;
+    const bool rightWedge = xEnd <= width + margin;
+    const float x0 = leftWedge ? xStart : -margin;
+    const float x1 = rightWedge ? xEnd : width + margin;
+
+    juce::Path shape;
+    shape.startNewSubPath(x0, top);
+    shape.lineTo(x1, top);
+    if (rightWedge) {
+        shape.lineTo(x1, bottom);
+        shape.lineTo(x1 - wedgeW, barBottom);
+    } else {
+        shape.lineTo(x1, barBottom);
     }
+    if (leftWedge) {
+        shape.lineTo(x0 + wedgeW, barBottom);
+        shape.lineTo(x0, bottom);
+    } else {
+        shape.lineTo(x0, barBottom);
+    }
+    shape.closeSubPath();
 
-    // Brighter rectangular handles at the endpoints, matching the time-range
-    // selection handles.
-    const auto handle = base.brighter(0.4f);
-    constexpr float handleW = 4.0f;
-    g.setColour(handle);
-    if (xStart >= 0.0f && xStart <= static_cast<float>(viewWidth))
-        g.fillRoundedRectangle(xStart - handleW / 2.0f, top, handleW, bottom - top, 1.5f);
-    if (xEnd >= 0.0f && xEnd <= static_cast<float>(viewWidth))
-        g.fillRoundedRectangle(xEnd - handleW / 2.0f, top, handleW, bottom - top, 1.5f);
+    g.setColour(base.brighter(0.4f));
+    g.fillPath(shape);
 }
 
 }  // namespace magda::LoopStripRenderer
