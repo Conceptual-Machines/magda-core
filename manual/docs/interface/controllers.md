@@ -8,29 +8,31 @@ MAGDA can be driven by any class-compliant MIDI controller. Hardware knobs, slid
 
 Profile and Learn'd bindings can coexist — a Learn'd binding shadows automap on the same CC so your custom mapping wins. A loaded Lua script takes the input layer entirely; it owns the controller for as long as it's active.
 
-## Controllers Dialog
+## Controllers settings
 
-Open from **Settings > Controllers**. The dialog has two tabs:
+Controllers have their own section in [Settings](preferences.md), **Settings > Controllers**, with two tabs. Every change there takes effect as you make it.
 
-- **Profiles** — registered hardware controllers with their assigned MIDI input ports
-- **Scripts** — `.lua` controller scripts (see [Lua Controller Scripts](#lua-controller-scripts))
+- **MIDI Profiles** — registered hardware controllers with their assigned MIDI input ports
+- **Lua Scripts** — `.lua` controller scripts (see [Lua Controller Scripts](#lua-controller-scripts))
 
-### Profiles tab
+### MIDI Profiles tab
 
 One row per registered controller. Each row shows:
 
-| Column | Description |
+| Part | Description |
 |---|---|
-| **Status dot** | Green when the assigned MIDI input is currently connected, dim when it isn't |
-| **Name** | Manufacturer + model |
-| **Input port** | The live MIDI input the controller is bound to |
+| **Status dot** | Green when the controller is switched on and its MIDI input is connected, dim otherwise |
+| **Name** | Manufacturer and model, with **Connected**, **Not connected** or **Disabled** underneath |
+| **Input port** | The MIDI input the controller is bound to. Click it to choose another |
+| **Switch** | Turns the controller's profile bindings on or off. Switching one on turns off any other controller on the same input |
 
-Two buttons sit in the header:
+Three buttons sit in the tab row:
 
-- **+ Add profile** — register a new controller using one of the profiles already in your [controllers directory](#profiles-directory). Pops a menu of available profiles, then asks which MIDI input the controller is connected to.
-- **Upload profile…** — pick a `.json` profile from disk and import it. Validates the JSON, copies it into the controllers directory, and refreshes the registry. After upload, the new profile is available to **+ Add profile**.
+- **+ Add profile** — register a new controller using one of the profiles in your [controllers directory](#profiles-directory). Pops a menu of available profiles and adds the controller with no MIDI input; pick its input on the controller's row.
+- **Upload profile…** — pick a `.json` profile from disk and import it. Validates the JSON, copies it into the controllers directory, and refreshes the list. After upload, the new profile is available to **+ Add profile**.
+- **Open Profiles Folder** — reveals the controllers directory in your file browser.
 
-Right-click a row to **Show profile in Finder** (reveals the JSON file) or **Remove** (deletes the controller and its bindings).
+Right-click a row for **Show profile in Finder** (reveals the JSON file) or **Remove** (deletes the controller and its bindings, after asking).
 
 Bindings created by MIDI Learn against a removed controller's port still work — they attach to the live MIDI port name, not to the controller registry entry.
 
@@ -52,7 +54,7 @@ User profiles live alongside MAGDA's other configuration:
 | Windows | `%APPDATA%\MAGDA\controllers\` |
 | Linux | `~/.config/MAGDA/controllers/` |
 
-On first launch the bundled profiles are seeded into this folder. Edits and additions there are durable — drop a new `*.json` profile in and it's available next time you open the Controllers dialog.
+On first launch the bundled profiles are seeded into this folder. Edits and additions there are durable — drop a new `*.json` profile in and it's available the next time you open **Settings > Controllers**.
 
 ### Profile JSON format
 
@@ -117,7 +119,7 @@ See [AI Assistant — Slash Commands](../panels/ai-assistant.md#slash-commands).
 
 ## Lua Controller Scripts
 
-Some controllers can't be expressed as a static CC → target mapping — Mackie Control surfaces, controllers with motorised faders that need feedback, controllers that change mode based on app state. For those, MAGDA hosts a **Lua scripting layer**: load a `.lua` file from the **Lua Scripts** tab in the Controllers dialog and it receives every incoming MIDI event for the assigned port.
+Some controllers can't be expressed as a static CC → target mapping — Mackie Control surfaces, controllers with motorised faders that need feedback, controllers that change mode based on app state. For those, MAGDA hosts a **Lua scripting layer**: load a `.lua` file from the **Lua Scripts** tab in **Settings > Controllers** and it receives every incoming MIDI event for the assigned port.
 
 The script is just Lua 5.4 (sandboxed — no `io`, `os`, `require`) with a `magda.*` API for talking back to the DAW: `magda.transport`, `magda.session`, `magda.tracks`, `magda.devices`, `magda.midi`. Define a top-level `on_midi(event)` and it fires for every event matching the assigned input port (or every input, if the port is left blank).
 
@@ -138,26 +140,24 @@ Two optional callbacks are also dispatched: `on_load()` once at script start, an
 
 Only one script can be active at a time. Loading a new script replaces the previous one. Reload picks up file edits without restarting MAGDA.
 
-### Scripts Tab
+### Lua Scripts tab
 
-The Scripts tab in the Controllers dialog lists the scripts available to you — the factory scripts you have enabled, plus every `.lua` file in your own scripts folder. Each row shows:
+The Lua Scripts tab lists the scripts available to you — the factory scripts you have enabled, plus every `.lua` file in your own scripts folder. Click a script to make it the active one. Each row shows:
 
-| Column | Description |
+| Part | Description |
 |---|---|
 | **Status dot** | Green when this is the active script; outlined when it isn't |
-| **Name** | Script filename (e.g. `launchkey_mini_mk4.lua`) |
-| **Active label** | An `Active` tag appears under the name when this is the loaded script |
-| **MIDI Out port** | The MIDI **output** the script sends feedback to (assignable per script) |
-| **DAW In port** | The MIDI **input** the script's `on_midi` listens to (empty = all inputs) |
+| **Name** | Script filename (e.g. `launchkey_mini_mk4.lua`), with **active** underneath when it is the loaded script |
+| **Ports** | The MIDI input the script's `on_midi` listens to (none means all inputs) and the MIDI output it sends feedback to. Click either to change it |
 
-Header buttons:
+Buttons in the tab row:
 
 - **+ Add script** — pick from the factory scripts bundled with MAGDA (see [Factory Scripts](#factory-scripts)) and add it to the list
-- **Open Scripts Folder** — reveals your scripts folder in the OS file browser
 - **Import script…** — pick a `.lua` from disk, copy it into the scripts folder, refresh the list. You are asked before an existing file of the same name is replaced.
+- **Open Scripts Folder** — reveals your scripts folder in the OS file browser
 - **Reload** — re-evaluate the active script (or load the alphabetically-first script if none is active). Picks up file edits without restarting MAGDA.
 
-Click a row's port columns to assign / change the MIDI ports for that script. Right-click a row for **Reveal in Finder**, **Unload** (on the active script), and **Disable factory script** (on a factory one).
+Right-click a row for **Reveal in Finder**, **Unload** (on the active script), and **Disable factory script** (on a factory one).
 
 ### Factory Scripts
 
@@ -171,7 +171,7 @@ MAGDA ships with ready-made scripts for common controllers. They live inside the
 | `8-knobs.lua` | Any 8-knob controller — CC 1–8 drive the volume of tracks 1–8 |
 | `foot-pedal.lua` | Any sustain pedal — CC 64 launches and stops the selected session clip |
 
-**Disable factory script** removes one from the list; **+ Add script** brings it back. Once every factory script is enabled the button reports that there is nothing left to add.
+**Disable factory script** removes one from the list; **+ Add script** brings it back. Once every factory script is enabled, the button reports that all of them are already enabled.
 
 To modify one, add it, use **Reveal in Finder** to find it, and copy it into your own scripts folder under a new name.
 
@@ -183,15 +183,15 @@ To modify one, add it, use **Reveal in Finder** to find it, and copy it into you
 | Windows | `%APPDATA%\MAGDA\Scripts\Controllers\` |
 | Linux | `~/.config/MAGDA/Scripts/Controllers/` |
 
-The folder is created on first launch. Drop `.lua` files in there and they show up in the Scripts tab. Per-script port assignments are saved alongside.
+The folder is created on first launch. Drop `.lua` files in there and they show up on the Lua Scripts tab. Per-script port assignments are saved alongside.
 
 ### Footer Indicator
 
-When a Lua script is loaded, the app footer (the bar with the Live / Arrange / Mix view icons) shows a pill with the script's filename and a connection dot — green when its assigned input is plugged in, dim when it's not. Click the pill to jump back into the Controllers dialog. While the script is loaded, controller-profile pills are hidden — the script owns input.
+While a Lua script is loaded, the right of the [footer](overview.md#footer) shows a pill with the script's filename and a connection dot — green when its assigned input is plugged in, dim when it's not. Click the pill to open **Settings > Controllers**. While the script is loaded, controller-profile pills are hidden — the script owns input.
 
 Full API reference: [Lua Scripting](../reference/lua-scripting.md).
 
 ## Tips
 
 !!! tip
-    A Learn'd binding routes through the **port name**, so it survives renaming the controller in the dialog or even removing it from the registry. The binding still fires whenever the named port is connected.
+    A Learn'd binding routes through the **port name**, so it survives removing the controller from the list. The binding still fires whenever the named port is connected.

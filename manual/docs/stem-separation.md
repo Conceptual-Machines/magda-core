@@ -27,9 +27,9 @@ Three engines are available, trading quality against speed and download size.
 
 Demucs and Spleeter weights are not bundled with MAGDA — they are fetched on demand.
 
-An engine whose weights are missing shows in the menu with a trailing `...`. Choosing it opens **AI Settings > Models** with the **Stem separation** category selected, rather than failing. You can also go there directly at any time to install or remove either model. See [AI Settings](interface/ai-settings.md#stem-separation).
+An engine whose weights are missing shows in the menu with a trailing `...`. Choosing it opens **Settings > AI** on the **Local models** tab, with **Stem separation** chosen as the type, rather than failing. You can also go there directly at any time to install or remove either model. See [Settings > AI](interface/ai-settings.md#stem-separation).
 
-Downloads come from HuggingFace, are checked against a pinned SHA-256, and land in MAGDA's application data folder under `StemSeparation/models`. The Models page shows the source repository for each one as a clickable link, and lets you remove weights you no longer want to keep on disk.
+Downloads come from HuggingFace, are checked against a pinned SHA-256, and land in MAGDA's application data folder under `StemSeparation/models`. The **Local models** tab shows the source repository for each one as a clickable link, and lets you remove weights you no longer want to keep on disk.
 
 ## What a split produces
 

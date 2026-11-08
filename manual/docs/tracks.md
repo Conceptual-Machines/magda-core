@@ -12,14 +12,15 @@ MAGDA uses a **hybrid track system**: there is no strict distinction between aud
 
 | Type | Description |
 |------|-------------|
-| **Audio** | Standard track for audio recording and playback |
-| **Instrument** | Track with a virtual instrument plugin loaded |
-| **MIDI** | Track that sends MIDI to external devices |
-| **Group** | Bus track that groups multiple child tracks |
-| **Aux** | Auxiliary/send-return track for shared effects |
+| **Audio** | The regular track. It holds audio and MIDI clips, instruments, effects and live input, and can send MIDI out to hardware or to another track |
+| **Group** | Bus that sums the child tracks inside it (see [Grouping Tracks](#grouping-tracks)). It holds no clips |
+| **Aux** | Send-return track for shared effects, fed by other tracks' sends. It holds no clips |
 | **Chord** | Guide track holding a chord progression — one per project (see [Chord Track](chord-track.md)) |
 | **Separator** | A divider in the track list, with an optional name (see [Separators](#separators)) |
+| **Output** | One stereo output of a multi-output instrument, created from the device (see [Multi-Output Plugins](#multi-output-plugins)) |
 | **Master** | Final stereo output — one per project |
+
+The chord track sits at the top of the Arrangement View and at the far left of Session View and the Mixer. Aux tracks sit in their own section above the master in the Arrangement View, and on the right beside the master in Session View and the Mixer.
 
 ## Track Controls
 
@@ -38,6 +39,8 @@ Every track provides the following controls. They render identically in the trac
 
 The **Automation** button lights purple when the track holds automation.
 
+Tracks that don't take input show fewer controls. An aux track has no record arm, input monitor, routing or sends; the chord track has only its volume and its chord preview; a separator has none.
+
 ### Input Monitoring
 
 The input monitor button has three modes:
@@ -52,7 +55,7 @@ Click the button to cycle Off → In → Auto, or right-click it to pick a mode 
 
 To play an instrument without arming its track, for example to practise before recording, set its monitor to **In**.
 
-With **Auto-monitor selected track** enabled (Preferences → General → Behavior), selecting a track sets its monitor to Auto and turns the previously selected track's monitor Off. This overrides a mode you set by hand. The option is off by default.
+With **Auto-monitor selected track** enabled (**Settings > General**, under Behavior), selecting a track sets its monitor to Auto and turns the previously selected track's monitor Off. This overrides a mode you set by hand. The option is off by default.
 
 ## Multi-Output Plugins
 
@@ -61,6 +64,7 @@ When an instrument plugin has more than two output channels (e.g. Kontakt, Batte
 - Open the multi-out menu on the device (the ![output](assets/images/icons/output.svg){ width="16" } button) and activate the output pairs you need
 - Each activated pair creates an **independent track** placed directly after the instrument track
 - Output tracks behave like any other track — you can rename, reorder, route to groups, and apply FX
+- An output track's lane takes MIDI clips only, and they play the parent instrument
 - To organize them, select the output tracks and move them into a [Group](#track-types) using the right-click menu
 
 !!! note
@@ -112,13 +116,14 @@ A common use case is keeping the Arrangement View clean while having full contro
 
 ## Adding and Managing Tracks
 
-- Press ++ctrl+t++ (++cmd+t++ on macOS) to add a new track
-- Right-click a track header for options: rename, duplicate, delete, freeze
-- Click the track name to rename it
+- Press ++ctrl+t++ (++cmd+t++ on macOS) to add an audio track after the selected one, or ++ctrl+shift+t++ (++cmd+shift+t++) to add a group track
+- Click the **+** button in the Arrangement View's corner, or right-click the empty area below the tracks, for the add-track menu: **Add Audio Track**, **Add Group Track**, **Add Aux Track**, **Add Chord Track** and **Add Separator**. **Add Chord Track** is greyed out once the project has one. The **Track** menu offers the same items
+- Right-click a track header for options: add a track, grouping, sends, freeze, enable or disable, duplicate, delete
+- Double-click the track name to rename it
 
 ### Multi-Track Selection
 
-Click a track header to select it. Hold ++shift++ and click another header to extend the selection to a contiguous range; ++cmd++-click (++ctrl++-click on Windows/Linux) to toggle individual tracks in or out of the selection. Most track-level actions — mute, solo, delete, freeze, group — apply to every selected track in one operation.
+Click a track header to select it. Hold ++shift++ and click another header to extend the selection to a contiguous range; ++cmd++-click (++ctrl++-click on Windows/Linux) to toggle individual tracks in or out of the selection. Most track-level actions — mute, solo, delete, group — apply to every selected track in one operation. Freeze applies to the track you right-clicked.
 
 ### Disabling a Track
 
@@ -130,7 +135,9 @@ A track is also disabled when its chain holds a MAGDA device this copy of MAGDA 
 
 A separator divides up the track list. It has no header, controls, signal or clips: it is a thin row across the arrangement and a vertical line in the Session View and the Mixer.
 
-Choose **Track → Add Separator** to add one after the selected track, then drag it where you want it in the arrangement or the Session View. A separator starts without a name. Double-click it, or right-click it and choose **Rename Separator**, to give it one. Drag its edge to make it a little taller or wider. Separators don't take a position on [control surfaces](reference/osc-addresses.md), and they aren't exported to DAWproject files.
+Choose **Track → Add Separator** to add one after the selected track, or choose **Add Separator** from the add-track menu, then drag it where you want it in the arrangement or the Session View. A separator starts without a name. Double-click it, or right-click it and choose **Rename Separator...**, to give it one.
+
+With **Add a separator after a new chord track** on (**Settings > General**, under Behavior; on by default), adding a chord track also adds a separator after it. Drag its edge to make it a little taller or wider. Separators don't take a position on [control surfaces](reference/osc-addresses.md), and they aren't exported to DAWproject files.
 
 ## Grouping Tracks
 
@@ -138,8 +145,8 @@ Group tracks collect several tracks under a single bus so you can fold them away
 
 - **Group tracks** — with two or more tracks selected, collects them into a new group track.
 - **Ungroup tracks** — on a group track, dissolves it and promotes its children back to the top level.
-- **Remove from group** — moves a track out of its group, back to the top level.
-- **Move to group** — a submenu listing the existing group tracks; pick one to move the track into it.
+- **Remove from Group** — moves a track out of its group, back to the top level.
+- **Move to Group** — a submenu listing the existing group tracks; pick one to move the track into it.
 
 Collapse or expand a group's children from the [Track Manager](#track-view-manager) or the group header. The chord track and separators can't join a group.
 
@@ -155,10 +162,29 @@ MAGDA offers three duplication modes, available from the **Track** menu, the tra
 
 **Duplicate Track Content Only** is useful when you want the clips on a clean signal path — the new track has the same structure and name, but its FX chain is empty.
 
+## Freezing Tracks
+
+Freezing renders a track to an audio file and plays the file in its place, so the track's instruments and effects stop costing CPU. Right-click the track header and choose **Freeze Track**; a progress window shows while it renders. Choose **Unfreeze Track** to go back to the live chain.
+
+- The file holds the track's signal up to its fader, together with every track routed into it, from the start of the project to the last clip plus the tail its devices declare.
+- Devices after the fader keep running live.
+- Tracks routed into the frozen track stop playing on their own, since the file already holds them, and their devices show greyed out.
+- A frozen track's header dims, with a cyan strip on its outer edge, and its clips can't be edited until you unfreeze it.
+- Only audio tracks can be frozen. A disabled track can't be, and neither can a track that outputs into another track: freeze the track it feeds instead.
+- The file is kept in the project's renders folder, under `freeze`.
+
+### Unloading plugins on freeze
+
+With **Unload plugins when freezing, to free their memory** on (**Settings > General**, under Engine; on by default), freezing also closes the plugins whose sound the file now holds: those before the fader and those on tracks routed into the frozen track. **Unfreeze Track** loads them again with their settings. A large sampler takes as long to come back as it takes to open, and an instrument stays silent until it has loaded. Devices after the fader stay loaded.
+
+With the option off, the plugins stay loaded until the project closes. Either way, a project reopened with a frozen track doesn't load that track's plugins until you unfreeze it.
+
 ## FX Chain
 
 Each track has an FX chain — an ordered list of audio processors applied to the track's signal. See [FX Chain & Racks](fx-chain.md) for full details.
 
+An ARA plugin such as Melodyne inserted on a track takes over that track's audio clips and plays them live. See [ARA Plugins](ara.md).
+
 ## Clips
 
-Tracks contain clips — audio and MIDI data blocks arranged on the timeline. See [Clips](clips.md) for details on editing, splitting, duplicating, and rendering clips.
+Tracks contain clips — audio and MIDI data blocks arranged on the timeline. Group, aux and separator tracks take no clips. See [Clips](clips.md) for details on editing, splitting, duplicating, and rendering clips.

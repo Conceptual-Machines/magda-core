@@ -31,7 +31,7 @@ This page is a reference for anyone writing or editing a profile by hand — com
 | Field | Required | Description |
 |---|---|---|
 | `id` | ✓ | Stable, dot-separated identifier. Convention: `<vendor>.<model>` (lowercase, underscores). The id is what MAGDA uses internally — multiple files with the same id collide last-wins. |
-| `vendor` |   | Display name of the manufacturer (shown in the dialog). |
+| `vendor` |   | Display name of the manufacturer, shown beside the model in **Settings > Controllers**. |
 | `name` | ✓ | Display name of the model. |
 | `controls` | ✓ | Array of physical controls the hardware exposes. Must contain at least one. |
 | `defaultBindings` |   | Array of "what each control does out of the box". Optional — a profile that only declares controls is still valid; bindings just won't fire automatically. |
@@ -58,7 +58,7 @@ Each entry says: *when this control fires, route the value to this resolver*.
 | `resolverKind` | ✓ | Which resolver runs when this control fires. See the table below. |
 | `args` |   | Per-resolver arguments. JSON object of strings (numeric values are still strings). |
 
-A binding referencing a non-existent `controlId` is dropped at load with a warning — the upload flow in the Controllers dialog also catches it during validation.
+A binding referencing a non-existent `controlId` is dropped at load with a warning. **Upload profile…** on **Settings > Controllers > MIDI Profiles** catches it too, and refuses the file until it is fixed.
 
 ## Resolvers
 
@@ -139,7 +139,7 @@ The `name` field uses the model name with the intent appended for clarity:
 }
 ```
 
-Each variant shows up as its own row in the Controllers dialog. A user picks the variant they want for the way they're working today; switching variants is one dialog visit, not a rebuild of the JSON.
+Each variant is its own entry in the **+ Add profile** menu on **Settings > Controllers > MIDI Profiles**, and its own row once added. A user picks the variant they want for the way they're working today; switching variants is a visit to Settings, not a rebuild of the JSON.
 
 ## A complete example
 
@@ -183,7 +183,7 @@ The eight knobs follow whichever device has focus; the master fader always drive
 
 ## Validation
 
-When MAGDA loads a profile (on launch, or after import via the dialog) it runs structural and semantic checks:
+When MAGDA loads a profile (on launch, or when you import one with **Upload profile…**) it runs structural and semantic checks:
 
 - **Top-level**: `id` and `name` must be non-empty; `controls` must contain at least one valid entry.
 - **Per control**: required fields present; `cc` in `0–127`; `channel` is `-1` or `1–16`. Out-of-range entries are dropped with a warning.
@@ -197,7 +197,7 @@ Profiles that fail any of these checks load partially or are rejected entirely, 
 - **Generate, don't write from scratch.** The AI panel's `/controller <description>` command produces a JSON skeleton that's almost always closer to correct than starting from a blank file.
 - **Name `controlId`s consistently.** `knob_1`, `knob_2`, … makes the binding list scan easily; `cc21`, `cc22`, … doesn't.
 - **Use `channel: -1` if you don't know.** "Any channel" is friendlier than locking to 1 — most users never change their controller's channel and a literal `1` is fine in practice, but `-1` saves anyone who has.
-- **Test against the hardware before submitting.** A profile that compiles cleanly can still be subtly wrong (CC numbers off by one, channel mismatch). Walk every knob in the Controllers dialog and confirm each one moves the expected macro.
+- **Test against the hardware before submitting.** A profile that compiles cleanly can still be subtly wrong (CC numbers off by one, channel mismatch). Switch the profile on in **Settings > Controllers**, walk every knob, and confirm each one moves the expected macro.
 
 ## Sharing
 
@@ -205,4 +205,4 @@ Tested profiles can be shared via the [community page](https://magda.land/commun
 
 ## Extending the resolver list (developer note)
 
-Resolvers are registered via `magda::ResolverRegistry::registerResolver(...)` at startup. Adding a new resolver kind requires a C++ subclass of `AliasResolver` — see `magda/daw/core/aliases/ResolverRegistry.hpp` in the source. Profiles can't define their own resolvers; they consume the registered set.
+Resolvers are built into MAGDA, and adding a new resolver kind means changing MAGDA's source code. Profiles can't define their own resolvers; they consume the built-in set.

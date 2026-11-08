@@ -9,9 +9,35 @@ MAGDA saves projects as `.mgd` files, which store:
 - Plugin chains and parameters
 - Automation data
 
+### Media folder
+
+Beside each `.mgd` file sits its media folder, `<Project>_Media/`. It holds:
+
+| Folder | Contents |
+|---|---|
+| `recordings/` | Audio you record |
+| `renders/` | Audio MAGDA renders from the project, such as bounces |
+| `imported/` | Copies of outside files, made by **File → Collect Files…** |
+| `ara/` | The edits of each [ARA](../ara.md) plugin, one file per plugin, written each time you save |
+
+Audio you import stays where it is on disk until you collect it, so move or archive the media folder together with the `.mgd` file.
+
+### Older projects
+
+A project saved with a 0.x version of MAGDA opens with a prompt to save it as a new v1 project, beside the original. A project saved with v1 may not open correctly in v0. See [Project Migrations](project-migrations.md) for the prompt and for what changes when an older project opens.
+
 ## DAWproject Interchange
 
-MAGDA can import and export the **DAWproject** format (`.dawproject`), an open interchange format for moving a project between different DAWs. Use **File → Import DAWproject...** to open one, or **File → Export DAWproject...** to write the current project out. It carries tracks, clips, and basic plugin/automation data — use it to hand a session to another DAW that supports the format, and use the native `.mgd` for full-fidelity MAGDA projects.
+MAGDA can import and export the **DAWproject** format (`.dawproject`), an open interchange format for moving a project between different DAWs. Use **File → Import DAWproject…** to open one, or **File → Export DAWproject…** to write the current project out. Use it to hand a session to another DAW that supports the format, and use the native `.mgd` for full-fidelity MAGDA projects.
+
+An export carries:
+
+- Tracks and groups, with their volume, pan, mute, solo, colour and sends. [Drum Grid](../devices/drum-grid.md) pad channels go out as tracks inside the Drum Grid's track.
+- Arrangement clips, and session clips as scenes.
+- Volume and pan automation.
+- VST3 and AU plugins with their state. MAGDA's **Compressor**, **Gate**, **Limiter** and **EQ** become the format's own compressor, noise gate, limiter and equaliser.
+
+Other MAGDA devices and racks have no DAWproject equivalent and are left out, and so are [separator](../tracks.md#separators) tracks.
 
 The archive's `metadata.xml` carries the song's title and credits, and MAGDA maps the whole set both ways: Title, Artist, Album, Original artist, Composer, Songwriter, Producer, Arranger, Year, Genre, Copyright, Website and Comment. Edit them under **File → Project Settings**. A project with no title of its own exports its project name as the Title, which is what other DAWs look for.
 
@@ -30,11 +56,11 @@ MAGDA supports the following audio formats:
 | Opus | No | Yes |
 | MP3 | Yes, where a platform decoder is available | Yes |
 
-Audio export offers WAV (16-bit, 24-bit or 32-bit float), FLAC (16-bit or 24-bit), Opus, and MP3; the bit depth is its own choice in the export dialog, shown for WAV and FLAC. An Opus file is always stored at 48 kHz and is encoded at the bitrate chosen in the export dialog (64 to 320 kbps). An MP3 is encoded with LAME, either at a variable bitrate (VBR V0, V2 or V4; V2 is the default) or at a constant 128 to 320 kbps. MP3 holds at most 48 kHz, so an export at 96 or 192 kHz is stored at 48 kHz. Opus and MP3 exports carry the project's title, artist, album, year, genre and comment from Project Settings as tags; WAV and FLAC exports do not.
+Audio export offers WAV (16-bit, 24-bit or 32-bit float), FLAC (16-bit or 24-bit), Opus, and MP3; the bit depth is its own choice in the export dialog, shown for WAV and FLAC. An Opus file is always stored at 48 kHz and is encoded at the bitrate chosen in the export dialog (64 to 320 kbps). An MP3 is encoded with LAME, either at a variable bitrate (VBR V0, V2 or V4; V2 is the default) or at a constant 128 to 320 kbps. MP3 holds at most 48 kHz, so an export at 96 or 192 kHz is stored at 48 kHz. Opus and MP3 exports carry the project's title, artist, album, year, genre and comment from Project Settings as tags. WAV exports carry a broadcast-wave (BWF) description and loop information instead: the tempo, the time signature and the project's key, and whether the file is a one-shot (**Entire Song**) or a loop (**Loop Region**). FLAC exports carry neither. See [Exporting](../exporting.md#what-goes-into-the-file).
 
 ## MIDI
 
-Standard MIDI files (`.mid`) can be imported and exported.
+Standard MIDI files (`.mid`, `.midi`) can be imported by dragging them onto a track, and exported with **File → Export MIDI…** (see [Exporting](../exporting.md#export-midi)).
 
 ## Generated Cache Files
 

@@ -8,12 +8,12 @@ A project has a single chord track. Once you have added it, the menu item that c
 
 ## Creating a Chord Track
 
-Choose **Track → Add Chord Track**. It takes the top row of the arrangement and the first column on the left in the Session View and the Mixer. A [separator](tracks.md#separators) is added right after it, unless you turn that off in **Preferences**. In the Session View and the Mixer, click the chevron on its header to fold it to a narrow strip, and click the strip to unfold it. The chords keep playing while it is folded. The track appears with a simplified header:
+Choose **Track → Add Chord Track**. It takes the top row of the arrangement and the first column on the left in the Session View and the Mixer. A [separator](tracks.md#separators) is added right after it, unless you turn off *Add a separator after a new chord track* in **Settings > General**. In the Session View and the Mixer, click the chevron on its header to fold it to a narrow strip, and click the strip to unfold it. The chords keep playing while it is folded. The track appears with a simplified header:
 
 - A **volume** control.
-- A **chord audition** toggle (the chord icon) that controls whether the progression sounds during playback.
+- A **chord preview** control (the chord icon) that sets whether the progression sounds during playback. Click it to step through **Silent**, **Audible** and **Solo**, or right-click it to pick one. A new chord track starts **Silent**, unless its project was created with *New projects: chord preview* on in **Settings > General**.
 
-It has no mute or solo button, level meter or routing — the chord track is a guide, not an audio output.
+It has no mute or solo button of its own, no routing and no sends — the chord track is a guide, not an audio output.
 
 ## Editing Chords
 
@@ -22,10 +22,10 @@ The chord track's clip opens in a dedicated chord editor at the bottom of the wi
 - **Add** — click an empty spot on the chord lane to drop a chord at the nearest bar.
 - **Edit** — double-click a block to open the chord popup, with dropdowns for:
     - **Root** — C through B
-    - **Quality** — Major, Minor, Dim, Aug, Sus2, Sus4, 5 (power), Dom
+    - **Quality** — Major, Minor, Dim, Aug, Sus2, Sus4, 5 (Power), Dom
     - **Extension** — None, add2/add4, 6, 7, 9, … (the choices depend on the quality)
     - **Octave**
-    - **Inversion** — Root position, 1st, 2nd, 3rd
+    - **Inversion** — Root position, Inversion 1, Inversion 2, Inversion 3
 - **Move / resize** — drag a block along the lane to move it, or drag its edges to change its length. Hold ++alt++ while dragging to copy a chord.
 - **Audition** — click a block to hear it through the track's instrument.
 - **Delete** — select a block and press ++delete++.

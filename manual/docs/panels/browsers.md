@@ -2,6 +2,8 @@
 
 The left panel contains two browser tools for finding and adding content to your project.
 
+The two browsers share one search term. Type in either and the other follows, and the term stays when you switch tabs. ++cmd+f++ (++ctrl+f++ on Windows/Linux) puts the cursor in the search field.
+
 ## Plugin Browser
 
 ![Plugin Browser](../assets/images/panels/plugin-browser.png)
@@ -10,27 +12,31 @@ The Plugin Browser shows all available audio plugins organized in a tree view.
 
 ### Navigation
 
-- **Tree view** — Plugins organized by manufacturer and category
-- **Search** — Type to filter by plugin name
-- **Favorites** — Star plugins for quick access
-- **Folders** - Switch to a Folders view mode and organize plugins into your own folders. Folders stay in creation order and remain drop targets even when empty; an **Unfiled** bucket holds everything you have not filed.
+- **View** — Choose how the tree is organised: **By Category**, **By Manufacturer**, **By Format**, **Favorites** or **Folders**
+- **Search plugins** — Type to filter by plugin name. The filter stays applied when the list refreshes after a scan
+- **Favorites** — Right-click a plugin and choose **Add to Favorites** for quick access in the Favorites view
+- **Folders** - Switch to the Folders view and organize plugins into your own folders, from a plugin's right-click menu or by creating them with **New Folder...**. Folders stay in creation order and remain drop targets even when empty; an **Unfiled** bucket holds everything you have not filed.
 
 ### Adding Plugins
 
 - **Drag and drop** — Drag a plugin from the browser onto a track header or into the FX chain to add it
-- **Double-click** — Add the plugin to the currently selected track's FX chain
+- **Right-click** — Choose **Add to Selected Track** or **Add to Selected Chain**
+
+The right-click menu also offers **Configure Parameters...** (see [Plugin Parameters](../plugin-parameters.md)), **Edit Alias...**, **Prefer Drum Grid**, **Treat as MIDI FX** and **Show in Finder**.
+
+ARA plugins such as Melodyne are added the same way; see [ARA Plugins](../ara.md).
 
 ### Supported Formats
 
 - VST3
 - Audio Units (AU) — macOS only
-- VST (legacy)
+- LV2
 
-On macOS, when a plugin is installed as both VST3 and AU, the browser shows only your preferred format. See [Preferred Plugin Format](../interface/plugin-settings.md#preferred-plugin-format-macos).
+On macOS, when a plugin is installed as both VST3 and AU, the browser shows only your preferred format. See [Preferred plugin format](../interface/plugin-settings.md#preferred-plugin-format).
 
 ### Rescanning
 
-If a newly installed plugin doesn't appear, use **Settings > Plugin Scan** to re-scan your plugin directories.
+If a newly installed plugin doesn't appear, rescan your plugin folders in **Settings > Plugins**. See [Plugin Settings](../interface/plugin-settings.md#scanning).
 
 ## Media Explorer
 
@@ -43,27 +49,43 @@ The Media Explorer lets you browse files on your system and preview audio before
 
 ### Navigation
 
-- **File browser** — Navigate your file system with a tree view
-- **Path bar** — Click to jump to a specific directory
+The sidebar on the left switches what the browser shows:
+
+- **Project** — The current project's media folder
+- **Disk** — Your file system
+- **Library** — The indexed [Media Library](media-library.md)
+- **Favourite folders** — Below the other buttons. Right-click a folder in the browser and choose **Add to favorites** to pin it there (up to eight). Right-click a favourite to **Remove from favorites** or **Set as default directory**
+
+In Disk mode:
+
+- **Path box** — Shows the current folder, with an up button beside it to go to the parent
+- **List / Tree** — Show the folder as a flat list or as a directory tree
+- **Search media** — Type to search the current folder and every folder inside it. Moving to another folder clears the search
 
 ### Preview
 
 - Click an audio file to preview it through your monitor output
-- Preview plays the file as it is on disk, at its own tempo and pitch. It is not stretched to match the project tempo, so a 90 BPM loop auditions at 90 BPM whatever the transport is set to. Drag the file onto a track if you want it to follow the project tempo
+- Preview plays the file as it is on disk, at its own tempo and pitch, unless **Sync** is on (see below)
 - With **Auto** on, ++arrowup++ / ++arrowdown++ step through results and audition each one as it is selected; ++arrowleft++ stops the preview and ++arrowright++ replays it from the start
 
-The controls under the waveform drive the preview:
+The preview player sits under the file list. With **Wave** on it shows the file's name, a line of details (tempo, length, sample rate and bit depth), and its waveform. The controls below drive the preview:
 
 - **Play** / **Stop** - start the selected file from the beginning, or stop it. Play is greyed out until a file is selected
-- **Volume** - preview level only. It is independent of the project's mixer and is not recorded into anything
 - **Auto** - audition each file as soon as it is selected, instead of waiting for **Play**
+- **Sync** - play loops at the project tempo without changing their pitch, following tempo changes while they play. It uses the tempo the [Media Library](media-library.md) holds for the file; a file with no tempo there plays unchanged
+- **Wave** - show or hide the file name and waveform, giving their height to the file list. MAGDA remembers the choice
+- **Volume** - preview level, in dB. It is independent of the project's mixer and is not recorded into anything
 
-Preview runs outside the project's mixer and goes straight to the output pair you nominate, so it keeps working while the transport is stopped. Choose that pair with the **Preview** toggle in [Audio Settings](../interface/audio-settings.md#channel-configuration).
+Preview runs outside the project's mixer and goes straight to the output pair you nominate, so it keeps working while the transport is stopped. Choose that pair with the **Preview** toggle in **Settings > Audio & MIDI** (see [Audio Settings](../interface/audio-settings.md#preview)).
 
 ### Filters
 
-- Filter by file type (audio, MIDI, project)
-- Sort by name, date, or size
+The file-type buttons beside the search field show or hide each kind of file:
+
+- **Audio** files
+- **MIDI** files
+- **Presets** — MAGDA presets and sampler instruments (SFZ, DecentSampler)
+- **Chord progressions**
 
 ### Importing
 

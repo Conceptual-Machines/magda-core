@@ -1318,7 +1318,7 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onOpenManual = []() {
-        juce::URL("https://Conceptual-Machines.github.io/magda-core/").launchInDefaultBrowser();
+        juce::URL("https://docs.magda.land/").launchInDefaultBrowser();
     };
 
     callbacks.onCheckForUpdates = []() {

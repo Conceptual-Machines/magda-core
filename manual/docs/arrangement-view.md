@@ -1,45 +1,72 @@
 # Arrangement View
 
-The Arrangement View is a traditional DAW timeline for composing, recording, and editing. Switch to it by clicking **Arrange** in the footer bar.
+The Arrangement View is a traditional DAW timeline for composing, recording, and editing. Switch to it by clicking the **Arrangement** button in the footer bar.
 
 ![Arrangement View](assets/images/arrangement/arrangement-view.png)
 
 ## Layout
 
 ```
-┌─────────────────────────────────────────────┐
-│ Timeline ruler (bars / beats / time)        │
-├──────────┬──────────────────────────────────┤
-│ Track    │                                  │
-│ Headers  │   Track Content (clips on        │
-│          │   the timeline)                  │
-│  Name    │                                  │
-│  Color   │         ▼ Playhead               │
-│  M S R   │                                  │
-├──────────┼──────────────────────────────────┤
-│ Aux      │   Aux track content              │
-├──────────┼──────────────────────────────────┤
-│ Master   │   Master waveform                │
-└──────────┴──────────────────────────────────┘
+┌──────────┬─────────────────────────────────────┐
+│ Toolbar  │ Timeline ruler (bars / beats / time)│
+├──────────┼─────────────────────────────────────┤
+│ Track    │                                     │
+│ Headers  │   Track Content (clips on           │
+│          │   the timeline)                     │
+│  Name    │                                     │
+│  Color   │         ▼ Playhead                  │
+│  M S R   │                                     │
+├──────────┼─────────────────────────────────────┤
+│ Aux      │   Aux track content                 │
+├──────────┼─────────────────────────────────────┤
+│ Master   │   Song navigator                    │
+└──────────┴─────────────────────────────────────┘
 ```
 
+- **Toolbar** (top left) — The corner above the track headers (see [Toolbar](#toolbar)).
 - **Track headers** (left) — Track name, color, mute/solo controls. Resizable width.
-- **Track content** (center) — Clips displayed on the timeline. Scrollable horizontally and vertically. The [chord track](chord-track.md), when there is one, is always the top row.
+- **Track content** (center) — Clips displayed on the timeline. Scrollable horizontally and vertically. The [chord track](chord-track.md), when there is one, is always the top row. Below the last track there is always an empty lane, so you can scroll down and drop a file there to make a new track.
 - **Timeline ruler** (top) — Shows bars, beats, and time markers.
 - **Playhead** — Vertical line showing the current playback position, always on top.
 - **Aux tracks** — Auxiliary/bus tracks in a fixed section above the master.
-- **Master track** (bottom) — Master output with its own resizable row.
+- **Master track** (bottom) — The master output in its own row (see [Master Track](#master-track)).
 
 ## Toolbar
 
-The corner toolbar provides quick access to:
+The corner above the track headers holds one row of buttons:
 
-- Zoom to fit / Zoom to selection / Zoom to loop
-- Track size presets (small, medium, large)
-- Add track
-- I/O visibility toggle
+- **Edit tool** — shows the current tool; click it to pick another (see [Edit Tools](#edit-tools))
+- **Add track**
 - **Show / hide marker lane** (see [Markers](#markers))
 - **Show / hide seconds ruler** (see [Timeline Ruler](#timeline-ruler))
+- **Zoom to selection**, **Zoom to fit timeline** and **Zoom to loop region** — on a narrow header these drop out, Zoom to loop region first
+- **Toggle I/O routing** — at the outer edge, over the I/O column it shows
+
+The three track-height buttons sit above the vertical scrollbar, beside the ruler, drawn as three small dots (compact), two dots (medium) and one large dot (large). Each sets every track to that height. Right-click any of them to edit the three heights.
+
+### Edit Tools
+
+Press ++t++ to open the five edit tools at the mouse, or click the tool button in the corner. Pick one with a click or its number key:
+
+| Tool | Key | What it does |
+|---|---|---|
+| **Pointer** | 1 | Select, move and resize clips |
+| **Pencil** | 2 | Draw a MIDI clip on an empty lane |
+| **Slice** | 3 | Split a clip where you click |
+| **Glue** | 4 | Join a clip to the next one on its track |
+| **Erase** | 5 | Click or sweep over clips to delete them |
+
+## Master Track
+
+The master row at the bottom holds a mute button, the **Automation** button (see [Master Automation](automation.md#master-automation)), the master volume and a peak meter, with the [song navigator](#song-navigator) beside them.
+
+Three buttons beside the row set its height:
+
+- **Compact master** — the peak meter only
+- **Medium master** — the mute button, Automation button, volume and meter
+- **Large master** — the same, with a taller song navigator
+
+In compact, only the compact button shows; click it to go back to medium. The button at the bottom of the track headers, in the scrollbar row, hides or shows the master track.
 
 ## Working with Clips
 
@@ -62,6 +89,12 @@ You can drag several samples out of the [Media Explorer](panels/browsers.md) at 
 - **Drop on an existing track** — the samples are appended as sequential clips on that track, in selection order.
 
 Ghost clips shown under the cursor during the drag reflect each sample's actual audio duration, so you can align the drop with the grid before releasing.
+
+## Expanded Faceplates
+
+Some devices can lend their faceplate, or part of it, to the Arrangement View when they need more room: the [Step Sequencer](devices/step-sequencer.md) and [Poly Sequencer](devices/poly-sequencer.md), the [Arpeggiator](devices/arpeggiator.md)'s [time bend](time-bend.md), and the Sampler. Click the device's expand button (tooltip *Expand into the arrangement* on the sequencers and the Arpeggiator) and the faceplate fills the Arrangement View, toolbar and ruler included. The device slot shows a note in its place.
+
+Click the collapse button (tooltip *Put the faceplate back in its device slot (Esc)*) or press ++escape++ to put it back. Only one faceplate is out at a time: expanding another puts the first one back.
 
 ## Markers
 
@@ -91,7 +124,7 @@ The song navigator is a minimap in the master content strip showing the whole ar
 
 - **Horizontal scroll** — Move along the timeline (mouse wheel or scroll gesture)
 - **Vertical scroll** — Navigate between tracks
-- **Follow playhead** — When enabled, the view scrolls automatically during playback to keep the playhead on screen. Turn it on in [Preferences](interface/preferences.md) under Transport ("Follow Playhead").
+- **Follow playhead** — When enabled, the view scrolls automatically during playback to keep the playhead on screen. Turn it on in **Settings > General**, under **Transport** (*Follow playhead during playback*).
 
 ### Timeline Ruler
 
@@ -100,22 +133,22 @@ The ruler above the tracks shows bars and beats, with the loop region and playhe
 ### Zooming
 
 - **Horizontal zoom** — ++ctrl+plus++ / ++ctrl+minus++ (++cmd+plus++ / ++cmd+minus++ on macOS) or use the zoom scrollbar
-- **Vertical zoom** — Change track height using the toolbar presets (small, medium, large)
+- **Vertical zoom** — Change track height using the track-height buttons (compact, medium, large)
 
 ### Toolbar Zoom Actions
 
-- **Zoom to fit** — Fit all content in the visible area
+- **Zoom to fit timeline** — Fit all content in the visible area
 - **Zoom to selection** — Zoom into the current time selection
-- **Zoom to loop** — Zoom to the loop region
+- **Zoom to loop region** — Zoom to the loop region
 
 ### Selection
 
-- **Time selection** - Click and drag on the timeline ruler to select a time range. The selection is drawn as a spotlight: everything outside the range dims while clip colours stay true, and the range edges read as near-white. Drag the endpoint handles to adjust the range.
-- **Loop region** - Set from the selection with ++ctrl+shift+l++ (++cmd+shift+l++). It is drawn as a quiet rail with bright glowing caps at each end, the same in the arrangement ruler and in the clip-editor ruler. Drag the caps to move the loop bounds.
+- **Time selection** - Drag in the ruler's bottom row to select a time range across all tracks. The range shows there as a blue strip, and in the tracks as a spotlight: everything outside the range dims while clip colours stay true, and the range edges read as near-white. Drag the endpoint handles to adjust the range.
+- **Loop region** - Set from the selection with ++l++. It is drawn in the ruler's loop row as a thin green line across the top of the loop with a wedge hanging from each end, the same in the arrangement ruler and in the clip-editor rulers; it turns grey while looping is off. Drag a wedge to move that end of the loop, or drag the line to move the whole loop.
 
 ### Playhead
 
-The playhead shows the current playback position. Click on the timeline ruler to reposition it. Press ++home++ to return to the start. The play and edit cursors are drawn a consistent near-white across every editor.
+The playhead shows the current playback position. Click on the timeline ruler to reposition it. Click **Home** in the transport to return to the start. The play and edit cursors are drawn a consistent near-white across every editor.
 
 !!! note "Edit Cursor"
     The **edit cursor** is a white blinking line separate from the playhead. Place it with ++alt+"click"++ on the timeline ruler or inside a clip. It marks the position for operations like **Split** (++cmd+e++). Press ++escape++ to hide it. The MIDI editor has its own independent edit cursor — placing one in the piano roll or drum grid does not affect the arrangement cursor.
@@ -152,7 +185,7 @@ Range edits work on a span of time and ripple everything after it, rather than e
 |-----------|--------------|
 | **Insert Time** | Opens a gap at the selection and pushes later clips to the right, splitting any that straddle the insert point. |
 | **Duplicate Time Range** | Copies the selected span and ripple-inserts the copy directly after it. |
-| **Duplicate Loop Range** | Same as above for the loop span. A grow-vs-advance option in [Preferences](interface/preferences.md) chooses whether the loop grows to cover the copy or advances past it. |
+| **Duplicate Loop Range** | Same as above for the loop span. **Settings > General** has *Duplicate Loop Range grows the loop (off: advances it)*, which chooses whether the loop grows to cover the copy or advances past it. |
 | **Split All Tracks at Cursor** | Splits every track at the edit cursor. |
 
 A **Range Editing** submenu, in the **Edit** menu and in the right-click menus on clips and on empty arrangement space, offers **Copy**, **Cut**, **Delete**, and **Paste (Ripple)** for both the time selection and the loop range.
@@ -206,11 +239,11 @@ Open **File → Project Settings** to set options that belong to the project its
 | **Render Bit Depth** | 16-bit, 24-bit, 32-bit float |
 | **Bounce Bit Depth** | 16-bit, 24-bit, 32-bit float |
 
-These are stored per project, so different songs can carry different lengths and render formats. The values a *new* project starts with are set in [Preferences](interface/preferences.md#defaults). **Apply** commits your changes; **Cancel** closes the dialog, discarding anything you have not applied.
+These are stored per project, so different songs can carry different lengths and render formats. The values a *new* project starts with are set in [Settings > Defaults](interface/preferences.md#defaults). **Apply** commits your changes; **Cancel** closes the dialog, discarding anything you have not applied.
 
 ### Metadata
 
-The **Metadata** tab holds the song's title and credits: Title, Artist, Album, Original artist, Composer, Songwriter, Producer, Arranger, Year, Genre, Copyright, Website and Comment. All of them are free text and all of them are optional. The credits that describe *you* rather than the song — Artist, Composer, Songwriter, Producer, Arranger, Genre, Copyright, Website — are filled in for a new project from [Preferences → Defaults](interface/preferences.md#defaults), so you only type them once.
+The **Metadata** tab holds the song's title and credits: Title, Artist, Album, Original artist, Composer, Songwriter, Producer, Arranger, Year, Genre, Copyright, Website and Comment. All of them are free text and all of them are optional. The credits that describe *you* rather than the song — Artist, Composer, Songwriter, Producer, Arranger, Genre, Copyright, Website — are filled in for a new project from [Settings > Defaults](interface/preferences.md#defaults), so you only type them once.
 
 Title is left empty by default and shows the project's name in grey. That name is what gets used, so there is nothing to fill in unless the song is called something other than the file — a song called *Blue* can live in `blue_v7.mgd`. Type a title only when you want one that differs from the name; leave it alone and renaming the project keeps carrying through.
 

@@ -403,6 +403,8 @@ operations require `edit`.
 | `tracks.delete` | `edit` | Delete a track after reference-impact policy checks. |
 | `tracks.group` | `edit` | Group tracks under a new group track. |
 | `tracks.move` | `edit` | Move a track to a one-based list position. |
+| `tracks.freeze` | `edit` | Freeze a track: render it offline and play the render in its place. Runs as a [job](#asynchronous-jobs). |
+| `tracks.unfreeze` | `edit` | Unfreeze a track so its devices play live again. |
 | `routing.endpoints.list` | `read` | List safe logical audio and MIDI endpoints. |
 | `routing.get` | `read` | Read one track's audio and MIDI routes. |
 | `routing.set` | `edit` | Atomically set a track's routes and MIDI channels. |
@@ -455,13 +457,14 @@ operations require `edit`.
 | `devices.setParameter` | `edit` | Set one AI-enabled parameter in real units. |
 | `devices.setParameterConfig` | `edit` | Configure visible, mini-mixer, and AI-agent parameters. |
 | `devices.openEditor` | `edit` | Open a plugin editor window. |
-| `pads.list` | `read` | List all 64 slots of an addressed Drum Grid. |
+| `devices.setInsert` | `edit` | Route an [External Insert](../fx-chain.md#external-hardware-inserts) in one undoable step: send and return devices, MIDI channel, CC port, latency adjustment, and up to 32 CC knob numbers. |
+| `pads.list` | `read` | List all 64 slots of an addressed Drum Grid. Each pad reports its mixer channel's track id as `channelTrackId`, or `null` when it has no channel. |
 | `pads.create` | `edit` | Create an empty pad chain. |
 | `pads.setDevice` | `edit` | Replace a pad voice with a catalogue device. |
 | `pads.setSample` | `edit` | Replace a pad voice with a host-local sample. |
 | `pads.clear` | `edit` | Clear a pad. |
 | `pads.swap` | `edit` | Swap two single-note pads. |
-| `pads.update` | `edit` | Update note range, level, pan, switches, and output bus. |
+| `pads.update` | `edit` | Update note range, level, pan, and switches. Level, pan, mute, and solo act on the pad's mixer channel. |
 | `racks.create` | `edit` | Create a rack on a track or in a nested chain. |
 | `racks.remove` | `edit` | Remove a rack at any nesting depth. |
 | `racks.setBypassed` | `edit` | Set rack bypass. |
