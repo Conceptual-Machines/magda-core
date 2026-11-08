@@ -18,6 +18,7 @@
 #include "api/magda_api.hpp"
 #include "api/project_api.hpp"
 #include "api/remote_api.hpp"
+#include "api/remote_openrpc.hpp"
 #include "api/track_api.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
@@ -608,6 +609,7 @@ void printUsage(std::ostream& out) {
         << "                   --opus <out.opus> | --mp3 <out.mp3>) [--from <time>]\n"
         << "                   [--to <time>] [--sample-rate <hz>] [--bit-depth <bits>]\n"
         << "                   [--dither off|tpdf|shaped] [--bitrate <kbps> | --vbr <0-9>]\n"
+        << "  magda-cli openrpc [--out <file.json>]\n"
         << "\n"
         << "Commands:\n";
 
@@ -1060,6 +1062,26 @@ int execCommands(const juce::StringArray& args) {
     return runCli(options);
 }
 
+/// The Remote API's OpenRPC document, to stdout or @p args' `--out` file. Boots no engine.
+int writeOpenRpc(const juce::StringArray& args) {
+    const auto text = magda::remote::openRpcText();
+    if (args.size() == 1) {
+        std::cout << text;
+        return 0;
+    }
+    if (args.size() != 3 || args[1] != "--out") {
+        printUsage(std::cerr);
+        return 2;
+    }
+
+    const auto file = fileFromArg(args[2]);
+    if (!file.replaceWithText(text, false, false, "\n")) {
+        std::cerr << "Failed to write " << file.getFullPathName() << "\n";
+        return 1;
+    }
+    return 0;
+}
+
 int bootOnly() {
     HeadlessEngineSession session;
     if (!session.initialize()) {
@@ -1099,6 +1121,8 @@ int main(int argc, char* argv[]) {
             return execCommands(args);
         if (command == "render")
             return renderProject(args);
+        if (command == "openrpc")
+            return writeOpenRpc(args);
 
         std::cerr << "Unknown command: " << command << "\n";
         printUsage(std::cerr);

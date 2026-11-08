@@ -36,6 +36,7 @@ target_sources(magda_daw PRIVATE
     remote_mcp_server.cpp
     remote_websocket_server.cpp
     remote_api_host.cpp
+    remote_openrpc.cpp
     # Headers (listed for IDE visibility)
     magda_api.hpp
     magda_api_live.hpp
@@ -81,4 +82,6 @@ target_sources(magda_daw PRIVATE
     remote_mcp_server.hpp
     remote_websocket_server.hpp
     remote_api_host.hpp
+    remote_jsonrpc.hpp
+    remote_openrpc.hpp
 )
