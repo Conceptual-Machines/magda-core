@@ -302,6 +302,8 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings, 
                 request.usePlugins = true;
                 request.realTimeRender = settings.realTimeRender;
                 request.range = requestedRange;
+                // The longest tail the rendered devices declare, loops included (#3278).
+                request.tailSeconds = std::nullopt;
                 if (settings.exportRange == ExportAudioDialog::ExportRange::EntireSong)
                     request.oneShot = true;
                 else if (settings.exportRange == ExportAudioDialog::ExportRange::LoopRegion)

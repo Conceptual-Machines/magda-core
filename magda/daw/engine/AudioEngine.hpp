@@ -105,8 +105,8 @@ struct OfflineRenderRequest {
     /// Whether this file is intended as a one-shot rather than a loop.
     std::optional<bool> oneShot;
 
-    /// Rendered past the range's end, for reverb and delay tails. Unset renders
-    /// the longest tail the rendered devices declare.
+    /// Rendered past the range's end, for reverb and delay tails; none by default.
+    /// Unset renders the longest tail the rendered devices declare.
     std::optional<double> tailSeconds = 0.0;
 
     /// Silence written ahead of the range.
