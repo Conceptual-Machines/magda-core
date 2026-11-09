@@ -142,6 +142,8 @@ class PluginBrowserContent : public PanelContent,
     // Context menu
     void showPluginContextMenu(const PluginBrowserInfo& plugin, juce::Point<int> position);
     void showParameterConfigDialog(const PluginBrowserInfo& plugin);
+    /** @brief Adds the plugin to the selected track's chain; no-op without a selected track. */
+    static void addToSelectedTrack(const PluginBrowserInfo& plugin);
 
     // Favorites
     void toggleFavorite(const PluginBrowserInfo& plugin);
