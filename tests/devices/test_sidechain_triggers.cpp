@@ -328,6 +328,47 @@ TEST_CASE("MIDI trigger - cross-track sidechain routes source track MIDI",
     bus.clearAll();
 }
 
+TEST_CASE("MIDI trigger - a note the engine reports restarts the track's own LFO",
+          "[sidechain][midi-trigger][3305]") {
+    // The path clip and Step Sequencer notes take: the host passes what the
+    // engine fed its modifiers to the bus, and the model restarts its copy.
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+    auto& bus = SidechainTriggerBus::getInstance();
+    bus.clearAll();
+
+    const TrackId trackId = tm.createTrack();
+    DeviceInfo device;
+    device.name = "Synth";
+    const DeviceId deviceId = tm.addDeviceToTrack(trackId, device);
+    ChainNodePath devicePath;
+    devicePath.trackId = trackId;
+    devicePath.topLevelDeviceId = deviceId;
+    tm.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+    tm.setModTriggerMode(devicePath, 0, LFOTriggerMode::MIDI);
+    auto& mod = tm.getDeviceInChainByPath(devicePath)->mods[0];
+
+    tm.updateAllMods(0.016, 120.0, false, false, false);
+    REQUIRE_FALSE(mod.running);
+
+    bus.triggerNoteOn(trackId);
+    tm.updateAllMods(0.016, 120.0, false, false, false);
+    CHECK(mod.running);
+    CHECK(mod.triggerCount == 1);
+
+    // A second note restarts the cycle it is part-way through.
+    for (int tick = 0; tick < 10; ++tick)
+        tm.updateAllMods(0.016, 120.0, false, false, false);
+    const auto phaseBefore = mod.phase;
+    bus.triggerNoteOn(trackId);
+    tm.updateAllMods(0.016, 120.0, false, false, false);
+    CHECK(mod.triggerCount == 2);
+    CHECK(mod.phase < phaseBefore);
+
+    tm.clearAllTracks();
+    bus.clearAll();
+}
+
 TEST_CASE("MIDI trigger - looping device mod stops on all-notes-off", "[sidechain][midi-trigger]") {
     auto& tm = TrackManager::getInstance();
     tm.clearAllTracks();

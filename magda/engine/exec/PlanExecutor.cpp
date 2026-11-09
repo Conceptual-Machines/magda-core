@@ -814,7 +814,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
             }
 
             case OpKind::MergeMidi:
-            case OpKind::MidiNoteGate: {
+            case OpKind::MidiNoteGate:
+            case OpKind::ModSource: {
                 // Optional for the same reason a meter is, and silent for the
                 // same reason: an observation point nobody is watching is the
                 // ordinary case, and reporting one would put a line per track in
@@ -1418,15 +1419,20 @@ void PlanExecutor::renderMidiPrefix(const PlanValues& values, const BlockInfo& b
 
         const auto& midi = op.inputs[1];
         if (midi.valid() && inMidiPrefix_[static_cast<std::size_t>(midi.op)] != 0)
-            feedNoteTriggers(i, midiIn(midi));
+            feedNoteTriggers(i, midiIn(midi), block);
     }
 }
 
-void PlanExecutor::feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi) {
+void PlanExecutor::feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi,
+                                    const BlockInfo& block) {
     auto& mods = sideOfOp(op).mods;
     const auto& table = *tableFor(op);
     if (midi.isEmpty())
         return;
+
+    // The host's view of the same notes, for its own copy of the modifiers (#3305).
+    if (auto* tap = midiTapForOp_[op]; tap != nullptr)
+        tap->write(midi, block);
 
     // Whether the block holds a note at all, settled before anything is fed.
     // A cross-track listener takes one trigger for the block rather than one
@@ -1477,7 +1483,7 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
     // land a block later, which is the same lag an audio trigger has.
     if (const auto& midi = op.inputs[1];
         midi.valid() && inMidiPrefix_[static_cast<std::size_t>(midi.op)] == 0)
-        feedNoteTriggers(i, midiIn(midi));
+        feedNoteTriggers(i, midiIn(midi), block);
 
     const auto& audio = op.inputs[0];
     if (!audio.valid())

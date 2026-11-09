@@ -363,6 +363,10 @@ class Compiler {
     /// routes read it, which is the source track's incoming MIDI rather than
     /// whatever its own chain made of it.
     std::map<TrackId, PortRef> trackMidiInput_;
+    /// The MIDI a note-triggered modifier hears (#3305): what reaches the track's
+    /// instrument, after any MIDI device in front of it, or what the chain ends
+    /// with when it has none.
+    std::map<TrackId, PortRef> trackNoteTap_;
     /// Signals waiting to be summed into a track that has not been emitted yet:
     /// child track outputs, incoming send taps and multi-out pairs.
     std::map<TrackId, std::vector<PortRef>> pendingInputs_;
@@ -1713,16 +1717,24 @@ ChainSignal Compiler::emitElements(const std::vector<ChainElement>& elements, co
 
     for (const auto& element : elements) {
         bool endsTheSearch = false;
-
         if (isDevice(element)) {
             const auto& device = getDevice(element);
             endsTheSearch = !device.bypassed && device.isInstrument;
+        } else if (isRack(element)) {
+            endsTheSearch =
+                !getRack(element).bypassed && rackHasInstrument(getRack(element), nesting_);
+        }
+
+        // The notes the instrument is about to play.
+        if (watchingForInstrument && endsTheSearch && !triggerTapFound_)
+            trackNoteTap_[site.trackId] = signal.midi;
+
+        if (isDevice(element)) {
+            const auto& device = getDevice(element);
             signal =
                 device.pads ? emitPadRack(device, site, signal) : emitDevice(device, site, signal);
         } else if (isRack(element)) {
-            const auto& rack = getRack(element);
-            endsTheSearch = !rack.bypassed && rackHasInstrument(rack, nesting_);
-            signal = emitRack(rack, site, signal);
+            signal = emitRack(getRack(element), site, signal);
         }
 
         // Immediately after whatever makes the sound on a track that has an
@@ -1933,6 +1945,7 @@ PortRef Compiler::emitStrip(const TrackInfo& track, ChainSignal signal) {
     // own bypass flags. Post-FX and mixer analysis sit outside it.
     if (track.chain.enabled)
         signal = emitElements(track.chain.fxChainElements, fxSite, signal);
+    trackNoteTap_.try_emplace(track.id, signal.midi);
 
     // What the chain made of the track's MIDI leaves for its hardware MIDI Out (#3048).
     if (sendsMidiOut(track) && signal.midi.valid()) {
@@ -2110,14 +2123,11 @@ void Compiler::emitModulationTaps() {
         if (const auto found = points.find(tap.track); found != points.end())
             audio = found->second;
 
-        // The source's chain-head MIDI, which is what a note-triggered
-        // modifier hears: the notes reaching the track rather than whatever
-        // its own instruments made of them. On the pre-FX tap alone, because a
-        // note has no fader question and two taps carrying it would fire every
-        // note-triggered modifier twice.
+        // The notes the source's instrument plays, a Step Sequencer's included (#3305). On the
+        // pre-FX tap alone, because two taps carrying them would fire every listener twice.
         PortRef midi;
         if (preFx && noteSourceTracks_.count(tap.track) != 0)
-            if (const auto found = trackMidiInput_.find(tap.track); found != trackMidiInput_.end())
+            if (const auto found = trackNoteTap_.find(tap.track); found != trackNoteTap_.end())
                 midi = found->second;
 
         // Neither, which is a modifier listening to a track this plan does not

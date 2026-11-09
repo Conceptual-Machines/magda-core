@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <magda/sdk/lockfree/SidechainTriggerBus.hpp>
 #include <map>
 #include <memory>
 #include <optional>
@@ -515,7 +516,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         publishMeters();
         publishDeviceMeters();
         publishRackMeters();
-        publishPadTriggers();
+        publishNoteTriggers();
 
         for (const auto& line : trace_.drain())
             EngineTrace::print(line);
@@ -650,14 +651,22 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     }
 
     /// The notes each pad's gate passed since the last tick, as the grid notes
-    /// that started them (#2669).
-    void publishPadTriggers() {
-        if (session_ == nullptr || deviceMeters_ == nullptr)
+    /// that started them (#2669), and the notes each track's note-triggered
+    /// modifiers were fed, as retriggers for the model's copy of them (#3305).
+    void publishNoteTriggers() {
+        if (session_ == nullptr)
             return;
 
         session_->forEachNoteOnTap([this](const engine::OpKey& key, engine::NoteOnTap& tap) {
             const auto started = tap.take();
             if (started.none())
+                return;
+
+            if (key.role == engine::OpRole::ModulationTap) {
+                SidechainTriggerBus::getInstance().triggerNoteOn(key.trackId);
+                return;
+            }
+            if (deviceMeters_ == nullptr)
                 return;
 
             const auto grid = devicePaths_.find(key.deviceKey());
