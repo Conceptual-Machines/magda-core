@@ -1037,7 +1037,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     configStatusLabel_.setInterceptsMouseClicks(true, false);
     configStatusLabel_.addMouseListener(this, false);
     configStatusLabel_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    configStatusLabel_.setTooltip("Open AI Settings");
+    configStatusLabel_.setTooltip("Open Settings > AI");
     addAndMakeVisible(configStatusLabel_);
 
     // Model load/unload button (shown only for local_embedded preset)
@@ -2640,7 +2640,7 @@ void AIChatConsoleContent::buildSlashCommands() {
         "Generate a custom colour theme from a natural-language description and apply it "
         "immediately.\n"
         "The theme is saved as an editable JSON file in Documents/MAGDA/Themes and stays "
-        "selected; edit the file to tweak it live, or switch back under Preferences > "
+        "selected; edit the file to tweak it live, or switch back under Settings > "
         "Appearance.";
     theme.examples = {
         {"Mood",
@@ -2915,9 +2915,9 @@ void AIChatConsoleContent::finishControllerGeneration(bool success, const juce::
 
         auto ports = juce::MidiInput::getAvailableDevices();
         if (ports.isEmpty()) {
-            safeThis->appendToChat(
-                juce::String::charToString(0x25C6) +
-                " No MIDI inputs connected. Open the Controllers dialog to enable it later.");
+            safeThis->appendToChat(juce::String::charToString(0x25C6) +
+                                   " No MIDI inputs connected. Open Settings > Controllers > MIDI "
+                                   "Profiles to enable it later.");
             return;
         }
 
@@ -3193,7 +3193,7 @@ void AIChatConsoleContent::finishThemeGeneration(bool success, const juce::Strin
     body << " over the " << base << " base\n";
     body << "  saved to " << file.getFullPathName() << "\n";
     body << "  applied - edit the file to tweak it live, or switch under "
-            "Preferences > Appearance";
+            "Settings > Appearance";
     appendToChat(body);
 }
 
