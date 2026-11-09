@@ -60,4 +60,7 @@ class ChordBlockComponent : public juce::Component {
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChordBlockComponent)
 };
 
+/** @brief Drag @p chord out of @p source as a one-bar MIDI file, which the lanes accept. */
+void startChordDrag(juce::Component& source, const magda::music::Chord& chord);
+
 }  // namespace magda::daw::ui

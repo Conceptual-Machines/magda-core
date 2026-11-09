@@ -109,6 +109,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/midi_editor/v1/me-monitor.svg
     ../../assets/icons/midi_editor/v1/me-cc.svg
     ../../assets/icons/midi_editor/v1/me-chord-track.svg
+    ../../assets/icons/midi_editor/v1/me-chord-wheel.svg
     ../../assets/icons/midi_editor/v1/me-drum-grid.svg
     ../../assets/icons/midi_editor/v1/me-erase.svg
     ../../assets/icons/midi_editor/v1/me-fold.svg

@@ -166,6 +166,10 @@ class PianoRollContent : public MidiEditorContent,
     // Clip-relative beat under an x pixel on the chord lane (>= 0). Shared by the
     // click-to-add handler and chord-drop targets.
     double chordRowBeatForX(int x) const;
+    /** @brief The key the chord editor reads its degrees in: the one the progression suggests. */
+    static std::optional<chord_function::Key> progressionKey(const magda::ClipInfo& clip);
+    /** @brief The lane scrolled or zoomed, so every beat sits at a new x. */
+    virtual void onChordLaneMoved() {}
 
   private:
     // MidiEditorContent virtual implementations
