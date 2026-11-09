@@ -187,6 +187,17 @@ std::vector<FileDropGhost> makeMidiDropGhosts(const juce::File& midiFile, double
     return ghosts;
 }
 
+using DrawOrder = std::tuple<int, double, ClipId>;
+
+/**
+ * @brief Bottom-to-top draw order: the lane's stacking order (#2003), so the clip on top is heard.
+ *
+ * Start beat breaks ties, keeping a later clip above the one it crossfades into (#1499).
+ */
+DrawOrder clipDrawOrder(const ClipInfo& clip) {
+    return {clip.stackOrder, clip.placement.startBeat, clip.id};
+}
+
 }  // namespace
 
 TrackContentPanel::TrackContentPanel() {
@@ -2578,6 +2589,7 @@ void TrackContentPanel::clipPropertyChanged(ClipId clipId) {
             // Update all clip positions (updateClipComponentPositions already
             // skips dragging clips internally)
             updateClipComponentPositions();
+            restackClipComponents();
 
             // What one clip draws depends on the clips it overlaps: AUTO-XFADE
             // or play-through on this one changes the fade its neighbour draws
@@ -2626,17 +2638,9 @@ void TrackContentPanel::rebuildClipComponents() {
     // Remove all existing clip components
     clipComponents_.clear();
 
-    // Get only arrangement clips (timeline-based). Child z-order follows the
-    // lane's stacking order, so what you see matches what you hear: the clip on
-    // top is the one that owns the span it covers (#2003), and it is the clip
-    // drawn over the one underneath. Start beat breaks ties within a stack
-    // level, which keeps a later clip above the one it crossfades into (#1499)
-    // instead of following hash-map iteration order.
+    // Arrangement clips only, added bottom to top so child z-order is the draw order.
     auto clips = ClipManager::getInstance().getArrangementClips();
-    const auto stackThenStart = [](const ClipInfo& clip) {
-        return std::tuple{clip.stackOrder, clip.placement.startBeat, clip.id};
-    };
-    std::ranges::sort(clips, {}, stackThenStart);
+    std::ranges::sort(clips, {}, clipDrawOrder);
 
     // Create a component for each clip that belongs to a visible track
     for (const auto& clip : clips) {
@@ -2877,6 +2881,30 @@ void TrackContentPanel::updateClipComponentPositions() {
             clipComp->setBounds(newBounds);
         clipComp->setVisible(true);
     }
+}
+
+void TrackContentPanel::restackClipComponents() {
+    // A move or trim raises a clip's stackOrder with only a property change, which does not
+    // rebuild, so the child order is brought back in line here. A clip mid-drag stays on top.
+    struct Entry {
+        ClipComponent* component;
+        DrawOrder drawOrder;
+    };
+    auto& clipManager = ClipManager::getInstance();
+    std::vector<Entry> order;  // current child order, bottom to top
+    for (auto* child : getChildren()) {
+        auto* clipComp = dynamic_cast<ClipComponent*>(child);
+        if (clipComp == nullptr || clipComp->isCurrentlyDragging())
+            continue;
+        if (const auto* clip = clipManager.getClip(clipComp->getClipId()))
+            order.push_back({clipComp, clipDrawOrder(*clip)});
+    }
+    if (std::ranges::is_sorted(order, {}, &Entry::drawOrder))
+        return;
+
+    std::ranges::sort(order, {}, &Entry::drawOrder);
+    for (size_t i = order.size(); i-- > 1;)
+        order[i - 1].component->toBehind(order[i].component);
 }
 
 // ============================================================================

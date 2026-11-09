@@ -445,6 +445,8 @@ class TrackContentPanel : public juce::Component,
     std::vector<std::unique_ptr<ClipComponent>> clipComponents_;
     void rebuildClipComponents();
     void updateClipComponentPositions();
+    /** @brief Match child z-order to the lane stacking order (#2003) without a rebuild. */
+    void restackClipComponents();
     void createClipFromTimeSelection();  // Called on double-click with selection
     void createMidiClipAtPosition(TrackId trackId, double startTime);
     void createMidiClipFromBeatRange(TrackId trackId, double startBeat, double endBeat);
