@@ -370,6 +370,7 @@ template <size_t Voice> const CompiledPresentationSpec& drumVoicePresentation() 
         .preferredSlotWidth =
             64 + DrumVoiceGeometry::columnsWidth(drumVoiceSections(kDrumVoicePluginIds[Voice])),
         .vizSlotWidth = DrumVoiceGeometry::kPlotWidth,
+        .vizTooltip = "Show the hit",
         .controlsSlotWidth =
             DrumVoiceGeometry::columnsWidth(drumVoiceSections(kDrumVoicePluginIds[Voice])),
         .createLayout = []() -> std::unique_ptr<DeviceParamLayout> {

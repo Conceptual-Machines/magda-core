@@ -911,12 +911,15 @@ void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     matrixToggle_->setToggleState(device_.matrixShown, juce::dontSendNotification);
     vizToggle_->setToggleState(device_.vizShown, juce::dontSendNotification);
     outputToggle_->setToggleState(device_.outputShown, juce::dontSendNotification);
+    const auto* spec = traits_.compiledPresentation;
+    const bool specNamesViz = spec != nullptr && spec->vizTooltip != nullptr;
     vizToggle_->setTooltip(customUI_.hasHaloUI()         ? "Show the resonator spectrum"
                            : customUI_.hasNimbusUI()     ? "Show the grain cloud"
                            : customUI_.hasMateriaUI()    ? "Show the modal response"
                            : customUI_.hasStruckUI()     ? "Show the body"
                            : faustCustomView_ != nullptr ? "Show the patch's view"
-                                                         : "Show the stereo field");
+                           : specNamesViz                ? spec->vizTooltip
+                                                         : "Show the visualisation");
     padPanelToggle_->setToggleState(device_.padPanelShown, juce::dontSendNotification);
     padChainToggle_->setToggleState(device_.padChainShown, juce::dontSendNotification);
     leftPanelToggle_->setToggleState(device_.paramsShown, juce::dontSendNotification);

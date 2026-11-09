@@ -190,6 +190,7 @@ set(TEST_SOURCES
     utilities/test_ui_scale.cpp
     media/test_media_explorer_preview_state.cpp
     ui/test_timeline_loop_activation.cpp
+    ui/test_timeline_marker_navigation.cpp
     routing/test_multi_out_tracks.cpp
     audio/test_freeze_track.cpp
     agents/test_dsl_add_chord.cpp
