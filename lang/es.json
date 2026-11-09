@@ -736,7 +736,7 @@
     "error.not_initialized_title": "Ajustes de audio",
     "error.not_initialized": "Audio no iniciado. No se puede abrir los ajustes.",
     "crash_recovery.title": "Controlador de audio omitido",
-    "crash_recovery.message": "MAGDA se cerró inesperadamente la última vez al abrir {0}, así que se inició con el controlador de audio predeterminado.\n\nPuede volver a elegir un controlador en Ajustes de audio/MIDI.",
+    "crash_recovery.message": "",
     "crash_recovery.default": "el controlador de audio",
     "section.device": "Dispositivo",
     "label.preview_output": "Previsualizar archivos del navegador en",
