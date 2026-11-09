@@ -736,7 +736,7 @@
     "error.not_initialized_title": "Audio Settings",
     "error.not_initialized": "Audio engine not initialized. Cannot open audio settings.",
     "crash_recovery.title": "Audio Driver Skipped",
-    "crash_recovery.message": "MAGDA closed unexpectedly last time while opening {0}, so it started with the default audio driver instead.\n\nYou can choose a driver again in Audio/MIDI Settings.",
+    "crash_recovery.message": "MAGDA closed unexpectedly last time while opening {0}, so it started with the default audio driver instead.\n\nYou can choose a driver again in Settings > Audio & MIDI.",
     "crash_recovery.default": "the audio driver",
     "section.device": "Device",
     "label.preview_output": "Audition browser files on",
