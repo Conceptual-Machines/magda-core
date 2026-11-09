@@ -311,8 +311,12 @@ TEST_CASE("The notes a modifier was fed reach the host's tap", "[engine][mod][fe
     Session session({track}, &midi, NoteFrom::Clip);
     REQUIRE(session.published);
 
+    struct Taken {
+        magda::engine::NoteOnTap::Notes started;
+        bool ended = false;
+    };
     const auto taken = [&session] {
-        magda::engine::NoteOnTap::Notes notes;
+        Taken result;
         int taps = 0;
         session.session.forEachNoteOnTap(
             [&](const magda::engine::OpKey& key, magda::engine::NoteOnTap& tap) {
@@ -320,20 +324,60 @@ TEST_CASE("The notes a modifier was fed reach the host's tap", "[engine][mod][fe
                     return;
                 ++taps;
                 CHECK(key.trackId == 1);
-                notes |= tap.take();
+                result.started |= tap.take();
+                result.ended = tap.takeEnded();
             });
         CHECK(taps == 1);
-        return notes;
+        return result;
     };
 
     session.render();
-    CHECK(taken().none());
+    CHECK(taken().started.none());
 
     midi.pending.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
     session.render();
-    const auto notes = taken();
-    CHECK(notes.count() == 1);
-    CHECK(notes.test(60));
+    const auto onset = taken();
+    CHECK(onset.started.count() == 1);
+    CHECK(onset.started.test(60));
+    CHECK_FALSE(onset.ended);
+
+    // The note-off a transport stop sends for every clip note still sounding.
+    midi.pending.addEvent(juce::MidiMessage::noteOff(1, 60), 0);
+    session.render();
+    const auto release = taken();
+    CHECK(release.started.none());
+    CHECK(release.ended);
+}
+
+TEST_CASE("A note tap says the notes ended only once none is held", "[engine][tap][3305]") {
+    magda::engine::NoteOnTap tap;
+    const BlockInfo block;
+    const auto play = [&](std::initializer_list<juce::MidiMessage> messages) {
+        juce::MidiBuffer midi;
+        for (const auto& message : messages)
+            midi.addEvent(message, 0);
+        tap.write(midi, block);
+    };
+
+    play({juce::MidiMessage::noteOn(1, 60, 1.0f), juce::MidiMessage::noteOn(1, 64, 1.0f)});
+    play({juce::MidiMessage::noteOff(1, 60)});
+    CHECK_FALSE(tap.takeEnded());
+
+    play({juce::MidiMessage::noteOff(1, 64)});
+    CHECK(tap.takeEnded());
+    CHECK_FALSE(tap.takeEnded());
+
+    // A stray note-off ends nothing; all-notes-off ends whatever was held.
+    play({juce::MidiMessage::noteOff(1, 60)});
+    CHECK_FALSE(tap.takeEnded());
+    play({juce::MidiMessage::noteOn(1, 60, 1.0f)});
+    play({juce::MidiMessage::allNotesOff(1)});
+    CHECK(tap.takeEnded());
+
+    // Legato: the last note ends but the next is already held when the host looks.
+    play({juce::MidiMessage::noteOn(1, 60, 1.0f)});
+    play({juce::MidiMessage::noteOff(1, 60), juce::MidiMessage::noteOn(1, 62, 1.0f)});
+    CHECK_FALSE(tap.takeEnded());
 }
 
 TEST_CASE("A level reaches its modifier the block after the one it was in",

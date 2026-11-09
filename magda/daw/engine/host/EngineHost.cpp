@@ -659,14 +659,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         session_->forEachNoteOnTap([this](const engine::OpKey& key, engine::NoteOnTap& tap) {
             const auto started = tap.take();
-            if (started.none())
-                return;
-
             if (key.role == engine::OpRole::ModulationTap) {
-                SidechainTriggerBus::getInstance().triggerNoteOn(key.trackId);
+                if (started.any())
+                    SidechainTriggerBus::getInstance().triggerNoteOn(key.trackId);
+                if (tap.takeEnded())
+                    TrackManager::getInstance().triggerMidiNotesEnded(key.trackId);
                 return;
             }
-            if (deviceMeters_ == nullptr)
+            if (started.none() || deviceMeters_ == nullptr)
                 return;
 
             const auto grid = devicePaths_.find(key.deviceKey());

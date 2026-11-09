@@ -3553,6 +3553,7 @@ void TrackManager::clearAllTracks() {
         std::scoped_lock lock(midiTriggerMutex_);
         pendingMidiNoteOns_.clear();
         pendingMidiNoteOffs_.clear();
+        pendingMidiNotesEnded_.clear();
     }
 
     // Sync lastBus counters to current SidechainTriggerBus values so the

@@ -365,6 +365,12 @@ TEST_CASE("MIDI trigger - a note the engine reports restarts the track's own LFO
     CHECK(mod.triggerCount == 2);
     CHECK(mod.phase < phaseBefore);
 
+    // The engine's notes ending, as a transport stop ends a clip's, stops it.
+    tm.triggerMidiNotesEnded(trackId);
+    tm.updateAllMods(0.016, 120.0, false, false, false);
+    CHECK_FALSE(mod.running);
+    CHECK(mod.value == 0.0f);
+
     tm.clearAllTracks();
     bus.clearAll();
 }
