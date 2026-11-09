@@ -39,6 +39,7 @@
 #include "remote_audit.hpp"
 #include "remote_clients.hpp"
 #include "remote_http_auth.hpp"
+#include "remote_jsonrpc.hpp"
 #include "remote_service.hpp"
 #include "remote_subscriptions.hpp"
 
@@ -85,56 +86,6 @@ constexpr time_t kPingIntervalSeconds = 1;
  * Process-lifetime is sufficient: the cache does not outlive the process.
  */
 std::atomic<juce::uint64> nextListenerGeneration{1};
-
-// JSON-RPC 2.0 reserves -32768..-32000; -32099..-32000 is the implementation-
-// defined slice, which is where MAGDA's own failure modes land.
-constexpr int kParseError = -32700;
-constexpr int kInvalidRequest = -32600;
-constexpr int kMethodNotFound = -32601;
-constexpr int kInvalidParams = -32602;
-constexpr int kInternalError = -32603;
-constexpr int kNotFound = -32001;
-constexpr int kConflict = -32002;
-constexpr int kTimeout = -32003;
-constexpr int kCancelled = -32004;
-constexpr int kTooManyRequests = -32005;
-/// Refused by the client's grant (#1860). Its own code rather than one of the
-/// standard four, because a client should be able to tell "ask the user to grant
-/// this" apart from "I sent something wrong" without parsing a message.
-constexpr int kPermissionDenied = -32006;
-
-/**
- * MAGDA's error taxonomy onto JSON-RPC's.
- *
- * The four standard codes are used where they genuinely mean the same thing, so
- * a generic JSON-RPC client reports something sensible without knowing MAGDA.
- * The rest have no standard equivalent and take implementation-defined codes;
- * `error.data.code` always carries the MAGDA name regardless, so a client that
- * does know MAGDA never has to reason about the mapping.
- */
-int jsonRpcCodeFor(ErrorCode code) {
-    switch (code) {
-        case ErrorCode::InvalidRequest:
-            return kInvalidRequest;
-        case ErrorCode::UnknownOperation:
-            return kMethodNotFound;
-        case ErrorCode::PermissionDenied:
-            return kPermissionDenied;
-        case ErrorCode::ValidationFailed:
-            return kInvalidParams;
-        case ErrorCode::NotFound:
-            return kNotFound;
-        case ErrorCode::Conflict:
-            return kConflict;
-        case ErrorCode::Timeout:
-            return kTimeout;
-        case ErrorCode::Cancelled:
-            return kCancelled;
-        case ErrorCode::InternalError:
-            break;
-    }
-    return kInternalError;
-}
 
 juce::var makeObject() {
     return {new juce::DynamicObject()};
@@ -656,12 +607,12 @@ struct RemoteWebSocketServer::Impl {
             // Nothing was admitted, so this reply owns no slot. Releasing one
             // when it is written would hand back capacity that belongs to a
             // request still in flight.
-            connection->enqueue(errorReply({}, kTooManyRequests, refusal), false);
+            connection->enqueue(errorReply({}, JSONRPC_TOO_MANY_REQUESTS, refusal), false);
             return;
         }
 
         if (message.size() > options.maxFrameBytes) {
-            refuse(connection, {}, kInvalidRequest, "request too large");
+            refuse(connection, {}, JSONRPC_INVALID_REQUEST, "request too large");
             connection->socket.close(httplib::ws::CloseStatus::MessageTooBig, "request too large");
             return;
         }
@@ -669,7 +620,7 @@ struct RemoteWebSocketServer::Impl {
         juce::var parsed;
         if (juce::JSON::parse(juce::String(message), parsed).failed() ||
             parsed.getDynamicObject() == nullptr) {
-            refuse(connection, {}, kParseError, "malformed JSON");
+            refuse(connection, {}, JSONRPC_PARSE_ERROR, "malformed JSON");
             return;
         }
 
@@ -680,7 +631,7 @@ struct RemoteWebSocketServer::Impl {
         // comparing the rendering alone would accept a numeric version. Not
         // reported against this transport, but it is the same check.
         if (!parsed["jsonrpc"].isString() || parsed["jsonrpc"].toString() != "2.0") {
-            refuse(connection, id, kInvalidRequest, "jsonrpc must be \"2.0\"");
+            refuse(connection, id, JSONRPC_INVALID_REQUEST, "jsonrpc must be \"2.0\"");
             return;
         }
         // JSON-RPC requires a string. Converting whatever arrived would turn
@@ -688,7 +639,7 @@ struct RemoteWebSocketServer::Impl {
         // unknown operation, which tells the client it asked for something that
         // does not exist rather than that it sent something malformed.
         if (!methodValue.isString() || methodValue.toString().isEmpty()) {
-            refuse(connection, id, kInvalidRequest, "method must be a non-empty string");
+            refuse(connection, id, JSONRPC_INVALID_REQUEST, "method must be a non-empty string");
             return;
         }
         const auto method = methodValue.toString();
@@ -696,7 +647,7 @@ struct RemoteWebSocketServer::Impl {
         // its next write, so a notification would be a request whose answer the
         // client cannot do without.
         if (id.isVoid() || id.isUndefined()) {
-            refuse(connection, {}, kInvalidRequest, "notifications are not supported");
+            refuse(connection, {}, JSONRPC_INVALID_REQUEST, "notifications are not supported");
             return;
         }
 
@@ -705,7 +656,7 @@ struct RemoteWebSocketServer::Impl {
         // that cannot be told apart from another.
         const auto idKey = idempotencyKeyFor(id);
         if (idKey.isEmpty()) {
-            refuse(connection, {}, kInvalidRequest, "id must be a string or a number");
+            refuse(connection, {}, JSONRPC_INVALID_REQUEST, "id must be a string or a number");
             return;
         }
 
@@ -713,7 +664,7 @@ struct RemoteWebSocketServer::Impl {
         if (params.isVoid() || params.isUndefined())
             params = makeObject();
         if (params.getDynamicObject() == nullptr) {
-            refuse(connection, id, kInvalidParams, "params must be an object");
+            refuse(connection, id, JSONRPC_INVALID_PARAMS, "params must be an object");
             return;
         }
 
@@ -779,7 +730,7 @@ struct RemoteWebSocketServer::Impl {
         if (meta.getDynamicObject() != nullptr) {
             if (const auto& key = meta["idempotencyKey"]; !key.isVoid()) {
                 if (!key.isString() || key.toString().isEmpty() || key.toString().length() > 256) {
-                    refuse(connection, id, kInvalidRequest,
+                    refuse(connection, id, JSONRPC_INVALID_REQUEST,
                            "meta.idempotencyKey must be a non-empty string of at most 256 "
                            "characters");
                     return;
@@ -792,7 +743,7 @@ struct RemoteWebSocketServer::Impl {
                 const auto revision =
                     jsonInteger(expected, 0, std::numeric_limits<juce::int64>::max());
                 if (!revision.has_value()) {
-                    refuse(connection, id, kInvalidRequest,
+                    refuse(connection, id, JSONRPC_INVALID_REQUEST,
                            "meta.expectedRevision must be a non-negative whole number");
                     return;
                 }
@@ -807,7 +758,7 @@ struct RemoteWebSocketServer::Impl {
                 const auto milliseconds =
                     jsonInteger(requested, 1, std::numeric_limits<int>::max());
                 if (!milliseconds.has_value()) {
-                    refuse(connection, id, kInvalidRequest,
+                    refuse(connection, id, JSONRPC_INVALID_REQUEST,
                            "meta.deadlineMs must be a positive whole number of milliseconds");
                     return;
                 }

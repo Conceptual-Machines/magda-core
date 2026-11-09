@@ -17,8 +17,8 @@ The Mixer View provides a channel-strip interface for balancing levels, panning,
 │  ┃██┃    │  ┃█ ┃    │  ┃  ┃    │  ┃█ ┃    │  ┃██┃   │
 │  ┃██┃    │  ┃██┃    │  ┃█ ┃    │  ┃██┃    │  ┃██┃   │
 │  ┃██┃    │  ┃██┃    │  ┃██┃    │  ┃██┃    │  ┃██┃   │
-│  [Pan]   │  [Pan]   │  [Pan]   │  [Pan]   │  [Pan]  │
-│  M S R   │  M S R   │  M S R   │  M S     │         │
+│  [Pan]   │  [Pan]   │  [Pan]   │  [Pan]   │         │
+│  M S R   │  M S R   │  M S R   │  M S     │ [Mute]  │
 │ Track 1  │ Track 2  │ Track 3  │ Aux 1    │ Master  │
 └──────────┴──────────┴──────────┴──────────┴─────────┘
 ```
@@ -37,7 +37,7 @@ A vertical rail of toggles runs down the left edge of the mixer. Each button sho
 
 - **Sends** — the send section
 - **I/O** — input and output routing selectors
-- **Monitor** — input monitoring controls
+- **Monitor** — the record-arm and input-monitoring row
 - **Oscilloscope** — a mini oscilloscope per strip
 - **Spectrum** — a mini spectrum analyzer per strip
 - **FX Chain** — the strip's mini FX chain
@@ -73,7 +73,7 @@ The track name and color bar are displayed at the bottom of each strip for ident
 
 ### Mini FX Chain
 
-With the **FX Chain** toggle on, each strip shows a compact version of the track's FX chain. Each device row surfaces a handful of its parameters as faders, so you can tweak an effect without leaving the mixer. Choose exactly which parameters appear per device from the **Mini** column in the [parameter config dialog](plugin-parameters.md) — if none are chosen, the strip falls back to the device's first visible parameters. Third-party plugins also show a button to open their own UI; native MAGDA devices do not.
+With the **FX Chain** toggle on, each strip shows a compact version of the track's FX chain, one row per device (a rack shows as one row with its name). Click a row's dot to bypass the device. Click its chevron to unfold up to three of its parameters as faders, so you can tweak an effect without leaving the mixer. Choose exactly which parameters appear per device from the **Mini FX** column in the [Configure Parameters dialog](plugin-parameters.md) — if none are chosen, the row falls back to the device's first visible parameters. Third-party plugins also show a button to open their own window; native MAGDA devices do not. The same rows appear in the FX section of the track and master [inspectors](panels/inspector.md).
 
 ### Mini Analyzers
 
@@ -81,7 +81,7 @@ With the **Oscilloscope** or **Spectrum** toggle on, a mini [analyzer](devices/a
 
 ## Master Channel Strip
 
-The master strip controls the final output level of the mix. It has its own volume fader, meters, and pan control but no mute/solo/record buttons.
+The master strip controls the final output level of the mix. It has its own volume fader and meters, and a speaker button that mutes the master. It has no pan control and no solo or record buttons.
 
 ## Mix Analysis
 
@@ -118,6 +118,14 @@ When an instrument has multiple output pairs activated, each output appears as i
 
 The device's multi-out menu lets you toggle several pairs in one go: the menu stays open as you tick pairs, and **Activate All** / **Deactivate All** bring every output in or out with one click.
 
-## DrumGrid Sub-Channels
+## Drum Grid Pad Channels
 
-When a track contains a DrumGrid device with multiple outputs, the mixer can expand to show individual sub-channel strips for each drum voice, giving you independent level and pan control per pad output. See [Drum Grid](devices/drum-grid.md) for details.
+Every [Drum Grid](devices/drum-grid.md) pad that holds a sound has its own mixer channel, nested under the strip of the grid's track. Click the chevron on the track's strip to fold the pad channels away or show them again. Empty pads have no channel.
+
+A pad channel works like any other channel: volume, pan, mute, solo, sends, automation, effects, and a meter. Its output goes to the Drum Grid by default, so the pads are summed into the grid before any effects that come after the grid on its track. Route a pad's output somewhere else and it leaves the grid's mix.
+
+- **Solo** — soloing a pad channel keeps the grid's track audible, so you hear the pad through the rest of the track
+- **Chain** — select a pad channel to show that pad's chain in the bottom panel. Devices you add to it land in the pad's chain
+- **Pad mix** — the pad's level, pan, mute, and solo on the Drum Grid device and its pad channel are the same controls
+
+Projects saved with pad bus outputs are converted when you open them: a bus that carried one pad becomes that pad's channel, keeping its effects, sends, automation, and output, and a bus that carried several pads becomes a group that their channels route into.

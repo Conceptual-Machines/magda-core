@@ -102,7 +102,7 @@ MAGDA supports both cloud AI providers and local AI models. They sit at differen
 
 **Cloud providers** generally offer the highest-quality results today, but require an account and API credentials, send your prompts to a third party, and bill per use.
 
-**Local models** run entirely on your machine. There are no API keys, nothing leaves your computer, and there is no per-request cost. MAGDA provides a small default GGUF model fine-tuned specifically for its DSL (downloadable via the **AI Settings** dialog), and you can also point MAGDA at any GGUF model or a local OpenAI-compatible server such as LM Studio, Ollama, GPUStack or a `llama.cpp` server. See [AI Settings](interface/ai-settings.md) for configuration.
+**Local models** run entirely on your machine. There are no API keys, nothing leaves your computer, and there is no per-request cost. MAGDA provides a small default GGUF model fine-tuned specifically for its DSL (downloadable under **Settings > AI > Local models**), and you can also point MAGDA at any GGUF model or a local OpenAI-compatible server such as LM Studio, Ollama, GPUStack or a `llama.cpp` server. See [AI](interface/ai-settings.md) for configuration.
 
 Local results vary with the model you choose and the hardware you run it on. Smaller quantised models are fast and light but less capable; larger models close the gap with cloud at the cost of more memory and slower responses.
 
@@ -111,10 +111,10 @@ Local results vary with the model you choose and the hardware you run it on. Sma
 Running a language model locally is demanding, and your hardware sets a hard ceiling on what is realistic. Be honest with yourself about your machine before expecting cloud-level results from it.
 
 - **Memory.** Treat **16 GB of RAM as the practical minimum** for local inference. **32 GB or 64 GB** is what you want to run larger, more capable models comfortably and to keep the rest of your DAW session responsive while a model is loaded. Below 16 GB you may only be able to run the smallest, most heavily quantised models, with correspondingly limited results.
-- **CPU instruction set.** On Windows and Linux systems with an Intel or AMD processor, MAGDA's embedded local model requires SSE 4.2 and AVX. This does not affect cloud providers or local-server mode.
-- **GPU.** Local inference is far more responsive with GPU acceleration: Metal on Apple Silicon, or CUDA on supported builds. An Apple Silicon Mac or a dedicated GPU with plenty of VRAM makes a large difference. On CPU alone it still works, just slowly.
+- **CPU instruction set.** On Windows and Linux, MAGDA's embedded local model uses the best instruction set your processor supports (AVX2, AVX-512 and so on), chosen when the model loads, so a newer CPU runs it faster. On an Intel Mac it uses SSE 4.2 and AVX. None of this affects cloud providers or local-server mode.
+- **GPU.** Local inference is far more responsive with GPU acceleration: Metal on macOS, and Vulkan on Windows and Linux when a Vulkan driver is installed. An Apple Silicon Mac or a dedicated GPU with plenty of VRAM makes a large difference. Without a GPU it runs on the CPU, just slowly.
 - Larger general-purpose models need correspondingly more RAM (when running on CPU) or VRAM (when offloaded to a GPU). A bigger model on an underpowered machine will be slow, or simply fail to load.
-- If responses are slow or a model fails to load, choose a smaller or more heavily quantised model, switch **GPU Layers** to **Custom** with a lower count, or reduce the **Context** size under [AI Settings](interface/ai-settings.md#local-llm) > Models > Local LLM.
+- If responses are slow or a model fails to load, choose a smaller or more heavily quantised model, switch **GPU layers** to **Custom** with a lower count, or reduce the **Context length** under **Settings > AI > Local models**, with **Type** set to [Local LLM](interface/ai-settings.md#local-llm).
 
 If your machine does not meet these specs, do not expect usable local AI from it. Use a cloud provider instead: it will give far better results than a local model struggling on limited hardware.
 

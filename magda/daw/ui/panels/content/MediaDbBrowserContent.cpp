@@ -2297,7 +2297,8 @@ void MediaDbBrowserContent::applySearchResultsToUi() {
                     !magda::media::MediaModelDownloader::isInstalled(
                         magda::media::MediaModelDownloader::Bundle::SampleTagger)) {
                     text += "\n\nText search is filename / tag only without the AI Sample "
-                            "Analyzer.\nInstall it from AI Settings > Sample Analyzer.";
+                            "Analyzer.\nInstall it from Settings > AI > Local models, under Sample "
+                            "analysis.";
                 }
             }
         }
@@ -2451,7 +2452,8 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
                     .withMessage(
                         "Indexing will run, but without the Sample Analyzer the library can only "
                         "do filename / tag / family / BPM filtering - no semantic text search.\n\n"
-                        "Install it any time from AI Settings > Sample Analyzer.")
+                        "Install it any time from Settings > AI > Local models, under Sample "
+                        "analysis.")
                     .withButton("Continue indexing")
                     .withButton("Cancel"),
                 [self, presentTagOptionsDialog = std::move(presentTagOptionsDialog)](int result) {
@@ -2685,7 +2687,7 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
                               "Sample Tagger model failed to load — skipping audio analysis"))
                         : juce::String(juce::String::fromUTF8(
                               "Sample Tagger not installed — skipping audio analysis. Install it "
-                              "in AI Settings to enable semantic search."));
+                              "in Settings > AI > Local models to enable semantic search."));
                 finalStatus = finalStatus + " | " + skipReason;
                 juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + skipReason);
             }

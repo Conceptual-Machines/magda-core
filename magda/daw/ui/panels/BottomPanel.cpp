@@ -22,6 +22,7 @@
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "content/AudioClipPropertiesContent.hpp"
 #include "content/AutomationClipEditorContent.hpp"
+#include "content/ChordClipContent.hpp"
 #include "content/ChordPanelContent.hpp"
 #include "content/DrumGridClipContent.hpp"
 #include "content/MidiEditorContent.hpp"
@@ -714,6 +715,17 @@ void BottomPanel::setupHeaderControls() {
         updateContentBasedOnSelection();
     };
     headerBar_->addChildComponent(bendButton_.get());
+
+    chordWheelButton_ = std::make_unique<SvgButton>("ChordWheel", BinaryData::mechordwheel_svg,
+                                                    BinaryData::mechordwheel_svgSize);
+    chordWheelButton_->setTooltip("Chord wheel: pick the next chord from the circle of fifths");
+    styleButton(*chordWheelButton_);
+    chordWheelButton_->setTintedChip(ActiveTheme::MIDI_KEY_ON);  // lit like the chord toggle
+    chordWheelButton_->onClick = [this]() {
+        if (auto* chords = dynamic_cast<daw::ui::ChordClipContent*>(getActiveContent()))
+            chords->setChordWheelOpen(!chords->isChordWheelOpen());
+    };
+    headerBar_->addChildComponent(chordWheelButton_.get());
 
     refreshHeaderControlColours();
     hideMidiHeaderControls();
@@ -1434,6 +1446,23 @@ void BottomPanel::onContentWillSwitch(daw::ui::PanelContent* outgoing,
         addMidiControlsToHeader();  // Grid controls are shared between MIDI and audio
     else if (isAutomationEditor)
         addGridControlsToHeader();  // Grid controls only — loop lives in the inspector
+    if (auto* chords = dynamic_cast<daw::ui::ChordClipContent*>(outgoing)) {
+        chords->setChordWheelOpen(false);
+        chords->onChordSelectionChanged = nullptr;
+        if (chordPanel_)
+            chordPanel_->setFifthsSource(std::nullopt);
+    }
+    if (auto* chords = dynamic_cast<daw::ui::ChordClipContent*>(incoming)) {
+        chords->onChordWheelOpenChanged = [this](bool open) { chordWheelButton_->setActive(open); };
+        chordWheelButton_->setActive(chords->isChordWheelOpen());
+        chordWheelButton_->setVisible(true);
+        // The chord panel beside the editor draws its fifths from the selected block.
+        chords->onChordSelectionChanged = [this, chords] {
+            if (chordPanel_)
+                chordPanel_->setFifthsSource(chords->selectedChordSource());
+        };
+        chords->onChordSelectionChanged();
+    }
     if (isWaveformEditor) {
         gainEnvelopeButton_->setVisible(true);
         syncGainEnvelopeButtonState();
@@ -1515,6 +1544,8 @@ void BottomPanel::hideMidiHeaderControls() {
     pianoRollTab_->setVisible(false);
     drumGridTab_->setVisible(false);
     bendButton_->setVisible(false);
+    if (chordWheelButton_)
+        chordWheelButton_->setVisible(false);
     if (toolButtons_)
         toolButtons_->setVisible(false);
     if (envelopeToolButtons_)
@@ -1692,6 +1723,8 @@ void BottomPanel::layoutV1Toolbar(juce::Rectangle<int> headerBounds) {
                 .divider()
                 .item(*keyChip_, 80, kV1Button);
         });
+    } else if (chordWheelButton_->isVisible()) {
+        Row::centred(decor, headerBounds, [&](Row& row) { row.button(*chordWheelButton_); });
     }
 
     Row right(decor, headerBounds, headerBounds.getRight() - 8, Row::From::Right);

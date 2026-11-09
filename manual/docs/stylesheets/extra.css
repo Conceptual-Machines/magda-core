@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap");
+
 /* MAGDA dark theme — matches the DAW's built-in dark palette */
 
 /* Dark mode (default) */
@@ -24,9 +26,95 @@
   --md-typeset-a-color: #5588aa;
 }
 
-/* Header bar */
-[data-md-color-scheme="slate"] .md-header {
-  background-color: #1e1e22;
+/* The magda.land bar (overrides/partials/header.html). Its colours are the site's
+   tokens, copied from magda-cloud's globals.css. */
+[data-md-color-scheme="slate"] {
+  --color-text-primary: #dddddd;
+  --color-text-secondary: #aabbcc;
+  --color-text-dim: #888888;
+  --color-border: #444444;
+}
+
+[data-md-color-scheme="default"] {
+  --color-text-primary: #1e242c;
+  --color-text-secondary: #45566a;
+  --color-text-dim: #76808e;
+  --color-border: #c9cdd4;
+}
+
+/* It scrolls away, as on the site; Material's own header is kept at zero height. */
+magda-site-header.md-header {
+  position: relative;
+  background: none;
+  box-shadow: none;
+  color: var(--color-text-dim);
+  font-family: Inter, sans-serif;
+}
+
+/* The manual adds a menu and a search button, which need tighter spacing on a phone */
+@media screen and (max-width: 479px) {
+  magda-site-header {
+    --magda-header-gap: 10px;
+  }
+}
+
+magda-site-header:not(:defined) {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 96px;
+  padding: 0 24px;
+}
+
+.magda-header__fallback {
+  color: inherit;
+}
+
+.magda-header__material {
+  height: 0;
+  overflow: hidden;
+  box-shadow: none !important;
+}
+
+.magda-header__material .md-header__option {
+  display: none;
+}
+
+.magda-header .md-header__button {
+  margin: 0;
+  padding: 0;
+  color: inherit;
+}
+
+.magda-header .md-header__button svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Material styles the search for its coloured header bar; this one sits on the page */
+.magda-header__search {
+  display: flex;
+  align-items: center;
+  --md-primary-bg-color: var(--color-text-primary);
+  --md-primary-bg-color--light: var(--color-text-dim);
+}
+
+[data-md-color-scheme="default"] .magda-header__search .md-search__form {
+  background-color: var(--md-default-fg-color--lightest);
+}
+
+/* The open search box grows leftward over the links, as it does over Material's title */
+@media screen and (min-width: 60em) {
+  .magda-header__search .md-search {
+    width: 11.7rem;
+    height: 2rem;
+  }
+
+  .magda-header__search .md-search__inner {
+    position: absolute;
+    top: 0;
+    right: 0;
+  }
 }
 
 /* Navigation sidebar */

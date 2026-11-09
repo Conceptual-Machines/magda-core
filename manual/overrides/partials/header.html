@@ -1,0 +1,27 @@
+{#-
+  The magda.land bar (<magda-site-header>, loaded from the website) with the
+  manual's menu button and search slotted in. Material's own header stays,
+  empty and zero-height, so its sidebar and scroll offsets don't count the bar.
+-#}
+<magda-site-header class="md-header magda-header" current="manual">
+  <a class="magda-header__fallback" href="{{ config.site_url | d(nav.homepage.url, true) | url }}">{{ config.site_name }}</a>
+  <label slot="start" class="md-header__button md-icon" for="__drawer">
+    {% include ".icons/material/menu.svg" %}
+  </label>
+  {#- A <header>, because Material finds the search button with "header [for=__search]" #}
+  <header slot="extra" class="magda-header__search" role="none">
+    {% if "material/search" in config.plugins %}
+      <label class="md-header__button md-icon" for="__search">
+        {% include ".icons/material/magnify.svg" %}
+      </label>
+      {% include "partials/search.html" %}
+    {% endif %}
+  </header>
+</magda-site-header>
+<header class="md-header magda-header__material" data-md-component="header" aria-hidden="true">
+  {% if config.theme.palette and not config.theme.palette is mapping %}
+    {% include "partials/palette.html" %}
+    {% include "partials/javascripts/palette.html" %}
+  {% endif %}
+</header>
+<script src="{{ config.extra.site_header_js }}"></script>

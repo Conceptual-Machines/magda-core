@@ -1,6 +1,12 @@
 # MAGDA DSL Reference
 
-The MAGDA DSL is a functional scripting language for DAW operations. The [AI Assistant](../panels/ai-assistant.md) translates natural language into DSL, and the [DSL tab](../panels/ai-assistant.md#dsl-tab) lets you write it directly.
+The MAGDA DSL is a functional scripting language for DAW operations. The [AI Assistant](../panels/ai-assistant.md) translates natural language into DSL, and the [`/dsl` command](../panels/ai-assistant.md#running-dsl-directly) in the AI chat runs it directly:
+
+```
+/dsl track(name="Bass", new=true).clip.new(bar=1, length_bars=4)
+```
+
+Press ++shift+enter++ in the chat to put a longer script on several lines.
 
 ## Syntax
 
@@ -39,7 +45,10 @@ At least one of the two must be given.
 | `track()` | Create a new unnamed track |
 | `track(name="Bass")` | Reference existing track by name, or create if none exists |
 | `track(name="Bass", new=true)` | Always create a new track (even if name exists) |
+| `track(name="FX", type="aux")` | Create a track of another type when one is created: `aux` or `group` |
 | `track(id=1)` | Reference track by 1-based index |
+
+A script starts on the selected track and clip, so a statement such as `groove.set(...)` with no track reference acts on the selection.
 
 ### Modifying tracks
 
@@ -122,7 +131,7 @@ track(id=1).clips.select()                              // Every clip on the tra
 | `clip.id` | number | Clip id |
 | `clip.track_id` | number | Owning track id |
 | `clip.name` | string | Clip name |
-| `clip.type` | string | Clip type |
+| `clip.type` | string | `audio` or `midi` |
 
 Prefer the bar and beat fields. `clip.length` and `clip.start` are seconds derived from the current tempo, so a predicate written against them stops matching if the tempo changes.
 
@@ -141,7 +150,7 @@ Note operations require a selected clip. Chain them on a `clip.new()` call or us
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `pitch` | note/number | — | Note name (`C4`, `F#3`, `Bb2`) or MIDI number |
-| `beat` | number | — | Beat position within the clip |
+| `beat` | number | 0 | Beat position within the clip |
 | `length` | number | 1 | Duration in beats |
 | `velocity` | number | 100 | Velocity (0–127) |
 
@@ -186,7 +195,7 @@ Note operations require a selected clip. Chain them on a `clip.new()` call or us
 | `root` | note | — | Root note |
 | `quality` | string | — | Same chord qualities as `add_chord` |
 | `beat` | number | 0 | Start beat |
-| `step` | number | — | Beat interval between notes |
+| `step` | number | 0.5 | Beat interval between notes |
 | `note_length` | number | = step | Duration of each note |
 | `velocity` | number | 100 | Velocity |
 | `inversion` | number | 0 | Chord inversion |
@@ -235,7 +244,7 @@ track(name="Vocals").fx.add(name="Pro-Q 3", format="VST3")
 | `name` | string | Device name or alias |
 | `format` | string | Optional: `VST3`, `AU`, or `VST` to disambiguate |
 
-**MAGDA devices** are added by exact display name or by a canonical alias — `eq`, `compressor`, `reverb`, `delay`, `chorus`, `phaser`, `filter`, `utility`, `pitch shift`, `ir reverb` and the rest of the [device registry](../devices/built-in.md). The alias list is generated from the registry itself, so it follows whatever is installed rather than a fixed set.
+**MAGDA devices** are added by exact display name or by a canonical alias — `eq`, `compressor`, `reverb`, `delay`, `chorus`, `phaser`, `filter`, `utility`, `pitch shift`, `convolution` (its old name `ir reverb` still works) and the rest of the [device registry](../devices/built-in.md). The alias list is generated from the registry itself, so it follows whatever is installed rather than a fixed set.
 
 Third-party plugins are referenced by their scanned name, or by an alias token such as `<pro_q_3>` or `<surge_xt>`. Use the `@alias` syntax in the AI chat to autocomplete plugin names.
 
@@ -286,9 +295,9 @@ filter(tracks).track.group(name="All Tracks")
 
 ## Groove / Swing
 
-Groove templates control playback timing feel — they shift note positions at playback without modifying the source MIDI. These are **not** drum patterns.
+Grooves control playback timing feel — they shift when notes play without modifying the source MIDI. These are **not** drum patterns. A groove plays as a [time bend](../time-bend.md#grooves): applying one loads its curve into the clip's time bend.
 
-In the AI chat, prefix your message with `/groove` to ensure the AI generates groove commands instead of note patterns.
+In the AI chat, prefix your message with [`/groove`](../panels/ai-assistant.md#groove-grooves) to ensure the AI generates groove commands instead of note patterns.
 
 ### Creating custom grooves
 
@@ -302,9 +311,9 @@ groove.new(name="Funky 16ths", notesPerBeat=4,
 | `name` | string | — | Template name |
 | `notesPerBeat` | number | 2 | Grid resolution: `2` = 8th notes, `4` = 16th notes |
 | `shifts` | string | — | Comma-separated lateness values (`-1.0` to `1.0`, `0` = on grid) |
-| `parameterized` | bool | true | Whether the strength slider scales the groove |
+| `parameterized` | bool | true | Whether `groove.set`'s `strength` applies. When false, the groove always loads at full amount |
 
-The `shifts` string defines one value per grid position in a single beat. Positive values push notes **late** (behind the beat), negative values push notes **early** (ahead of the beat).
+The `shifts` string defines one value per grid position in a single beat. Positive values push notes **late** (behind the beat), negative values push notes **early** (ahead of the beat). Creating a groove with the name of an existing one replaces it. New grooves are listed in the time bend's **GROOVE** menu.
 
 ### Extracting groove from audio
 
@@ -314,11 +323,11 @@ groove.extract(clip=0, resolution=16, name="Drum Loop Feel")
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `clip` | number | — | Clip index on the current track |
+| `clip` | number | selected clip | Clip index on the current track, counting from 0 |
 | `resolution` | number | 16 | Grid resolution: `8` or `16` |
 | `name` | string | "Extracted Groove" | Template name |
 
-Reads transient positions from an audio clip and computes timing deviations from the grid.
+Reads transient positions from an audio clip and computes timing deviations from the grid, one bar's worth. The clip must be an audio clip with its transients detected; warp it or run transient detection first.
 
 ### Applying groove to a clip
 
@@ -329,9 +338,11 @@ groove.set(template="Basic 8th Swing", strength=0.7)
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `template` | string | — | Groove template name |
-| `strength` | number | — | Amount of groove to apply (`0.0`–`1.0`) |
+| `strength` | number | 1.0 | The time bend's **AMOUNT**, `0.0`–`1.0` |
 
-Applies to the currently selected MIDI clip.
+Loads the groove's curve into the MIDI clip's [time bend](../time-bend.md), replacing the bend it had, with `strength` as the bend's AMOUNT. Without `template`, `strength` changes the AMOUNT of the bend the clip already has. The change is one undo step.
+
+The clip is the one the statement created or selected, otherwise the selected clip, otherwise the first clip on the current track. It must be a MIDI clip.
 
 ### Listing available grooves
 

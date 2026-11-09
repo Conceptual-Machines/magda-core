@@ -218,6 +218,7 @@ const CompiledPresentationSpec& getMagdaUtilityPresentation() {
         },
         .preferredSlotWidth = 270,
         .vizSlotWidth = 170,
+        .vizTooltip = "Show the stereo field",
         .ownsOutputGain = true,
         .createLayout = []() -> std::unique_ptr<DeviceParamLayout> {
             return std::make_unique<CompiledUtilityLayout>();

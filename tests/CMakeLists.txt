@@ -32,6 +32,7 @@ set(TEST_SOURCES
     midi/test_midi_split_glue.cpp
     midi/test_midi_key_scale.cpp
     midi/test_midi_offset.cpp
+    midi/test_midi_export_range.cpp
     clips/test_pianoroll_note_position.cpp
     clips/test_pianoroll_shown_content.cpp
     devices/test_nested_racks.cpp
@@ -184,10 +185,12 @@ set(TEST_SOURCES
     devices/test_soundfont_import.cpp
     devices/test_sampler_parts.cpp
     ui/test_velocity_lane_utils.cpp
+    ui/test_circle_of_fifths.cpp
     utilities/test_grid_constants.cpp
     utilities/test_ui_scale.cpp
     media/test_media_explorer_preview_state.cpp
     ui/test_timeline_loop_activation.cpp
+    ui/test_timeline_marker_navigation.cpp
     routing/test_multi_out_tracks.cpp
     audio/test_freeze_track.cpp
     agents/test_dsl_add_chord.cpp
@@ -351,6 +354,7 @@ set(TEST_SOURCES
     # Lua bindings tests (issue #30 — bind MagdaApi)
     agents/test_magda_api_lua_bindings.cpp
     remote/test_remote_api_contract.cpp
+    remote/test_remote_openrpc.cpp
     remote/test_session_scene_lifecycle.cpp
     remote/test_remote_permissions.cpp
     remote/test_remote_permission_conformance.cpp

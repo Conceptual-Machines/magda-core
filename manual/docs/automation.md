@@ -13,27 +13,30 @@ To open a lane:
 - Right-click any parameter slider → **Show Automation Lane**, or
 - Right-click an automation-aware control (macro knob, LFO Rate slider) and pick the same item.
 
-The lane appears below the track. Drag points to edit the curve; double-click to add or remove points; right-click points for shape options.
+The lane appears below the track. Drag points to edit the curve; double-click to add or remove points; right-click a point to type its value, or a segment to make it a hard corner.
 
 Multiple lanes can stack on the same track — one per automated parameter — and modulators, macros, and automation can all drive the same parameter at once. Their effects combine.
 
-A device parameter gets its lane from the same place you link modulation: right-click the parameter and choose **Show Automation Lane**. (Parameters on a post-FX device cannot be automated, so the item is disabled there.)
+A device parameter gets its lane from the same place you link modulation: right-click the parameter and choose **Show Automation Lane**. (Parameters on a post-FX device cannot be automated, so the item isn't offered there.)
 
 ## Curve Shapes
 
-A segment is the line between two points. Right-click a segment to change its shape:
+A segment is the line between two points. Each segment has a handle in its middle:
 
-| Shape | Behaviour |
-|---|---|
-| **Linear** | Straight line between the two points |
-| **Bezier** | Smooth curve; drag the handles to shape it |
-| **Step** | Holds the first value, then jumps at the next point |
-| **Hard Corner** | Two straight segments meeting at a sharp, draggable apex |
+- **Drag the handle** to bend the segment into a curve.
+- **Double-click the handle** to straighten it again.
+- **Right-click a segment** and choose **Hard Corner** to turn it into two straight lines meeting at a sharp apex; drag the handle to move the apex. Choose it again to go back to a curve.
+
+++shift++-click to stamp a **step**: a flat block one grid division wide at the value you clicked, with a sheer edge on each side.
 
 ## Editing Points
 
-- **Add / remove a point** — double-click in the lane.
+- **Add / remove a point** — double-click an empty spot in the lane to add one; double-click a point to remove it.
+- **Move points** — drag a point; drag across an empty part of the lane to select several, and drag any of them to move them together.
+- **Draw freehand** — hold ++cmd++ (++ctrl++ on Windows/Linux) and drag.
+- **Delete** — select points and press ++delete++ or ++backspace++. ++cmd+a++ (++ctrl+a++) selects every point.
 - **Inline value** — right-click a point to type its value directly, in the lane's real units (dB, pan %, Hz, …). Press ++enter++ to commit.
+- **Simplify** — select three or more points, right-click and choose **Simplify Selected Points** to thin them out while keeping the shape.
 - **Point Inspector** — select one or more points to open the inspector, which shows the target name and point count, an editable **Value** field, and the **Position** (beat) of a single selected point. Editing the value across a multi-selection applies the change as a delta, preserving the relative shape.
 
 ## Lane Header Controls
@@ -58,6 +61,8 @@ On a clip-based lane:
 - Hold ++alt++ and **drag** to draw a clip of a specific length (a plain ++alt++-click makes the default one-bar clip).
 - **Right-click** a clip for **Edit Curve**, **Duplicate**, **Loop** (a checkmark toggle that repeats the clip's curve to fill its length), and **Delete**.
 
+Select an automation clip to see it in the Inspector: its name (double-click to rename), its **Start**, **End** and **Length**, and a **Loop** switch with the loop's length. Right-click the name to change the clip's colour.
+
 **Double-click a clip** to open the automation-clip editor. Its header carries:
 
 | Control | Function |
@@ -74,13 +79,13 @@ You can convert a live modulator (an LFO or envelope linked to a parameter) into
 
 ## Master Automation
 
-The master channel has its own automation band above the master strip. Click the **Automation** button in the master header (or right-click the header) to open the master automation menu, where you can show or hide existing master lanes, hide them all, or **Add New Lane** for:
+The master channel has its own automation band above the master strip. Click the **Automation** button in the master header (or right-click the header) to open the master automation menu, where you can show or hide existing master lanes, hide them all, or use **Add New Lane...** for:
 
 - **Track Volume** — the master output level
 - **Tempo** — see below
 - any parameter of a device on the master chain, plus master macros and modulators
 
-++alt++-click the Automation button to toggle every automation lane in the edit on or off at once.
+++alt++-click the Automation button to show or hide every automation lane in the edit at once.
 
 These master lanes include **edit-scoped targets** like tempo and master volume that aren't tied to a specific device.
 
@@ -88,22 +93,25 @@ These master lanes include **edit-scoped targets** like tempo and master volume 
 
 Tempo can be automated over time as a curve in the master automation band. Open the master automation menu, choose **Add New Lane → Tempo**, and the tempo lane appears in the master band. Edit it like any other lane — drag points, set curve shapes, type exact BPM values via the point inspector. The curve drives the project's tempo, so the song speeds up and slows down along the curve during playback.
 
+Tempo automation is ignored while [Ableton Link](transport.md#ableton-link) is on or MAGDA follows a [MIDI clock](transport.md#midi-clock).
+
 ## Automation Modes
 
-The transport bar shows the automation icon ![automation icon](assets/icons/automation.svg){ width="14" } next to the play/stop controls, with a single letter under it indicating the active mode:
+The transport bar's automation button ![automation icon](assets/icons/automation.svg){ width="14" } sits right after Record. Click it to arm automation writing: it lights up, and **AUTOMATION WRITE** (or **TOUCH** or **LATCH**) shows in the transport when there is room. Click it again, or press **Stop** in the transport, to disarm it. While it is disarmed, lanes only play back.
+
+Right-click the button to choose the mode. The letter under the icon shows the one chosen:
 
 | Letter | Mode |
 |---|---|
-| (none) | Off — read-only playback |
 | **W** | Write |
 | **T** | Touch |
 | **L** | Latch |
 
-Click the icon to cycle through the modes. The choice controls **how parameter movements during playback are written into a lane**.
+The mode controls **how parameter movements during playback are written into a lane**.
 
 | Mode | Behavior |
 |---|---|
-| **Off** | No recording. Lanes play back; user gestures don't write anything. |
+| **Disarmed** | No recording. Lanes play back; user gestures don't write anything. |
 | **Write** | Record every parameter change while the transport is rolling. The classic behavior: anything you touch becomes part of the lane. |
 | **Touch** | Record only while you're physically holding the control. Release the mouse and the lane's existing curve takes over again. |
 | **Latch** | Same as Touch on the way in: recording starts when you grab the control. After release, the last value you held is **latched** and continues writing into the lane until the transport stops. |
@@ -113,7 +121,7 @@ Click the icon to cycle through the modes. The choice controls **how parameter m
 - **Write** for a first pass on an empty lane — sketching the shape from scratch.
 - **Touch** for nudging a single section of an existing curve without erasing the parts you don't touch.
 - **Latch** for "set and hold" gestures — sweep a filter to its destination, release, and the rest of the lane is rewritten at that target value.
-- **Off** when you've finished writing and want playback only. Same effect as a per-DAW "Read" mode.
+- **Disarm** the button when you've finished writing and want playback only. Same effect as a "Read" mode in other DAWs.
 
 ## Touch and the Override Highlight
 
@@ -144,6 +152,8 @@ When you duplicate a clip, you can decide whether its automation comes along. Ri
 
 ## Removing Automation
 
-To remove a single point: right-click → **Delete Point**.
-To clear the whole lane: right-click in the lane → **Clear Lane**.
-To hide the lane (keeping the curve): right-click the lane header → **Hide Lane**. Show it again from the parameter's right-click menu.
+- To remove a point: double-click it, or select it and press ++delete++.
+- To remove a lane and its curve: click **Delete automation lane** in the lane header.
+- To hide a lane (keeping the curve): right-click the lane header → **Hide Lane**. Show it again from the parameter's right-click menu or the track's Automation menu.
+
+The lane header's right-click menu also has **Simplify Curve**, which thins out a lane with many points.

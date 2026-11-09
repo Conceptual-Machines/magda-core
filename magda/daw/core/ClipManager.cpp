@@ -1101,7 +1101,7 @@ bool ClipManager::editAudioClipSourceInExternalEditor(ClipId clipId, juce::Strin
 
     const auto editorPath = juce::String(Config::getInstance().getExternalAudioEditorPath());
     if (editorPath.isEmpty()) {
-        errorMessage = "Choose an external audio editor in Preferences > Media Library first.";
+        errorMessage = "Choose an external audio editor in Settings > Paths first.";
         return false;
     }
 

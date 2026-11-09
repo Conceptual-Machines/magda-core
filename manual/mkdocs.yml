@@ -1,9 +1,10 @@
 site_name: MAGDA Manual
 site_description: User manual for MAGDA — a free, open-source digital audio workstation
-site_url: https://Conceptual-Machines.github.io/magda-core/
+site_url: https://docs.magda.land/
 
 theme:
   name: material
+  custom_dir: overrides
   palette:
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
@@ -29,7 +30,7 @@ theme:
     - content.code.copy
     - content.tabs.link
   logo: assets/images/magda-lisa.svg
-  favicon: assets/images/magda-lisa.svg
+  favicon: assets/images/magda-icon.svg
   icon:
     repo: fontawesome/brands/github
 
@@ -46,21 +47,23 @@ nav:
   - Interface Layout:
       - Overview: interface/overview.md
       - Menus: interface/menus.md
-      - Preferences: interface/preferences.md
-      - Audio Settings: interface/audio-settings.md
-      - Plugin Settings: interface/plugin-settings.md
-      - AI Settings: interface/ai-settings.md
+      - Settings: interface/preferences.md
+      - Audio & MIDI: interface/audio-settings.md
       - Controllers: interface/controllers.md
       - Connections: interface/connections.md
+      - Plugins: interface/plugin-settings.md
+      - AI: interface/ai-settings.md
   - Tracks: tracks.md
   - Clips: clips.md
   - Stem Separation: stem-separation.md
   - FX Chain & Racks: fx-chain.md
   - Plugin Parameters: plugin-parameters.md
+  - ARA Plugins: ara.md
   - Arrangement View: arrangement-view.md
   - Session View: session-view.md
   - Mixer View: mixer-view.md
   - Recording & Comping: recording-comping.md
+  - Exporting: exporting.md
   - Chord Track: chord-track.md
   - Working with AI: working-with-ai.md
   - Panels:
@@ -79,6 +82,7 @@ nav:
       - Overview: devices/built-in.md
       - MIDI Devices:
           - Arpeggiator: devices/arpeggiator.md
+          - Strum: devices/strum.md
           - Chord Engine: devices/chord-engine.md
           - Step Sequencer: devices/step-sequencer.md
           - Poly Sequencer: devices/poly-sequencer.md
@@ -103,16 +107,20 @@ nav:
   - Transport: transport.md
   - Reference:
       - Remote API: reference/remote-api.md
+      - Remote API Operations: reference/remote-api-operations.md
       - DSL Reference: reference/dsl.md
       - Controller Profile Format: reference/controller-profile-format.md
       - OSC Address Reference: reference/osc-addresses.md
       - Lua Scripting: reference/lua-scripting.md
       - Keyboard Shortcuts: reference/keyboard-shortcuts.md
       - File Formats: reference/file-formats.md
+      - Project Migrations: reference/project-migrations.md
       - Troubleshooting: reference/troubleshooting.md
 
 extra:
   homepage: https://magda.land
+  # The site's shared header; point it at a local magda-cloud dev server to preview changes.
+  site_header_js: !ENV [SITE_HEADER_JS, "https://magda.land/site-header.js"]
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/Conceptual-Machines/magda-core
@@ -120,8 +128,14 @@ extra:
       link: https://magda.land
       name: MAGDA Website
 
+hooks:
+  - hooks/openrpc.py
+
 extra_css:
   - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/site-header.js
 
 markdown_extensions:
   - admonition

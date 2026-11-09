@@ -12,6 +12,15 @@ Materia and Halo are instruments played from MIDI. Nimbus is a granular audio pr
 
 A monophonic modal-synthesis voice with three exciters, **Bow**, **Blow**, and **Strike**, driving a modal and string resonator, followed by a stereo **Space** reverb.
 
+The faceplate has four panels side by side:
+
+- **VOICE** - Contour, Signature, the transpose (labelled **Coarse**) and Fine, Level, and Vel>Amp.
+- **EXCITER** - the **EXCITATION BLEND** triangle beside a **BOW**, **BLOW**, and **STRIKE** column for each exciter's level and shaping. Drag inside the triangle to set all three exciter levels at once: Bow at the top corner, Blow at the bottom left, Strike at the bottom right.
+- **RESONATOR** - Geometry, Brightness, Damping, Position, and Space.
+- **MODAL RESPONSE** - a drawing of the resonator's partials.
+
+The sidebar's **Show the voice** toggle hides the VOICE panel, and **Show the modal response** hides the drawing.
+
 | Parameter | Range | Default | Description |
 |-----------|-------|---------|-------------|
 | **Contour** | 0 to 100% | 50 | Exciter envelope shape |
@@ -31,11 +40,13 @@ A monophonic modal-synthesis voice with three exciters, **Bow**, **Blow**, and *
 | **Space** | 0 to 100% | 30 | Stereo reverb amount |
 | **Pitch** / **Fine** | -24 to 24 st / -100 to 100 cents | 0 | Transpose and fine tune |
 | **Level** | -60 to 12 dB | 0 | Output level |
-| **Vel > Amp** | 0 to 100% | 100 | Velocity to amplitude depth |
+| **Vel>Amp** | 0 to 100% | 100 | Velocity to amplitude depth |
 
 ## Halo (Rings)
 
 A switchable polyphonic resonator with an internal exciter. There is no note-off: notes ring out and decay according to **Damping**, and the resonator rotates its internal voices as you play.
+
+The faceplate has three panels side by side: **PARAMETERS**, with the transpose labelled **Coarse**; **RESONATOR MODEL**, a button per model above the **POLYPHONY** choice; and **RESONATOR**, a spectrum of the modal response. The sidebar's **Show the resonator spectrum** toggle hides the spectrum.
 
 | Parameter | Range | Default | Description |
 |-----------|-------|---------|-------------|
@@ -52,6 +63,14 @@ A switchable polyphonic resonator with an internal exciter. There is no note-off
 ## Nimbus (Clouds)
 
 A stereo granular texture processor with four modes. It processes whatever audio reaches it, with an internal diffuser and a freeze control. Add it to a track's [FX chain](../fx-chain.md).
+
+The faceplate has three panels side by side:
+
+- **PARAMETERS** - Position, Density, Size, Texture, and Pitch, over the **BLEND ROUTES**: Dry/Wet, Spread, Feedback, and Reverb.
+- **FREEZE** and **PLAYBACK MODE** - the freeze switch, and a button per mode: **GRANULAR**, **STRETCH**, **DELAY** (Looping Delay), and **SPECTRAL**.
+- **GRAIN CLOUD** - a view of the grain window and the cloud of grains.
+
+The sidebar's **Show the grain cloud** toggle hides the GRAIN CLOUD panel.
 
 | Parameter | Range | Default | Description |
 |-----------|-------|---------|-------------|

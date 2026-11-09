@@ -13,6 +13,7 @@
 #include "audio/insert_capture/InsertRenderCapture.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
+#include "core/MidiFileWriter.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
 #include "core/TrackManager.hpp"
@@ -302,6 +303,8 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings, 
                 request.usePlugins = true;
                 request.realTimeRender = settings.realTimeRender;
                 request.range = requestedRange;
+                // The longest tail the rendered devices declare, loops included (#3278).
+                request.tailSeconds = std::nullopt;
                 if (settings.exportRange == ExportAudioDialog::ExportRange::EntireSong)
                     request.oneShot = true;
                 else if (settings.exportRange == ExportAudioDialog::ExportRange::LoopRegion)
@@ -530,11 +533,8 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings,
         if (!file.hasFileExtension(".mid"))
             file = file.withFileExtension(".mid");
 
-        constexpr int ticksPerQuarter = 960;
-        auto beatsToTicks = [&](double beats) -> double { return beats * ticksPerQuarter; };
-
         juce::MidiFile midiFile;
-        midiFile.setTicksPerQuarterNote(ticksPerQuarter);
+        midiFile.setTicksPerQuarterNote(daw::MidiFileWriter::ticksPerQuarter);
 
         // Tempo and time signature meta-events
         int microsecondsPerBeat = static_cast<int>(60000000.0 / projectTempo);
@@ -543,56 +543,14 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings,
         auto timeSigMsg = juce::MidiMessage::timeSignatureMetaEvent(timeSigNum, timeSigDen);
         timeSigMsg.setTimeStamp(0.0);
 
-        // Range end in beats (relative to range start) for clamping.
-        double relativeRangeEndBeats = capturedRangeEndBeats - capturedRangeStartBeats;
-        double rangeEndTick = beatsToTicks(relativeRangeEndBeats);
+        const double rangeLengthBeats = capturedRangeEndBeats - capturedRangeStartBeats;
 
-        // Helper to add notes/CC/PB from clips to a sequence
         auto addClipDataToSequence = [&](juce::MidiMessageSequence& seq, const ClipMidiData& clip,
                                          int channel, double& maxTick) {
-            double clipStartBeats = clip.startBeats - capturedRangeStartBeats;
-
-            for (const auto& note : clip.midiNotes) {
-                double startTick = beatsToTicks(clipStartBeats + note.startBeat);
-                double endTick = beatsToTicks(clipStartBeats + note.startBeat + note.lengthBeats);
-                startTick = std::max(startTick, 0.0);
-                if (startTick >= rangeEndTick)
-                    continue;
-                endTick = std::min(endTick, rangeEndTick);
-
-                auto noteOn = juce::MidiMessage::noteOn(channel, note.noteNumber,
-                                                        static_cast<juce::uint8>(note.velocity));
-                noteOn.setTimeStamp(startTick);
-                seq.addEvent(noteOn);
-
-                auto noteOff = juce::MidiMessage::noteOff(channel, note.noteNumber);
-                noteOff.setTimeStamp(endTick);
-                seq.addEvent(noteOff);
-
-                maxTick = std::max(maxTick, endTick);
-            }
-
-            for (const auto& cc : clip.midiCCData) {
-                double tick = beatsToTicks(clipStartBeats + cc.beatPosition);
-                tick = std::max(tick, 0.0);
-                if (tick >= rangeEndTick)
-                    continue;
-                auto msg = juce::MidiMessage::controllerEvent(channel, cc.controller, cc.value);
-                msg.setTimeStamp(tick);
-                seq.addEvent(msg);
-                maxTick = std::max(maxTick, tick);
-            }
-
-            for (const auto& pb : clip.midiPitchBendData) {
-                double tick = beatsToTicks(clipStartBeats + pb.beatPosition);
-                tick = std::max(tick, 0.0);
-                if (tick >= rangeEndTick)
-                    continue;
-                auto msg = juce::MidiMessage::pitchWheel(channel, pb.value);
-                msg.setTimeStamp(tick);
-                seq.addEvent(msg);
-                maxTick = std::max(maxTick, tick);
-            }
+            const double lastTick = daw::MidiFileWriter::appendClipInRange(
+                seq, clip.midiNotes, clip.midiCCData, clip.midiPitchBendData,
+                clip.startBeats - capturedRangeStartBeats, rangeLengthBeats, channel);
+            maxTick = std::max(maxTick, lastTick);
         };
 
         if (midiFormat == 0) {
