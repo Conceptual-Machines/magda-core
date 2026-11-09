@@ -3,9 +3,15 @@
 
 #pragma once
 
+#include <memory>
+
 #include "PianoRollContent.hpp"
+#include "music/ChordEnums.hpp"
+#include "ui/components/chord/FifthsView.hpp"
 
 namespace magda::daw::ui {
+
+class ChordWheel;
 
 /**
  * @brief Editor for chord-track clips.
@@ -21,9 +27,23 @@ class ChordClipContent : public PianoRollContent,
                          public juce::FileDragAndDropTarget,
                          public juce::DragAndDropTarget {
   public:
-    ChordClipContent() {
-        setWantsKeyboardFocus(true);
+    ChordClipContent();
+    ~ChordClipContent() override;
+
+    /** @brief Open the wheel from the selected chord (else the last one), or close it. */
+    void setChordWheelOpen(bool open);
+    bool isChordWheelOpen() const {
+        return wheelGroup_ != 0;
     }
+    std::function<void(bool open)> onChordWheelOpenChanged;
+
+    /** @brief The selected chord block, as the chord a circle of fifths is drawn from. */
+    std::optional<FifthsSource> selectedChordSource() const;
+    /// Fires when the selected chord, or what it is, may have changed.
+    std::function<void()> onChordSelectionChanged;
+
+    void clipSelectionChanged(magda::ClipId clipId) override;
+    void clipPropertyChanged(magda::ClipId clipId) override;
 
     // Delete the selected chord (not the clip) on Delete/Backspace.
     bool keyPressed(const juce::KeyPress& key) override;
@@ -62,6 +82,8 @@ class ChordClipContent : public PianoRollContent,
     void mouseDoubleClick(const juce::MouseEvent& e) override;
     // Draws the alt-drag copy ghost + "+" badge over the lane.
     void paintOverChildren(juce::Graphics& g) override;
+    void paint(juce::Graphics& g) override;
+    void resized() override;
 
   protected:
     int selectedChordGroup() const override {
@@ -89,6 +111,8 @@ class ChordClipContent : public PianoRollContent,
     // triad for now; quality/extensions are edited afterwards). Existing chords
     // are left alone so a stray click never stacks notes.
     bool onChordRowClicked(double clipRelativeBeat) override;
+    // Keeps the open wheel beside its "+" through scrolls and zooms.
+    void onChordLaneMoved() override;
 
   private:
     // Insert a chord (set of MIDI pitches) at the bar nearest clipRelativeBeat,
@@ -112,6 +136,28 @@ class ChordClipContent : public PianoRollContent,
     int previewGroup_ = 0;  // chordGroup being auditioned (for the highlight)
     bool isOnLaneDivider(juce::Point<int> p) const;
     int maxLaneHeight() const;
+    int annotationIndexForGroup(int chordGroup) const;
+    void selectChordGroup(int chordGroup);
+    /** @brief Where a chord picked after the one at @p annIndex goes: the next free bar. */
+    std::optional<double> nextChordSlotBeat(int annIndex) const;
+    /** @brief The "+" that slot is drawn as on the lane, if it is wide enough to show. */
+    std::optional<juce::Rectangle<int>> nextChordSlotArea(int annIndex) const;
+    void previewPitches(const std::vector<int>& pitches);
+
+    void openWheel(int annIndex);
+    void closeWheel();
+    void placeWheel();
+    void pickFromWheel(magda::music::ChordRoot root, magda::music::ChordQuality quality);
+    void auditionFromWheel(magda::music::ChordRoot root, magda::music::ChordQuality quality);
+    /** @brief A wheel pick's voicing: a root-position triad in the source chord's octave. */
+    std::vector<int> wheelChordPitches(magda::music::ChordRoot root,
+                                       magda::music::ChordQuality quality) const;
+    void paintNextChordSlot(juce::Graphics& g);
+    void paintWheelDragLabel(juce::Graphics& g);
+    int wheelGroup_ = 0;  // chordGroup the open wheel picks after; 0 = closed
+    std::unique_ptr<ChordWheel> wheel_;
+    std::optional<juce::Point<int>> wheelDragPoint_;  // pointer while a wheel chord is dragged
+    juce::String wheelDragLabel_;
 
     // Chord-block move / resize. The block's time span IS its linked notes'
     // span, so dragging a block previews by moving the annotation and commits by

@@ -6,9 +6,11 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <vector>
 
@@ -20,8 +22,11 @@
 #include "core/UndoManager.hpp"
 #include "music/ChordEngine.hpp"
 #include "music/ChordEnums.hpp"
+#include "music/NotationSettings.hpp"
+#include "ui/components/chord/ChordWheel.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 #include "ui/themes/InspectorComboBoxLookAndFeel.hpp"
 #include "ui/utils/AudioFileTypes.hpp"
 
@@ -103,6 +108,25 @@ std::pair<int, int> partsFromQuality(ChordQuality q) {
             if (t[static_cast<size_t>(b)][static_cast<size_t>(e)].quality == q)
                 return {b, e};
     return {0, 0};
+}
+
+constexpr int kMaxWheelSize = 320;
+constexpr int kWheelGap = 8;
+
+/** @brief The current time signature's bar, in beats. */
+double beatsPerBar() {
+    if (auto* controller = magda::TimelineController::getCurrent())
+        return controller->getState().tempo.beatsPerBar();
+    return 4.0;
+}
+
+/** @brief A built chord's notes as MIDI pitches. */
+std::vector<int> pitchesOf(const magda::music::Chord& chord) {
+    std::vector<int> pitches;
+    pitches.reserve(chord.notes.size());
+    for (const auto& note : chord.notes)
+        pitches.push_back(note.noteNumber);
+    return pitches;
 }
 
 /** @brief A predicate matching the notes linked to a chord group; group 0 links none. */
@@ -220,6 +244,12 @@ class ChordEditorPopup : public juce::Component {
 
 }  // namespace
 
+ChordClipContent::ChordClipContent() {
+    setWantsKeyboardFocus(true);
+}
+
+ChordClipContent::~ChordClipContent() = default;
+
 int ChordClipContent::maxLaneHeight() const {
     return std::max(MIN_LANE_HEIGHT, getHeight() - RULER_HEIGHT);
 }
@@ -285,7 +315,7 @@ void ChordClipContent::beginBlockDrag(int annIndex, BlockDrag mode, int mouseX) 
 
     blockDrag_ = mode;
     dragAnnIndex_ = annIndex;
-    selectedGroup_ = a.chordGroup;
+    selectChordGroup(a.chordGroup);
     dragStartMouseBeat_ = chordRowBeatForX(mouseX);
     dragOrigStart_ = a.beatPosition;
     dragOrigEnd_ = a.beatPosition + a.lengthBeats;
@@ -338,6 +368,7 @@ void ChordClipContent::updateBlockDrag(int mouseX) {
         a.beatPosition = dragNewStart_;
         a.lengthBeats = dragNewEnd_ - dragNewStart_;
     }
+    placeWheel();  // its "+" moves with the chord
     repaint();
 }
 
@@ -410,16 +441,22 @@ void ChordClipContent::mouseMove(const juce::MouseEvent& e) {
 }
 
 void ChordClipContent::mouseDown(const juce::MouseEvent& e) {
+    const bool onLane =
+        e.y >= chordRowTop() && e.y < chordRowTop() + chordRowHeight() && e.x >= chordLaneLeftX();
+    const int idx = onLane ? annotationIndexAtBeat(chordRowBeatForX(e.x)) : -1;
+    if (idx < 0)
+        closeWheel();  // a click on a chord moves the open wheel to it instead
     if (isOnLaneDivider(e.getPosition())) {
         draggingDivider_ = true;
         return;
     }
-    if (e.y >= chordRowTop() && e.y < chordRowTop() + chordRowHeight() && e.x >= chordLaneLeftX()) {
-        const int idx = annotationIndexAtBeat(chordRowBeatForX(e.x));
+    if (onLane) {
         if (idx >= 0) {
             grabKeyboardFocus();  // so Delete removes the chord, not the clip
             if (e.mods.isPopupMenu()) {
                 showChordContextMenu(idx);
+                if (isChordWheelOpen())
+                    openWheel(idx);
                 return;
             }
             const auto mode = dragModeForBlock(idx, e.x);
@@ -427,10 +464,12 @@ void ChordClipContent::mouseDown(const juce::MouseEvent& e) {
             if (mode == BlockDrag::Move)
                 startChordPreview(idx);  // audition the chord on click
             beginBlockDrag(idx, mode, e.x);
+            if (isChordWheelOpen())
+                openWheel(idx);
             return;
         }
         if (selectedGroup_ != 0) {
-            selectedGroup_ = 0;
+            selectChordGroup(0);
             repaint();
         }
     }
@@ -452,26 +491,27 @@ void ChordClipContent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 bool ChordClipContent::keyPressed(const juce::KeyPress& key) {
-    if ((key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) &&
-        selectedGroup_ != 0) {
-        const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
-        if (clip != nullptr) {
-            const auto isSelectedGroup = [this](const magda::ClipInfo::ChordAnnotation& ann) {
-                return ann.chordGroup == selectedGroup_;
-            };
-            const auto& annotations = clip->chordAnnotations;
-            if (const auto it = std::ranges::find_if(annotations, isSelectedGroup);
-                it != annotations.end()) {
-                deleteChord(static_cast<int>(std::ranges::distance(annotations.begin(), it)));
-                return true;
-            }
+    if (key == juce::KeyPress::escapeKey && wheelGroup_ != 0) {
+        closeWheel();
+        return true;
+    }
+    if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
+        if (const int idx = annotationIndexForGroup(selectedGroup_); idx >= 0) {
+            deleteChord(idx);
+            return true;
         }
     }
     return PianoRollContent::keyPressed(key);
 }
 
 void ChordClipContent::paintOverChildren(juce::Graphics& g) {
-    PianoRollContent::paintOverChildren(g);
+    {
+        const juce::Graphics::ScopedSaveState state(g);
+        if (wheelGroup_ != 0 && wheel_ != nullptr)
+            g.excludeClipRegion(wheel_->getBounds());  // keeps the playhead off the wheel
+        PianoRollContent::paintOverChildren(g);
+    }
+    paintWheelDragLabel(g);
 
     if (!copyDrag_ || blockDrag_ == BlockDrag::None)
         return;
@@ -509,6 +549,11 @@ void ChordClipContent::mouseUp(const juce::MouseEvent& e) {
     }
     if (blockDrag_ != BlockDrag::None) {
         commitBlockDrag();
+        // An alt-copy re-detects, which renumbers every chord the wheel could be following.
+        if (annotationIndexForGroup(wheelGroup_) < 0)
+            closeWheel();
+        else
+            placeWheel();
         return;
     }
     PianoRollContent::mouseUp(e);
@@ -554,13 +599,9 @@ void ChordClipContent::openChordEditor(int annIndex) {
     popup->onChange = [this, bar](ChordRoot r, ChordQuality q, int oct, int inv) {
         const auto chord =
             magda::music::ChordEngine::getInstance().buildChordInversion(r, q, inv, oct);
-        std::vector<int> pitches;
-        pitches.reserve(chord.notes.size());
-        for (const auto& note : chord.notes)
-            pitches.push_back(note.noteNumber);
         const int idx = annotationIndexAtBeat(bar + 0.001);
         if (idx >= 0)
-            replaceChordNotes(idx, pitches);
+            replaceChordNotes(idx, pitchesOf(chord));
     };
 
     juce::CallOutBox::launchAsynchronously(std::move(popup), screenArea, nullptr);
@@ -578,6 +619,7 @@ void ChordClipContent::replaceChordNotes(int annIndex, const std::vector<int>& p
     const double length = ann.lengthBeats;
     const int group = ann.chordGroup;
 
+    magda::CompoundOperationScope scope("Edit Chord");
     auto& undo = magda::UndoManager::getInstance();
 
     // Delete the chord's existing notes, then insert the new voicing at the same
@@ -613,12 +655,19 @@ void ChordClipContent::startChordPreview(int annIndex) {
     if (clip == nullptr || annIndex < 0 ||
         annIndex >= static_cast<int>(clip->chordAnnotations.size()))
         return;
-    for (int p : chordPitches(annIndex)) {
+    previewPitches(chordPitches(annIndex));
+    previewGroup_ = clip->chordAnnotations[static_cast<size_t>(annIndex)].chordGroup;
+    repaint();
+}
+
+void ChordClipContent::previewPitches(const std::vector<int>& pitches) {
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+    if (clip == nullptr)
+        return;
+    for (int p : pitches) {
         magda::TrackManager::getInstance().previewNote(clip->trackId, p, 100, true);
         previewNotes_.push_back(p);
     }
-    previewGroup_ = clip->chordAnnotations[static_cast<size_t>(annIndex)].chordGroup;
-    repaint();
 }
 
 void ChordClipContent::stopChordPreview() {
@@ -645,12 +694,15 @@ void ChordClipContent::deleteChord(int annIndex) {
 
     const auto indices = noteIndicesInChordGroup(*clip, group);
 
+    magda::CompoundOperationScope scope("Delete Chord");
     auto& undo = magda::UndoManager::getInstance();
     for (size_t idx : indices)
         undo.executeCommand(std::make_unique<magda::DeleteMidiNoteCommand>(clipId, idx));
 
     if (selectedGroup_ == group)
-        selectedGroup_ = 0;
+        selectChordGroup(0);
+    if (wheelGroup_ == group)
+        closeWheel();
     redetectChords();
     repaint();
 }
@@ -664,11 +716,7 @@ void ChordClipContent::duplicateChord(int annIndex) {
     if (pitches.empty())
         return;
     const auto& ann = clip->chordAnnotations[static_cast<size_t>(annIndex)];
-
-    double beatsPerBar = 4.0;
-    if (auto* controller = magda::TimelineController::getCurrent())
-        beatsPerBar = controller->getState().tempo.beatsPerBar();
-    const double bar = beatsPerBar;
+    const double bar = beatsPerBar();
 
     // Drop the copy in the next free bar after the chord.
     double t = ann.beatPosition + std::max(bar, ann.lengthBeats);
@@ -685,7 +733,7 @@ void ChordClipContent::showChordContextMenu(int annIndex) {
     if (clip == nullptr || annIndex < 0 ||
         annIndex >= static_cast<int>(clip->chordAnnotations.size()))
         return;
-    selectedGroup_ = clip->chordAnnotations[static_cast<size_t>(annIndex)].chordGroup;
+    selectChordGroup(clip->chordAnnotations[static_cast<size_t>(annIndex)].chordGroup);
     repaint();
     const double bar = clip->chordAnnotations[static_cast<size_t>(annIndex)].beatPosition;
 
@@ -722,10 +770,7 @@ bool ChordClipContent::insertChordAtBeat(double clipRelativeBeat, const std::vec
 
     // Chords snap to the bar so the per-bar chord detection picks them up
     // cleanly. A chord defaults to one bar long.
-    double beatsPerBar = 4.0;
-    if (auto* controller = magda::TimelineController::getCurrent())
-        beatsPerBar = controller->getState().tempo.beatsPerBar();
-    const double barBeats = beatsPerBar;
+    const double barBeats = beatsPerBar();
     const double bar = std::max(0.0, std::round(clipRelativeBeat / barBeats) * barBeats);
     constexpr int kDefaultVelocity = 100;
 
@@ -738,6 +783,7 @@ bool ChordClipContent::insertChordAtBeat(double clipRelativeBeat, const std::vec
 
     // Insert the notes, then detection builds the (linked) chord-lane block, so
     // later note edits re-sync the chord via syncChordAnnotations().
+    magda::CompoundOperationScope scope("Add Chord");
     auto& undo = magda::UndoManager::getInstance();
     for (int pitch : pitches) {
         undo.executeCommand(std::make_unique<magda::AddMidiNoteCommand>(
@@ -752,13 +798,305 @@ bool ChordClipContent::onChordRowClicked(double clipRelativeBeat) {
     // Default to a C major triad; quality/extensions get edited afterwards.
     const auto chord = magda::music::ChordEngine::getInstance().buildChordInRootPosition(
         magda::music::ChordRoot::C, magda::music::ChordQuality::Major, 4);
-    std::vector<int> pitches;
-    pitches.reserve(chord.notes.size());
-    for (const auto& note : chord.notes)
-        pitches.push_back(note.noteNumber);
-
-    insertChordAtBeat(clipRelativeBeat, pitches);
+    insertChordAtBeat(clipRelativeBeat, pitchesOf(chord));
     return true;  // consume the click either way (empty bar adds; occupied is reserved)
+}
+
+int ChordClipContent::annotationIndexForGroup(int chordGroup) const {
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+    if (clip == nullptr || chordGroup == 0)
+        return -1;
+    const auto& annotations = clip->chordAnnotations;
+    const auto it =
+        std::ranges::find(annotations, chordGroup, &magda::ClipInfo::ChordAnnotation::chordGroup);
+    return it == annotations.end()
+               ? -1
+               : static_cast<int>(std::ranges::distance(annotations.begin(), it));
+}
+
+std::optional<double> ChordClipContent::nextChordSlotBeat(int annIndex) const {
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+    if (clip == nullptr || annIndex < 0 ||
+        annIndex >= static_cast<int>(clip->chordAnnotations.size()))
+        return std::nullopt;
+    const auto& ann = clip->chordAnnotations[static_cast<size_t>(annIndex)];
+    const double bar = beatsPerBar();
+    double beat = std::ceil((ann.beatPosition + ann.lengthBeats) / bar - 1e-6) * bar;
+    for (int i = 0; i < 128; ++i, beat += bar)
+        if (annotationIndexAtBeat(beat + 0.001) < 0)
+            return beat;
+    return std::nullopt;
+}
+
+void ChordClipContent::setChordWheelOpen(bool open) {
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+    if (!open || clip == nullptr || clip->chordAnnotations.empty()) {
+        closeWheel();
+        return;
+    }
+    int idx = annotationIndexForGroup(selectedGroup_);
+    if (idx < 0) {
+        const auto& annotations = clip->chordAnnotations;
+        const auto last = std::ranges::max_element(annotations, {},
+                                                   &magda::ClipInfo::ChordAnnotation::beatPosition);
+        idx = static_cast<int>(std::ranges::distance(annotations.begin(), last));
+        selectChordGroup(last->chordGroup);
+    }
+    openWheel(idx);
+}
+
+void ChordClipContent::clipSelectionChanged(magda::ClipId clipId) {
+    PianoRollContent::clipSelectionChanged(clipId);
+    if (clipId != getEditingClipId())
+        closeWheel();
+    if (onChordSelectionChanged)
+        onChordSelectionChanged();
+}
+
+void ChordClipContent::clipPropertyChanged(magda::ClipId clipId) {
+    PianoRollContent::clipPropertyChanged(clipId);
+    if (clipId == getEditingClipId() && onChordSelectionChanged)
+        onChordSelectionChanged();
+}
+
+void ChordClipContent::selectChordGroup(int chordGroup) {
+    if (selectedGroup_ == chordGroup)
+        return;
+    selectedGroup_ = chordGroup;
+    if (onChordSelectionChanged)
+        onChordSelectionChanged();
+}
+
+std::optional<FifthsSource> ChordClipContent::selectedChordSource() const {
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+    const int idx = annotationIndexForGroup(selectedGroup_);
+    if (clip == nullptr || idx < 0)
+        return std::nullopt;
+    const auto& ann = clip->chordAnnotations[static_cast<size_t>(idx)];
+    const auto spec = magda::music::ChordEngine::parseChordName(ann.chordName);
+    const auto pitches = chordPitches(idx);
+    return FifthsSource{spec.root, spec.quality,
+                        magda::music::NotationSettings::getInstance().format(ann.chordName),
+                        progressionKey(*clip),
+                        pitches.empty() ? 4 : std::ranges::min(pitches) / 12 - 1};
+}
+
+void ChordClipContent::openWheel(int annIndex) {
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+    if (clip == nullptr || annIndex < 0 ||
+        annIndex >= static_cast<int>(clip->chordAnnotations.size()))
+        return;
+    const auto& ann = clip->chordAnnotations[static_cast<size_t>(annIndex)];
+
+    if (wheel_ == nullptr) {
+        wheel_ = std::make_unique<ChordWheel>();
+        wheel_->onPick = [this](ChordRoot root, ChordQuality quality) {
+            pickFromWheel(root, quality);
+        };
+        wheel_->onAuditionStart = [this](ChordRoot root, ChordQuality quality) {
+            auditionFromWheel(root, quality);
+        };
+        wheel_->onAuditionStop = [this] { stopChordPreview(); };
+        wheel_->onDragMove = [this](ChordRoot root, ChordQuality quality, juce::Point<int> point) {
+            wheelDragPoint_ = wheel_->getPosition() + point;
+            wheelDragLabel_ = ChordWheel::labelFor(root, quality);
+            repaint();
+        };
+        wheel_->onDragEnd = [this](ChordRoot root, ChordQuality quality, juce::Point<int> point) {
+            const auto drop = wheel_->getPosition() + point;
+            wheelDragPoint_.reset();
+            repaint();
+            const auto slot = nextChordSlotArea(annotationIndexForGroup(wheelGroup_));
+            if (slot.has_value() && slot->contains(drop))
+                pickFromWheel(root, quality);
+        };
+        wheel_->onDismiss = [this] {
+            closeWheel();
+            grabKeyboardFocus();
+        };
+        addChildComponent(*wheel_);
+    }
+
+    const auto spec = magda::music::ChordEngine::parseChordName(ann.chordName);
+    wheelGroup_ = ann.chordGroup;
+    wheel_->setSource(spec.root, spec.quality,
+                      magda::music::NotationSettings::getInstance().format(ann.chordName),
+                      progressionKey(*clip));
+    placeWheel();
+    wheel_->setVisible(true);
+    wheel_->toFront(false);
+    wheel_->grabKeyboardFocus();
+    repaint();
+    if (onChordWheelOpenChanged)
+        onChordWheelOpenChanged(true);
+}
+
+void ChordClipContent::closeWheel() {
+    if (wheelGroup_ == 0)
+        return;
+    wheelGroup_ = 0;
+    wheelDragPoint_.reset();
+    if (wheel_ != nullptr)
+        wheel_->setVisible(false);
+    repaint();
+    if (onChordWheelOpenChanged)
+        onChordWheelOpenChanged(false);
+}
+
+void ChordClipContent::placeWheel() {
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+    const int idx = annotationIndexForGroup(wheelGroup_);
+    if (wheel_ == nullptr || clip == nullptr || idx < 0)
+        return;
+    const auto& ann = clip->chordAnnotations[static_cast<size_t>(idx)];
+
+    const auto slotArea = nextChordSlotArea(idx);
+    const int clearOf = slotArea.has_value() ? slotArea->getRight()
+                                             : chordRowXForBeat(ann.beatPosition + ann.lengthBeats);
+    const int laneLeft = chordLaneLeftX();
+    const int laneMiddle = chordRowTop() + laneHeight_ / 2;
+    const int laneBottom = chordRowTop() + laneHeight_;
+    const int blockLeft = chordRowXForBeat(ann.beatPosition);
+
+    // The wheel never covers the "+" it is dragged onto: right of it, else left of the chord, else
+    // under the lane, shrunk to the roomiest of them when none takes it whole.
+    const std::array<juce::Rectangle<int>, 3> rooms{
+        juce::Rectangle<int>::leftTopRightBottom(clearOf + kWheelGap, 0, getWidth(), getHeight()),
+        juce::Rectangle<int>::leftTopRightBottom(laneLeft, 0, blockLeft - kWheelGap, getHeight()),
+        juce::Rectangle<int>::leftTopRightBottom(laneLeft, laneBottom + kWheelGap, getWidth(),
+                                                 getHeight())};
+    const auto sizeIn = [](juce::Rectangle<int> room) {
+        return std::max(0, std::min({kMaxWheelSize, room.getWidth(), room.getHeight()}));
+    };
+    size_t best = 0;
+    for (size_t i = 0; i < rooms.size(); ++i) {
+        if (sizeIn(rooms[i]) == kMaxWheelSize) {
+            best = i;
+            break;
+        }
+        if (sizeIn(rooms[i]) > sizeIn(rooms[best]))
+            best = i;
+    }
+    const auto& room = rooms[best];
+    const int size = sizeIn(room);
+    const juce::Point<int> anchors[] = {
+        {room.getX() + size / 2, laneMiddle},
+        {room.getRight() - size / 2, laneMiddle},
+        {slotArea.has_value() ? slotArea->getCentreX() : clearOf, room.getY() + size / 2}};
+    wheel_->setBounds(
+        juce::Rectangle<int>(size, size).withCentre(anchors[best]).constrainedWithin(room));
+}
+
+void ChordClipContent::onChordLaneMoved() {
+    placeWheel();
+    repaint();
+}
+
+std::vector<int> ChordClipContent::wheelChordPitches(ChordRoot root, ChordQuality quality) const {
+    const auto source = chordPitches(annotationIndexForGroup(wheelGroup_));
+    const int octave = source.empty() ? 4 : std::ranges::min(source) / 12 - 1;
+    return pitchesOf(magda::music::ChordEngine::buildChordInRootPosition(root, quality, octave));
+}
+
+void ChordClipContent::auditionFromWheel(ChordRoot root, ChordQuality quality) {
+    stopChordPreview();
+    previewPitches(wheelChordPitches(root, quality));
+}
+
+void ChordClipContent::pickFromWheel(ChordRoot root, ChordQuality quality) {
+    const auto slot = nextChordSlotBeat(annotationIndexForGroup(wheelGroup_));
+    const auto pitches = wheelChordPitches(root, quality);
+    closeWheel();
+    grabKeyboardFocus();
+    if (!slot.has_value() || !insertChordAtBeat(*slot, pitches))
+        return;
+
+    // The new chord becomes the selection, so the next "+" follows it.
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+    if (const int added = annotationIndexAtBeat(*slot + 0.001); clip != nullptr && added >= 0)
+        selectChordGroup(clip->chordAnnotations[static_cast<size_t>(added)].chordGroup);
+    repaint();
+}
+
+void ChordClipContent::resized() {
+    PianoRollContent::resized();
+    placeWheel();
+}
+
+void ChordClipContent::paint(juce::Graphics& g) {
+    PianoRollContent::paint(g);
+    paintNextChordSlot(g);
+}
+
+std::optional<juce::Rectangle<int>> ChordClipContent::nextChordSlotArea(int annIndex) const {
+    const auto slot = nextChordSlotBeat(annIndex);
+    if (!slot.has_value())
+        return std::nullopt;
+    const int x1 = std::max(chordLaneLeftX(), chordRowXForBeat(*slot));
+    const int x2 = chordRowXForBeat(*slot + beatsPerBar());
+    if (x2 - x1 < 12)
+        return std::nullopt;
+    return juce::Rectangle<int>(x1 + 1, chordRowTop() + 4, x2 - x1 - 2, chordRowHeight() - 8);
+}
+
+void ChordClipContent::paintNextChordSlot(juce::Graphics& g) {
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+    const int selected = annotationIndexForGroup(selectedGroup_);
+    const auto slotArea = nextChordSlotArea(selected);
+    if (clip == nullptr || !slotArea.has_value())
+        return;
+
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
+    const auto colour = accent.withAlpha(0.6f);
+    const auto area = slotArea->toFloat().reduced(0.5f);
+    if (wheelDragPoint_.has_value() && slotArea->contains(*wheelDragPoint_)) {
+        g.setColour(accent.withAlpha(0.2f));
+        g.fillRoundedRectangle(area, 4.0f);
+    }
+    juce::Path outline;
+    outline.addRoundedRectangle(area, 4.0f);
+    juce::Path dashed;
+    const float dashes[] = {4.0f, 3.0f};
+    juce::PathStrokeType(1.0f).createDashedStroke(dashed, outline, dashes, 2);
+    g.setColour(colour);
+    g.fillPath(dashed);
+    const auto c = area.getCentre();
+    const float arm = 6.0f;
+    g.drawLine(c.x - arm, c.y, c.x + arm, c.y, 1.5f);
+    g.drawLine(c.x, c.y - arm, c.x, c.y + arm, 1.5f);
+
+    // A line to the wheel from the "+", or from the chord when the wheel sits on its left.
+    if (wheel_ == nullptr || wheelGroup_ != selectedGroup_)
+        return;
+    const auto centre = wheel_->getBounds().toFloat().getCentre();
+    const float radius = wheel_->discRadius();
+    const float y = juce::jlimit(area.getY(), area.getBottom(), centre.y);
+    const float dy = y - centre.y;
+    if (std::abs(dy) >= radius)
+        return;
+    const float halfWidth = std::sqrt(radius * radius - dy * dy);
+    if (centre.x > area.getRight()) {
+        if (const float rimX = centre.x - halfWidth; rimX > area.getRight())
+            g.drawLine(area.getRight(), y, rimX, y, 1.0f);
+    } else {
+        const auto& ann = clip->chordAnnotations[static_cast<size_t>(selected)];
+        const auto blockLeft = static_cast<float>(chordRowXForBeat(ann.beatPosition));
+        if (const float rimX = centre.x + halfWidth; rimX < blockLeft)
+            g.drawLine(rimX, y, blockLeft, y, 1.0f);
+    }
+}
+
+void ChordClipContent::paintWheelDragLabel(juce::Graphics& g) {
+    if (!wheelDragPoint_.has_value())
+        return;
+    const auto font = FontManager::getInstance().getUIFontMedium(13.0f);
+    const int width = juce::GlyphArrangement::getStringWidthInt(font, wheelDragLabel_) + 16;
+    const auto label = juce::Rectangle<int>(width, 22).withCentre(*wheelDragPoint_).toFloat();
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    g.fillRoundedRectangle(label, 4.0f);
+    g.setColour(juce::Colours::white);
+    g.setFont(font);
+    g.drawText(wheelDragLabel_, label, juce::Justification::centred, false);
 }
 
 bool ChordClipContent::isInterestedInFileDrag(const juce::StringArray& files) {
