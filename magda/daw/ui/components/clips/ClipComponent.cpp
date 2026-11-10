@@ -1518,8 +1518,8 @@ bool ClipComponent::hitTest(int x, int y) {
     // Selection edges remain draggable across the lane. Inside the selection,
     // only the lower time-selection zone passes through to the panel; the upper
     // zone must still be able to start an ordinary clip drag after a trim. The
-    // copy-drag modifier passes through there too, so it copies the selection
-    // the plain drag would move rather than this whole clip (#3308).
+    // copy-drag modifier passes through anywhere inside the selection, so it
+    // copies the selected slice rather than this whole clip (#3308).
     if (parentPanel_ != nullptr) {
         const auto mods = juce::ModifierKeys::getCurrentModifiers();
         if (!mods.isPopupMenu() && !isOnLeftEdge(x) && !isOnRightEdge(x)) {
@@ -1530,8 +1530,8 @@ bool ClipComponent::hitTest(int x, int y) {
             const int panelY = getY() + y;
             if (parentPanel_->pointOnTimeSelectionEdge(panelX, panelY))
                 return !plain;
-            if ((plain || copyDrag) && !parentPanel_->pointInUpperTrackZone(panelY) &&
-                parentPanel_->pointInTimeSelection(panelX, panelY))
+            if (parentPanel_->pointInTimeSelection(panelX, panelY) &&
+                (copyDrag || (plain && !parentPanel_->pointInUpperTrackZone(panelY))))
                 return false;
         }
     }

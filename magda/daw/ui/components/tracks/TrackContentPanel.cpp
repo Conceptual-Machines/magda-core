@@ -2463,8 +2463,9 @@ void TrackContentPanel::updateCursorForPosition(int x, int y) {
     }
     // Zone model + cursor policy live in the shared hit tester (#1719), so
     // the cursor and the mouseDown gesture can never disagree.
-    const auto zone = interaction::panelZone(x, y, makePanelHitSnapshot(x, y));
-    setMouseCursor(interaction::toJuceCursor(interaction::panelCursor(zone)));
+    const auto hit = interaction::panelHit(x, y, makePanelHitSnapshot(x, y));
+    const auto mods = interaction::ModifierSnapshot::from(juce::ModifierKeys::currentModifiers);
+    setMouseCursor(interaction::toJuceCursor(interaction::panelCursor(hit, mods)));
 }
 
 bool TrackContentPanel::canDrawClipAt(int x, int y) {

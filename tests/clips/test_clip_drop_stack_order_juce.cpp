@@ -199,6 +199,41 @@ class ClipDropStackOrderJuceTest final : public juce::UnitTest {
         testTrimmedClipMovedOntoAnotherLandsInFront();
         testTrimmedClipCopiedOntoAnotherLandsInFront();
         testOptionDragInSelectionCopiesOnlyTheSlice();
+        testOptionPressInSelectionGoesToTheSelection();
+    }
+
+    // hitTest reads the live modifiers, so they are set for the check and restored after.
+    void testOptionPressInSelectionGoesToTheSelection() {
+        beginTest("Option inside a time selection reaches the selection from either half");
+
+        magda::test::runWithCleanJuceState([this] {
+            StackFixture f(true);
+            f.controller.dispatch(SetTimeSelectionBeatsEvent{2.0, 4.0, {0}});
+            auto* clip = f.clipComponentDrawnAt(3.0);
+            expect(clip != nullptr && clip->getClipId() == f.earlier, "the clip is under beat 3");
+            if (clip == nullptr)
+                return;
+
+            const auto clipTakes = [&](int panelY, juce::ModifierKeys mods) {
+                const auto saved = juce::ModifierKeys::currentModifiers;
+                juce::ModifierKeys::currentModifiers = mods;
+                const auto local =
+                    clip->getLocalPoint(&f.panel, juce::Point<int>{f.x(3.0), panelY});
+                const bool taken = clip->hitTest(local.x, local.y);
+                juce::ModifierKeys::currentModifiers = saved;
+                return taken;
+            };
+            const juce::ModifierKeys option(juce::ModifierKeys::altModifier);
+
+            expect(!clipTakes(f.upperY(), option),
+                   "Option in the upper half goes to the selection");
+            expect(!clipTakes(f.lowerY(), option),
+                   "Option in the lower half goes to the selection");
+            expect(clipTakes(f.upperY(), {}),
+                   "a plain press in the upper half still drags the clip");
+            expect(!clipTakes(f.lowerY(), {}),
+                   "a plain press in the lower half moves the selection");
+        });
     }
 
   private:
