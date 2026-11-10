@@ -556,9 +556,6 @@ void TrackContentPanel::paint(juce::Graphics& g) {
             paintTrackLane(g, *trackLanes[i], laneArea, laneSelected, static_cast<int>(i));
         }
     }
-
-    // Ghost clips are drawn behind clips (part of background)
-    paintClipGhosts(g);
 }
 
 juce::RectangleList<int> TrackContentPanel::getVisibleClipBounds() const {
@@ -579,6 +576,9 @@ juce::RectangleList<int> TrackContentPanel::getVisibleClipBounds() const {
 
 void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
     const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
+
+    // A copy or cross-track move lands on top of the clips it covers, so its preview does too.
+    paintClipGhosts(g);
 
     // Draw marker guide lines above clips so cue points remain visible in the arrangement.
     paintMarkerGuides(g);

@@ -3,10 +3,11 @@
 
 /**
  * @file test_clip_drop_stack_order_juce.cpp
- * @brief A clip dropped onto another lands in front of it, drawn and heard (#3308).
+ * @brief A clip dragged onto another is in front of it, while dragged and once dropped (#3308).
  *
  * Replays the reported gesture on the real panel: trim a clip with a time-selection edge, then
- * drag it onto a later clip, once as a move and once as an Alt-drag copy.
+ * drag it onto a later clip, once as a move and once as an Alt-drag copy, whose preview is
+ * checked mid-drag too.
  */
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -52,13 +53,35 @@ juce::MouseEvent mouseEvent(juce::Component& panel, juce::Component& target,
             dragged};
 }
 
-/** @brief Press, drag and release on @p target, from @p from to @p to in panel coordinates. */
-void dragGesture(juce::Component& panel, juce::Component& target, juce::Point<int> from,
-                 juce::Point<int> to, juce::ModifierKeys mods = {}) {
+/** @brief Press on @p target and drag it, from @p from to @p to in panel coordinates. */
+void pressAndDrag(juce::Component& panel, juce::Component& target, juce::Point<int> from,
+                  juce::Point<int> to, juce::ModifierKeys mods = {}) {
     const auto pressed = mods.withFlags(juce::ModifierKeys::leftButtonModifier);
     target.mouseDown(mouseEvent(panel, target, from, from, pressed, false));
     target.mouseDrag(mouseEvent(panel, target, to, from, pressed, true));
+}
+
+/** @brief Release a drag started with pressAndDrag. */
+void release(juce::Component& panel, juce::Component& target, juce::Point<int> from,
+             juce::Point<int> to, juce::ModifierKeys mods = {}) {
     target.mouseUp(mouseEvent(panel, target, to, from, mods, true));
+}
+
+/** @brief Press, drag and release on @p target, from @p from to @p to in panel coordinates. */
+void dragGesture(juce::Component& panel, juce::Component& target, juce::Point<int> from,
+                 juce::Point<int> to, juce::ModifierKeys mods = {}) {
+    pressAndDrag(panel, target, from, to, mods);
+    release(panel, target, from, to, mods);
+}
+
+/** @brief How many pixels inside @p area differ between two renders of the same size. */
+int pixelsDifferingIn(const juce::Image& a, const juce::Image& b, juce::Rectangle<int> area) {
+    int differing = 0;
+    for (int y = area.getY(); y < area.getBottom(); ++y)
+        for (int x = area.getX(); x < area.getRight(); ++x)
+            if (a.getPixelAt(x, y) != b.getPixelAt(x, y))
+                ++differing;
+    return differing;
 }
 
 /**
@@ -133,6 +156,14 @@ struct StackFixture {
         return clipComp != nullptr ? clipComp->getClipId() : INVALID_CLIP_ID;
     }
 
+    /** @brief The panel as painted: lanes, clips and overlays. */
+    juce::Image render() {
+        juce::Image image(juce::Image::ARGB, panel.getWidth(), panel.getHeight(), true);
+        juce::Graphics g(image);
+        panel.paintEntireComponent(g, false);
+        return image;
+    }
+
     std::unordered_map<ClipId, AudibleSpan> audibleSpans() const {
         std::vector<ClipInfo> laneClips;
         for (auto clipId : ClipManager::getInstance().getClipsOnTrack(track))
@@ -192,21 +223,34 @@ class ClipDropStackOrderJuceTest final : public juce::UnitTest {
     }
 
     void testTrimmedClipCopiedOntoAnotherLandsInFront() {
-        beginTest("A trimmed clip Alt-dragged onto another puts the copy in front");
+        beginTest("A trimmed clip Alt-dragged onto another shows and lands the copy in front");
 
         magda::test::runWithCleanJuceState([this] {
             StackFixture f;
             f.trimEarlierClip();
+            // A colour of its own, so its preview cannot blend into the clip it covers.
+            ClipManager::getInstance().setClipColour(f.earlier, juce::Colours::red);
 
             auto* source = f.clipComponentDrawnAt(2.0);
+            const auto* target = f.clipComponentDrawnAt(14.0);
             expect(source != nullptr && source->getClipId() == f.earlier,
                    "the trimmed clip should be under the pointer");
-            if (source == nullptr)
+            if (source == nullptr || target == nullptr)
                 return;
+            const auto targetArea = target->getBounds();
 
             const auto before = ClipManager::getInstance().getClipsOnTrack(f.track);
-            dragGesture(f.panel, *source, {f.x(2.0), f.upperY()}, {f.x(14.0), f.upperY()},
-                        juce::ModifierKeys(juce::ModifierKeys::altModifier));
+            const juce::Point<int> from{f.x(2.0), f.upperY()};
+            const juce::Point<int> to{f.x(14.0), f.upperY()};
+            const auto alt = juce::ModifierKeys(juce::ModifierKeys::altModifier);
+
+            const auto notDragging = f.render();
+            pressAndDrag(f.panel, *source, from, to, alt);
+            const auto dragging = f.render();
+            const int area = targetArea.getWidth() * targetArea.getHeight();
+            expect(pixelsDifferingIn(notDragging, dragging, targetArea) > area / 2,
+                   "while dragging, the copy should be drawn over the clip it is dragged onto");
+            release(f.panel, *source, from, to, alt);
 
             ClipId copy = INVALID_CLIP_ID;
             for (auto clipId : ClipManager::getInstance().getClipsOnTrack(f.track))
