@@ -406,10 +406,16 @@ class TrackContentPanel : public juce::Component,
     };
     std::vector<TimeSelectionClipInfo> clipsInTimeSelection_;
     bool needsSplitOnFirstDrag_ = false;
+    /// The copy-drag modifier turns a selection move into a copy of the selected slice (#3308).
+    bool isCopyingSelection_ = false;
     void splitClipsAtSelectionBoundaries();
     void captureClipsInTimeSelection();
     void moveClipsWithTimeSelection(double deltaTime);
     void commitClipsInTimeSelection(double deltaTime);
+    /** @brief Ghost each captured clip's selected slice at its drop position. */
+    void previewSelectionCopy(double deltaTime);
+    /** @brief Copy each captured clip's selected slice @p deltaTime later, leaving it whole. */
+    void commitSelectionCopy(double deltaTime);
 
     // Clips captured during time selection resize (for trim-on-drag)
     struct ClipOriginalData {
@@ -445,6 +451,8 @@ class TrackContentPanel : public juce::Component,
     std::vector<std::unique_ptr<ClipComponent>> clipComponents_;
     void rebuildClipComponents();
     void updateClipComponentPositions();
+    /** @brief Match child z-order to the lane stacking order (#2003) without a rebuild. */
+    void restackClipComponents();
     void createClipFromTimeSelection();  // Called on double-click with selection
     void createMidiClipAtPosition(TrackId trackId, double startTime);
     void createMidiClipFromBeatRange(TrackId trackId, double startBeat, double endBeat);

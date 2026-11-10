@@ -1517,18 +1517,22 @@ bool ClipComponent::hitTest(int x, int y) {
 
     // Selection edges remain draggable across the lane. Inside the selection,
     // only the lower time-selection zone passes through to the panel; the upper
-    // zone must still be able to start an ordinary clip drag after a trim.
+    // zone must still be able to start an ordinary clip drag after a trim. The
+    // copy-drag modifier passes through anywhere inside the selection, so it
+    // copies the selected slice rather than this whole clip (#3308).
     if (parentPanel_ != nullptr) {
         const auto mods = juce::ModifierKeys::getCurrentModifiers();
-        if (!mods.isAnyModifierKeyDown() && !mods.isPopupMenu() && !isOnLeftEdge(x) &&
-            !isOnRightEdge(x)) {
+        if (!mods.isPopupMenu() && !isOnLeftEdge(x) && !isOnRightEdge(x)) {
+            const bool plain = !mods.isAnyModifierKeyDown();
+            const bool copyDrag = magda::GestureRouter::getInstance().isDuplicateOnDrag(
+                magda::GestureContext::Arrangement, mods);
             const int panelX = getX() + x;
             const int panelY = getY() + y;
-            if (parentPanel_->pointOnTimeSelectionEdge(panelX, panelY) ||
-                (!parentPanel_->pointInUpperTrackZone(panelY) &&
-                 parentPanel_->pointInTimeSelection(panelX, panelY))) {
+            if (parentPanel_->pointOnTimeSelectionEdge(panelX, panelY))
+                return !plain;
+            if (parentPanel_->pointInTimeSelection(panelX, panelY) &&
+                (copyDrag || (plain && !parentPanel_->pointInUpperTrackZone(panelY))))
                 return false;
-            }
         }
     }
 

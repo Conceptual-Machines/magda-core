@@ -138,6 +138,13 @@ CursorKind panelCursor(PanelZone zone) {
     return CursorKind::Normal;
 }
 
+CursorKind panelCursor(const PanelHit& hit, const ModifierSnapshot& mods) {
+    const bool optionAlone = mods.alt && !mods.shift && !mods.command && !mods.ctrl;
+    if (optionAlone && hit.insideSelection && !hit.onSelectionEdge)
+        return CursorKind::Copying;
+    return panelCursor(hit.zone);
+}
+
 // ============================================================================
 // Clip surface
 // ============================================================================

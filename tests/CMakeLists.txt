@@ -911,6 +911,7 @@ target_sources(magda_juce_tests PRIVATE
     clips/test_clip_paint_juce.cpp
     clips/test_clip_nudge_juce.cpp
     clips/test_clip_drag_targets_juce.cpp
+    clips/test_clip_drop_stack_order_juce.cpp
     # A .mid dropped on the chord track arrives as chords
     ui/test_chord_track_file_drop_juce.cpp
     # Mods and macros panels and folded inspector sections start hidden

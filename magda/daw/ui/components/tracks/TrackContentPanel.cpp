@@ -187,6 +187,17 @@ std::vector<FileDropGhost> makeMidiDropGhosts(const juce::File& midiFile, double
     return ghosts;
 }
 
+using DrawOrder = std::tuple<int, double, ClipId>;
+
+/**
+ * @brief Bottom-to-top draw order: the lane's stacking order (#2003), so the clip on top is heard.
+ *
+ * Start beat breaks ties, keeping a later clip above the one it crossfades into (#1499).
+ */
+DrawOrder clipDrawOrder(const ClipInfo& clip) {
+    return {clip.stackOrder, clip.placement.startBeat, clip.id};
+}
+
 }  // namespace
 
 TrackContentPanel::TrackContentPanel() {
@@ -545,9 +556,6 @@ void TrackContentPanel::paint(juce::Graphics& g) {
             paintTrackLane(g, *trackLanes[i], laneArea, laneSelected, static_cast<int>(i));
         }
     }
-
-    // Ghost clips are drawn behind clips (part of background)
-    paintClipGhosts(g);
 }
 
 juce::RectangleList<int> TrackContentPanel::getVisibleClipBounds() const {
@@ -568,6 +576,9 @@ juce::RectangleList<int> TrackContentPanel::getVisibleClipBounds() const {
 
 void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
     const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
+
+    // A copy or cross-track move lands on top of the clips it covers, so its preview does too.
+    paintClipGhosts(g);
 
     // Draw marker guide lines above clips so cue points remain visible in the arrangement.
     paintMarkerGuides(g);
@@ -1234,6 +1245,7 @@ bool TrackContentPanel::tryBeginTimeSelectionGrab(const juce::MouseEvent& event)
         // On the edge of the selection - prepare to resize (and trim clips).
         const auto& selection = timelineController->getState().selection;
         isMovingSelection = false;
+        isCopyingSelection_ = false;
         isCreatingSelection = false;
         currentDragType_ =
             isLeftEdge ? DragType::ResizeSelectionLeft : DragType::ResizeSelectionRight;
@@ -1272,6 +1284,8 @@ bool TrackContentPanel::tryBeginTimeSelectionGrab(const juce::MouseEvent& event)
         // clips at the selection boundaries on the first drag motion).
         const auto& selection = timelineController->getState().selection;
         isMovingSelection = true;
+        isCopyingSelection_ =
+            GestureRouter::getInstance().isDuplicateOnDrag(GestureContext::Arrangement, event.mods);
         isCreatingSelection = false;
         currentDragType_ = DragType::MoveSelection;
         moveDragStartTime = pixelToTime(event.x);
@@ -1525,10 +1539,11 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
                                         moveSelectionOriginalTracks);
         }
     } else if (isMovingSelection) {
-        // Split clips at selection boundaries on first drag motion
+        // Split clips at selection boundaries on first drag motion; a copy leaves them whole.
         if (needsSplitOnFirstDrag_) {
             needsSplitOnFirstDrag_ = false;
-            splitClipsAtSelectionBoundaries();
+            if (!isCopyingSelection_)
+                splitClipsAtSelectionBoundaries();
             captureClipsInTimeSelection();
         }
 
@@ -1563,7 +1578,10 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
         }
 
         // Move clips visually along with the time selection
-        moveClipsWithTimeSelection(deltaTime);
+        if (isCopyingSelection_)
+            previewSelectionCopy(deltaTime);
+        else
+            moveClipsWithTimeSelection(deltaTime);
 
         // Notify about selection change (preserve original track indices)
         if (onTimeSelectionBeatsChanged) {
@@ -1797,11 +1815,21 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
             deltaTime = (timelineLength - duration) - moveSelectionOriginalStart;
         }
 
-        // Commit clip positions
-        commitClipsInTimeSelection(deltaTime);
+        if (!isCopyingSelection_) {
+            commitClipsInTimeSelection(deltaTime);
+        } else if (!needsSplitOnFirstDrag_) {
+            commitSelectionCopy(deltaTime);
+        } else if (timelineController) {
+            // The copy modifier released without a drag places the edit cursor, as on a clip.
+            double cursorSeconds = pixelToTime(event.x);
+            if (snapTimeToGrid)
+                cursorSeconds = snapTimeToGrid(cursorSeconds);
+            timelineController->dispatch(SetEditCursorEvent{secondsToBeats(cursorSeconds)});
+        }
 
         // Finalize move - the selection has already been updated via mouseDrag
         isMovingSelection = false;
+        isCopyingSelection_ = false;
         needsSplitOnFirstDrag_ = false;
         moveDragStartTime = -1.0;
         moveSelectionOriginalStart = -1.0;
@@ -2435,8 +2463,9 @@ void TrackContentPanel::updateCursorForPosition(int x, int y) {
     }
     // Zone model + cursor policy live in the shared hit tester (#1719), so
     // the cursor and the mouseDown gesture can never disagree.
-    const auto zone = interaction::panelZone(x, y, makePanelHitSnapshot(x, y));
-    setMouseCursor(interaction::toJuceCursor(interaction::panelCursor(zone)));
+    const auto hit = interaction::panelHit(x, y, makePanelHitSnapshot(x, y));
+    const auto mods = interaction::ModifierSnapshot::from(juce::ModifierKeys::currentModifiers);
+    setMouseCursor(interaction::toJuceCursor(interaction::panelCursor(hit, mods)));
 }
 
 bool TrackContentPanel::canDrawClipAt(int x, int y) {
@@ -2578,6 +2607,7 @@ void TrackContentPanel::clipPropertyChanged(ClipId clipId) {
             // Update all clip positions (updateClipComponentPositions already
             // skips dragging clips internally)
             updateClipComponentPositions();
+            restackClipComponents();
 
             // What one clip draws depends on the clips it overlaps: AUTO-XFADE
             // or play-through on this one changes the fade its neighbour draws
@@ -2626,17 +2656,9 @@ void TrackContentPanel::rebuildClipComponents() {
     // Remove all existing clip components
     clipComponents_.clear();
 
-    // Get only arrangement clips (timeline-based). Child z-order follows the
-    // lane's stacking order, so what you see matches what you hear: the clip on
-    // top is the one that owns the span it covers (#2003), and it is the clip
-    // drawn over the one underneath. Start beat breaks ties within a stack
-    // level, which keeps a later clip above the one it crossfades into (#1499)
-    // instead of following hash-map iteration order.
+    // Arrangement clips only, added bottom to top so child z-order is the draw order.
     auto clips = ClipManager::getInstance().getArrangementClips();
-    const auto stackThenStart = [](const ClipInfo& clip) {
-        return std::tuple{clip.stackOrder, clip.placement.startBeat, clip.id};
-    };
-    std::ranges::sort(clips, {}, stackThenStart);
+    std::ranges::sort(clips, {}, clipDrawOrder);
 
     // Create a component for each clip that belongs to a visible track
     for (const auto& clip : clips) {
@@ -2877,6 +2899,30 @@ void TrackContentPanel::updateClipComponentPositions() {
             clipComp->setBounds(newBounds);
         clipComp->setVisible(true);
     }
+}
+
+void TrackContentPanel::restackClipComponents() {
+    // A move or trim raises a clip's stackOrder with only a property change, which does not
+    // rebuild, so the child order is brought back in line here. A clip mid-drag stays on top.
+    struct Entry {
+        ClipComponent* component;
+        DrawOrder drawOrder;
+    };
+    auto& clipManager = ClipManager::getInstance();
+    std::vector<Entry> order;  // current child order, bottom to top
+    for (auto* child : getChildren()) {
+        auto* clipComp = dynamic_cast<ClipComponent*>(child);
+        if (clipComp == nullptr || clipComp->isCurrentlyDragging())
+            continue;
+        if (const auto* clip = clipManager.getClip(clipComp->getClipId()))
+            order.push_back({clipComp, clipDrawOrder(*clip)});
+    }
+    if (std::ranges::is_sorted(order, {}, &Entry::drawOrder))
+        return;
+
+    std::ranges::sort(order, {}, &Entry::drawOrder);
+    for (size_t i = order.size(); i-- > 1;)
+        order[i - 1].component->toBehind(order[i].component);
 }
 
 // ============================================================================
