@@ -14,7 +14,8 @@
 
 /**
  * @file NoteOnTap.hpp
- * @brief Which notes started at a point in the MIDI, for a pad's trigger light (#2669).
+ * @brief Which notes started at a point in the MIDI, for a pad's trigger light (#2669), and
+ *        whether they have all ended, for the model's note-triggered modifiers (#3305).
  */
 
 namespace magda::engine {
@@ -32,12 +33,22 @@ class NoteOnTap final : public MidiTap {
     void write(const juce::MidiBuffer& midi, const BlockInfo& /*block*/) override {
         for (const auto metadata : midi) {
             const auto message = metadata.getMessage();
-            if (!message.isNoteOn())
-                continue;
-
-            const auto note = static_cast<unsigned>(message.getNoteNumber());
-            words_[note / 64].fetch_or(std::uint64_t{1} << (note % 64), std::memory_order_acq_rel);
+            if (message.isNoteOn()) {
+                const auto note = static_cast<unsigned>(message.getNoteNumber());
+                words_[note / 64].fetch_or(std::uint64_t{1} << (note % 64),
+                                           std::memory_order_acq_rel);
+                ++held_;
+            } else if (message.isNoteOff(true) && held_ > 0) {
+                --held_;
+                if (held_ == 0)
+                    ended_.store(true, std::memory_order_release);
+            } else if (message.isAllNotesOff() || message.isAllSoundOff()) {
+                if (held_ > 0)
+                    ended_.store(true, std::memory_order_release);
+                held_ = 0;
+            }
         }
+        holding_.store(held_ > 0, std::memory_order_release);
     }
 
     /** @brief Take the notes started since the last take. Off the audio thread. */
@@ -52,8 +63,18 @@ class NoteOnTap final : public MidiTap {
         return notes;
     }
 
+    /** @brief Whether every note has ended since the last take and none is held now. */
+    bool takeEnded() {
+        return ended_.exchange(false, std::memory_order_acq_rel) &&
+               !holding_.load(std::memory_order_acquire);
+    }
+
   private:
     std::array<std::atomic<std::uint64_t>, 2> words_{};
+    /// Written by the audio thread alone; a stray note-off cannot take it below zero.
+    int held_ = 0;
+    std::atomic<bool> ended_{false};
+    std::atomic<bool> holding_{false};
 };
 
 }  // namespace magda::engine

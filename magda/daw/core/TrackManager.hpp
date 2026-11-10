@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <vector>
 
 #include "ChainIdRemap.hpp"
@@ -1197,6 +1198,8 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
      */
     void triggerMidiNoteOn(TrackId trackId);
     void triggerMidiNoteOff(TrackId trackId);
+    /** @brief Signal that every note the engine played on a track has ended (#3305). */
+    void triggerMidiNotesEnded(TrackId trackId);
 
     /** Look up a ModInfo by its id across all devices and racks on a track. */
     const ModInfo* getModById(TrackId trackId, ModId modId) const;
@@ -1462,6 +1465,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // Written from MIDI thread, read from timer thread
     std::map<TrackId, int> pendingMidiNoteOns_;   // per-track note-on count (consumed each tick)
     std::map<TrackId, int> pendingMidiNoteOffs_;  // per-track note-off count (consumed each tick)
+    std::set<TrackId> pendingMidiNotesEnded_;     // tracks whose engine notes all ended
     std::mutex midiTriggerMutex_;
 
     // Per-track held note count (persists across ticks, updated in updateAllMods)

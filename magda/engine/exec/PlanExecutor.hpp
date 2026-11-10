@@ -809,8 +809,8 @@ class PlanExecutor {
     std::vector<LevelTap*> meterForOp_;
     int boundMeterCount_ = 0;
 
-    /// Where a MergeMidi or MidiNoteGate op publishes what reached it, or nullptr. See
-    /// PlanBindings::midiTaps.
+    /// Where a MergeMidi, MidiNoteGate or ModSource op publishes the MIDI it read, or
+    /// nullptr. See PlanBindings::midiTaps.
     std::vector<MidiTap*> midiTapForOp_;
 
     /** @brief One value the block publishes for whoever is drawing it (#2122). */
@@ -1014,7 +1014,7 @@ class PlanExecutor {
     void publishValueTaps(const ParamTable& table, int only);
 
     /// Spend the notes in @p midi on the modifiers listening to @p op's track.
-    void feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi);
+    void feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi, const BlockInfo& block);
 
     /** @brief The parameters a mixer op reads instead of the published value. */
     struct OpMixerParams {
