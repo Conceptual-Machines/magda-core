@@ -84,8 +84,12 @@ int pixelsDifferingIn(const juce::Image& a, const juce::Image& b, juce::Rectangl
     return differing;
 }
 
+bool near(double actual, double expected) {
+    return std::abs(actual - expected) < 1.0e-6;
+}
+
 /**
- * @brief One lane with an 8-beat clip at 0 and a 4-beat clip at 12.
+ * @brief One lane with an 8-beat clip at 0 and a 4-beat MIDI clip at 12.
  *
  * The later clip is created second, so it starts out stacked and drawn above the earlier one.
  * The selection callback is wired the way MainView wires it.
@@ -97,13 +101,14 @@ struct StackFixture {
     ClipId earlier = INVALID_CLIP_ID;
     ClipId later = INVALID_CLIP_ID;
 
-    StackFixture() {
+    explicit StackFixture(bool audioEarlier = false) {
         track = TrackManager::getInstance().createTrack("Lane", TrackType::Media);
 
         panel.setSize(2000, 400);
         panel.setTempo(testTempoBPM);
-        panel.setZoom(testZoomPixelsPerBeat);
+        // The panel takes its zoom from the controller, so it is set there.
         panel.setController(&controller);
+        controller.dispatch(SetZoomEvent{testZoomPixelsPerBeat});
         panel.onTimeSelectionBeatsChanged = [this](double startBeats, double endBeats,
                                                    std::set<int> trackIndices) {
             if (startBeats < 0.0 || endBeats < 0.0)
@@ -113,9 +118,22 @@ struct StackFixture {
                     SetTimeSelectionBeatsEvent{startBeats, endBeats, std::move(trackIndices)});
         };
 
+        // The source file never exists: nothing here reads audio, only the event's anchor.
         auto& clipManager = ClipManager::getInstance();
-        earlier = clipManager.createMidiClipBeats(track, 0.0, 8.0, ClipView::Arrangement);
+        earlier = audioEarlier
+                      ? clipManager.createAudioClipBeats(track, 0.0, 8.0,
+                                                         "/tmp/magda_slice_copy_test.wav")
+                      : clipManager.createMidiClipBeats(track, 0.0, 8.0, ClipView::Arrangement);
         later = clipManager.createMidiClipBeats(track, 12.0, 4.0, ClipView::Arrangement);
+    }
+
+    /** @brief The one clip on the lane that is not in @p before. */
+    ClipId newClipSince(const std::vector<ClipId>& before) const {
+        ClipId added = INVALID_CLIP_ID;
+        for (auto clipId : ClipManager::getInstance().getClipsOnTrack(track))
+            if (std::ranges::find(before, clipId) == before.end())
+                added = clipId;
+        return added;
     }
 
     int x(double beats) const {
@@ -180,6 +198,7 @@ class ClipDropStackOrderJuceTest final : public juce::UnitTest {
     void runTest() override {
         testTrimmedClipMovedOntoAnotherLandsInFront();
         testTrimmedClipCopiedOntoAnotherLandsInFront();
+        testOptionDragInSelectionCopiesOnlyTheSlice();
     }
 
   private:
@@ -252,15 +271,59 @@ class ClipDropStackOrderJuceTest final : public juce::UnitTest {
                    "while dragging, the copy should be drawn over the clip it is dragged onto");
             release(f.panel, *source, from, to, alt);
 
-            ClipId copy = INVALID_CLIP_ID;
-            for (auto clipId : ClipManager::getInstance().getClipsOnTrack(f.track))
-                if (std::ranges::find(before, clipId) == before.end())
-                    copy = clipId;
+            const ClipId copy = f.newClipSince(before);
             expect(copy != INVALID_CLIP_ID, "Alt-drag should create a copy");
             if (copy == INVALID_CLIP_ID)
                 return;
 
             expectDroppedClipInFront(f, copy);
+        });
+    }
+
+    void testOptionDragInSelectionCopiesOnlyTheSlice() {
+        beginTest("Option+drag inside a time selection copies only the selected slice");
+
+        magda::test::runWithCleanJuceState([this] {
+            StackFixture f(true);
+            auto& clipManager = ClipManager::getInstance();
+            const double sourceAnchor =
+                audioEventRef(*clipManager.getClip(f.earlier)).anchorSeconds();
+            f.controller.dispatch(SetTimeSelectionBeatsEvent{2.0, 4.0, {0}});
+
+            // Grabbed inside the selection, dropped 10 beats later: the slice lands on 12..14.
+            const auto before = clipManager.getClipsOnTrack(f.track);
+            dragGesture(f.panel, f.panel, {f.x(3.0), f.lowerY()}, {f.x(13.0), f.lowerY()},
+                        juce::ModifierKeys(juce::ModifierKeys::altModifier));
+
+            const auto* source = clipManager.getClip(f.earlier);
+            expect(source != nullptr && near(source->placement.startBeat, 0.0) &&
+                       near(source->placement.lengthBeats, 8.0) &&
+                       near(audioEventRef(*source).anchorSeconds(), sourceAnchor),
+                   "the source clip should stay whole and unchanged");
+
+            const ClipId copy = f.newClipSince(before);
+            const auto* copied = clipManager.getClip(copy);
+            const auto* later = clipManager.getClip(f.later);
+            expect(copied != nullptr && later != nullptr, "Option+drag should create one copy");
+            if (copied == nullptr || later == nullptr)
+                return;
+
+            expect(near(copied->placement.startBeat, 12.0) &&
+                       near(copied->placement.lengthBeats, 2.0),
+                   "the copy should be the 2-beat slice at beat 12, got " +
+                       juce::String(copied->placement.startBeat) + " + " +
+                       juce::String(copied->placement.lengthBeats));
+            // 2 beats into the clip at 120 BPM: the copy reads from a second into the source.
+            expect(std::abs(audioEventRef(*copied).anchorSeconds() - (sourceAnchor + 1.0)) < 1.0e-3,
+                   "the copy should play the slice, not the clip's start, anchor " +
+                       juce::String(audioEventRef(*copied).anchorSeconds()));
+
+            expect(clipSitsBelow(*later, *copied),
+                   "the copy should stack above the clip it covers");
+            const auto spans = f.audibleSpans();
+            expect(near(spans.at(f.later).startBeat, 14.0),
+                   "the covered clip should be heard only after the copy, from beat 14");
+            expect(f.clipDrawnAt(13.0) == copy, "the copy should be drawn on top");
         });
     }
 };

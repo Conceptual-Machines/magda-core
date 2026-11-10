@@ -1245,6 +1245,7 @@ bool TrackContentPanel::tryBeginTimeSelectionGrab(const juce::MouseEvent& event)
         // On the edge of the selection - prepare to resize (and trim clips).
         const auto& selection = timelineController->getState().selection;
         isMovingSelection = false;
+        isCopyingSelection_ = false;
         isCreatingSelection = false;
         currentDragType_ =
             isLeftEdge ? DragType::ResizeSelectionLeft : DragType::ResizeSelectionRight;
@@ -1283,6 +1284,8 @@ bool TrackContentPanel::tryBeginTimeSelectionGrab(const juce::MouseEvent& event)
         // clips at the selection boundaries on the first drag motion).
         const auto& selection = timelineController->getState().selection;
         isMovingSelection = true;
+        isCopyingSelection_ =
+            GestureRouter::getInstance().isDuplicateOnDrag(GestureContext::Arrangement, event.mods);
         isCreatingSelection = false;
         currentDragType_ = DragType::MoveSelection;
         moveDragStartTime = pixelToTime(event.x);
@@ -1536,10 +1539,11 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
                                         moveSelectionOriginalTracks);
         }
     } else if (isMovingSelection) {
-        // Split clips at selection boundaries on first drag motion
+        // Split clips at selection boundaries on first drag motion; a copy leaves them whole.
         if (needsSplitOnFirstDrag_) {
             needsSplitOnFirstDrag_ = false;
-            splitClipsAtSelectionBoundaries();
+            if (!isCopyingSelection_)
+                splitClipsAtSelectionBoundaries();
             captureClipsInTimeSelection();
         }
 
@@ -1574,7 +1578,10 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
         }
 
         // Move clips visually along with the time selection
-        moveClipsWithTimeSelection(deltaTime);
+        if (isCopyingSelection_)
+            previewSelectionCopy(deltaTime);
+        else
+            moveClipsWithTimeSelection(deltaTime);
 
         // Notify about selection change (preserve original track indices)
         if (onTimeSelectionBeatsChanged) {
@@ -1808,11 +1815,21 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
             deltaTime = (timelineLength - duration) - moveSelectionOriginalStart;
         }
 
-        // Commit clip positions
-        commitClipsInTimeSelection(deltaTime);
+        if (!isCopyingSelection_) {
+            commitClipsInTimeSelection(deltaTime);
+        } else if (!needsSplitOnFirstDrag_) {
+            commitSelectionCopy(deltaTime);
+        } else if (timelineController) {
+            // The copy modifier released without a drag places the edit cursor, as on a clip.
+            double cursorSeconds = pixelToTime(event.x);
+            if (snapTimeToGrid)
+                cursorSeconds = snapTimeToGrid(cursorSeconds);
+            timelineController->dispatch(SetEditCursorEvent{secondsToBeats(cursorSeconds)});
+        }
 
         // Finalize move - the selection has already been updated via mouseDrag
         isMovingSelection = false;
+        isCopyingSelection_ = false;
         needsSplitOnFirstDrag_ = false;
         moveDragStartTime = -1.0;
         moveSelectionOriginalStart = -1.0;

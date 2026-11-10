@@ -963,6 +963,74 @@ void TrackContentPanel::commitClipsInTimeSelection(double deltaTime) {
     updateClipComponentPositions();
 }
 
+void TrackContentPanel::previewSelectionCopy(double deltaTime) {
+    for (const auto& info : clipsInTimeSelection_) {
+        const auto* clip = ClipManager::getInstance().getClip(info.clipId);
+        if (clip == nullptr)
+            continue;
+        const auto lane = std::ranges::find(visibleTrackIds_, clip->trackId);
+        if (lane == visibleTrackIds_.end())
+            continue;
+
+        const double sliceStart = std::max(info.originalStartTime, moveSelectionOriginalStart);
+        const double sliceEnd =
+            std::min(clipTimelineEnd(*clip, tempoBPM), moveSelectionOriginalEnd);
+        const int left = beatsToPixel((sliceStart + deltaTime) * tempoBPM / 60.0);
+        const int right = beatsToPixel((sliceEnd + deltaTime) * tempoBPM / 60.0);
+        const auto laneArea =
+            getTrackLaneArea(static_cast<int>(std::distance(visibleTrackIds_.begin(), lane)));
+        setClipGhost(
+            info.clipId,
+            {left, laneArea.getY() + 2, juce::jmax(10, right - left), laneArea.getHeight() - 4},
+            clip->colour);
+    }
+}
+
+void TrackContentPanel::commitSelectionCopy(double deltaTime) {
+    clearAllClipGhosts();
+    auto& clipManager = ClipManager::getInstance();
+    auto& undoManager = UndoManager::getInstance();
+    const double bpm = getTempo();
+    std::unordered_set<ClipId> copies;
+
+    // Each copy is the whole clip, trimmed to the slice with the commands a selection-edge trim
+    // uses, so its content offset comes out as that trim would leave it.
+    undoManager.beginCompoundOperation("Copy Selection");
+    for (const auto& info : clipsInTimeSelection_) {
+        const auto* clip = clipManager.getClip(info.clipId);
+        if (clip == nullptr)
+            continue;
+        const double clipStart = info.originalStartTime;
+        const double clipEnd = clipTimelineEnd(*clip, bpm);
+        const double sliceStart = std::max(clipStart, moveSelectionOriginalStart);
+        const double sliceEnd = std::min(clipEnd, moveSelectionOriginalEnd);
+        if (sliceEnd <= sliceStart)
+            continue;
+
+        auto duplicate = std::make_unique<DuplicateClipCommand>(
+            info.clipId, BeatPosition{(clipStart + deltaTime) * bpm / 60.0}, clip->trackId, bpm);
+        auto* duplicateCommand = duplicate.get();
+        if (!undoManager.executeCommand(std::move(duplicate)))
+            continue;
+        const ClipId copy = duplicateCommand->getDuplicatedClipId();
+        if (copy == INVALID_CLIP_ID)
+            continue;
+
+        if (sliceEnd < clipEnd)
+            undoManager.executeCommand(std::make_unique<ResizeClipCommand>(
+                copy, BeatDuration{(sliceEnd - clipStart) * bpm / 60.0}, false, bpm));
+        if (sliceStart > clipStart)
+            undoManager.executeCommand(std::make_unique<ResizeClipCommand>(
+                copy, BeatDuration{(sliceEnd - sliceStart) * bpm / 60.0}, true, bpm));
+        copies.insert(copy);
+    }
+    undoManager.endCompoundOperation();
+
+    clipsInTimeSelection_.clear();
+    if (!copies.empty())
+        SelectionManager::getInstance().selectClips(copies);
+}
+
 // ============================================================================
 // Ghost Clip Rendering (Alt+Drag Duplication Visual Feedback)
 // ============================================================================
