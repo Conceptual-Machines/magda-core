@@ -736,7 +736,7 @@
     "error.not_initialized_title": "Настройки аудио",
     "error.not_initialized": "Аудиодвижок не инициализирован. Невозможно открыть настройки аудио.",
     "crash_recovery.title": "Аудиодрайвер пропущен",
-    "crash_recovery.message": "В прошлый раз MAGDA неожиданно закрылась при открытии {0}, поэтому запущена со стандартным аудиодрайвером.\n\nВыбрать драйвер снова можно в настройках аудио/MIDI.",
+    "crash_recovery.message": "",
     "crash_recovery.default": "аудиодрайвера",
     "section.device": "Устройство",
     "label.preview_output": "Прослушивать файлы браузера через",

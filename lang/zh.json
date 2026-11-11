@@ -736,7 +736,7 @@
     "error.not_initialized_title": "音频设置",
     "error.not_initialized": "音频引擎未初始化，无法打开音频设置。",
     "crash_recovery.title": "已跳过音频驱动",
-    "crash_recovery.message": "MAGDA 上次在打开{0}时意外关闭，因此本次改用默认音频驱动启动。\n\n你可以在音频/MIDI 设置中重新选择驱动。",
+    "crash_recovery.message": "",
     "crash_recovery.default": "音频驱动",
     "section.device": "设备",
     "label.preview_output": "试听浏览器文件的输出",

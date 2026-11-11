@@ -736,7 +736,7 @@
     "error.not_initialized_title": "オーディオ設定",
     "error.not_initialized": "オーディオエンジンが初期化されていません。オーディオ設定を開けません。",
     "crash_recovery.title": "オーディオドライバーがスキップされました",
-    "crash_recovery.message": "前回、MAGDAが{0}を開こうとした際に予期せず終了してしまったため、代わりにデフォルトのオーディオドライバーで起動しました。\n\nオーディオ/MIDI設定で、ドライバーを再度選択することができます。",
+    "crash_recovery.message": "",
     "crash_recovery.default": "オーディオドライバー",
     "section.device": "デバイス",
     "label.preview_output": "ブラウザファイルの試聴オン",
