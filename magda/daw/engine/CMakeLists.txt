@@ -52,6 +52,7 @@ target_sources(magda_daw_app PRIVATE
         host/SlotLauncher.cpp
         host/SessionArrangementCapture.cpp
         host/TrackFreeze.cpp
+        host/TracksBeingPlayed.cpp
         host/EngineHost.hpp
         host/EngineInsertCapture.hpp
         host/EngineOfflineRender.hpp

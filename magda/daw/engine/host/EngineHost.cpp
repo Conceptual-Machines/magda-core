@@ -43,6 +43,7 @@
 #include "../../core/DrumGridPads.hpp"
 #include "../../core/MidiNoteCommands.hpp"
 #include "../../core/OpenProjectAddressing.hpp"
+#include "../../core/SelectionManager.hpp"
 #include "../../core/TempoMap.hpp"
 #include "../../core/TrackAvailability.hpp"
 #include "../../core/TrackCommands.hpp"
@@ -69,6 +70,7 @@
 #include "SessionArrangementCapture.hpp"
 #include "SlotLauncher.hpp"
 #include "TrackFreeze.hpp"
+#include "TracksBeingPlayed.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/ClipVoicePool.hpp"
 #include "exec/EngineSession.hpp"
@@ -422,6 +424,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                 private ClipManagerListener,
                                 private ProjectManagerListener,
                                 private BindingRegistryListener,
+                                private SelectionManagerListener,
                                 public OfflineRenderHost,
                                 public LaunchHost,
                                 public InsertCaptureHost {
@@ -733,6 +736,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         ClipManager::getInstance().addListener(this);
         ProjectManager::getInstance().addListener(this);
         BindingRegistry::getInstance().addListener(this);
+        SelectionManager::getInstance().addListener(this);
         devices_->addAudioCallback(this);
     }
 
@@ -747,6 +751,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         devices_->removeAudioCallback(this);
         stopRecording(true, false);
         stopClockPorts(clockPorts_);
+        SelectionManager::getInstance().removeListener(this);
         BindingRegistry::getInstance().removeListener(this);
         ProjectManager::getInstance().removeListener(this);
         ClipManager::getInstance().removeListener(this);
@@ -777,7 +782,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         options.tracksMissingDevices = tracksHoldingUnregisteredDevices(tracks, master);
         if (sessionRendersAhead_) {
             options.sessionTracks = sessionTracks();
-            options.aheadAudioOnly = true;
+            options.playedInstruments = playedInstruments();
         }
         auto plan = engine::compileRenderPlan(tracks, master, options);
 
@@ -803,6 +808,42 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         for (const auto& entry : sessionSlotTargets_)
             tracks.insert(entry.first);
         return tracks;
+    }
+
+    static std::set<TrackId> playedInstruments() {
+        return tracksBeingPlayed(TrackManager::getInstance().getTracks(),
+                                 SelectionManager::getInstance(), ClipManager::getInstance());
+    }
+
+    /// A selection that moves which instruments are played moves the plan's boundary.
+    void selectionMoved() {
+        if (sessionRendersAhead_ && playedInstruments() != compiledPlayedInstruments_)
+            wantPlan();
+    }
+
+    void selectionTypeChanged(SelectionType) override {
+        selectionMoved();
+    }
+    void trackSelectionChanged(TrackId) override {
+        selectionMoved();
+    }
+    void multiTrackSelectionChanged(const std::unordered_set<TrackId>&) override {
+        selectionMoved();
+    }
+    void clipSelectionChanged(ClipId) override {
+        selectionMoved();
+    }
+    void multiClipSelectionChanged(const std::unordered_set<ClipId>&) override {
+        selectionMoved();
+    }
+    void noteSelectionChanged(const NoteSelection&) override {
+        selectionMoved();
+    }
+    void deviceSelectionChanged(const DeviceSelection&) override {
+        selectionMoved();
+    }
+    void chainNodeSelectionChanged(const ChainNodePath&) override {
+        selectionMoved();
     }
 
     bool publishPlan(std::shared_ptr<const engine::RenderPlan> plan = nullptr) {
@@ -839,6 +880,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (plan == nullptr)
             plan = compilePlan(tracks, *master);
         compiledSessionTracks_ = sessionRendersAhead_ ? sessionTracks() : std::set<TrackId>{};
+        compiledPlayedInstruments_ =
+            sessionRendersAhead_ ? playedInstruments() : std::set<TrackId>{};
         report("plan", plan->diagnostics);
 
         // Values and ids off the model rather than what plays: a frozen chain's
@@ -4222,6 +4265,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// The tracks the live plan renders at the callback for their session clips, and whether
     /// the session renders anything ahead, as it was made.
     std::set<TrackId> compiledSessionTracks_;
+    std::set<TrackId> compiledPlayedInstruments_;
     bool sessionRendersAhead_ = false;
 
     /// How far the session renders ahead (#1898), applied when it is made.

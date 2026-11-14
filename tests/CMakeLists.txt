@@ -465,6 +465,7 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES engine/test_plan_feedback_carry.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_handoff.cpp)
     list(APPEND TEST_SOURCES engine/test_render_ahead.cpp)
+    list(APPEND TEST_SOURCES engine/test_tracks_being_played.cpp)
     list(APPEND TEST_SOURCES engine/test_modulation_liveness.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_pad_rack.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_insert.cpp)

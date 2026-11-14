@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstring>
 #include <memory>
+#include <set>
 #include <thread>
 #include <vector>
 
@@ -433,31 +434,50 @@ TEST_CASE("A callback that finds the ahead thread mid-block takes the block over
     CHECK(misses <= 3);
 }
 
-TEST_CASE("Only tracks playing audio files render ahead", "[engine][plan][1898]") {
-    // An instrument is played from previews and keyboards that have to be heard now.
-    auto tracks = project();
-    auto synth = makeTrack(3);
+namespace {
+
+TrackInfo makeSynth(TrackId id) {
+    auto synth = makeTrack(id);
     DeviceInfo instrument;
-    instrument.id = 30;
+    instrument.id = id * 10;
     instrument.name = "Synth";
     instrument.deviceType = DeviceType::Instrument;
     instrument.isInstrument = true;
     synth.chain.fxChainElements.push_back(makeDeviceElement(instrument));
-    tracks.push_back(synth);
-    REQUIRE(magda::engine::chainConsumesMidi(synth));
+    return synth;
+}
+
+/// Tracks whose ops of @p kind are in @p plan, live or not.
+std::set<TrackId> tracksWith(const magda::engine::RenderPlan& plan, magda::engine::OpKind kind,
+                             bool live) {
+    std::set<TrackId> tracks;
+    for (const auto& op : plan.ops)
+        if (op.kind == kind && (op.liveness == magda::engine::LivenessDomain::Live) == live)
+            tracks.insert(op.key.trackId);
+    return tracks;
+}
+
+}  // namespace
+
+TEST_CASE("An instrument renders ahead unless it is being played", "[engine][plan][1898]") {
+    // The one played keeps its live input and the callback; the other is heard from its clips.
+    auto tracks = project();
+    tracks.push_back(makeSynth(3));
+    tracks.push_back(makeSynth(4));
+    REQUIRE(magda::engine::chainConsumesMidi(tracks.back()));
 
     magda::engine::CompileOptions options;
-    options.aheadAudioOnly = true;
+    options.auditionMidi = true;
+    options.playedInstruments = std::set<TrackId>{3};
     const auto plan = magda::engine::insertHandoffs(
         magda::engine::compileRenderPlan(tracks, makeMaster(), options));
     REQUIRE(magda::engine::validatePlan(plan).empty());
 
-    for (const auto& op : plan.ops)
-        if (op.kind == magda::engine::OpKind::ClipMidi ||
-            op.kind == magda::engine::OpKind::ClipAudio) {
-            INFO("track " << op.key.trackId);
-            CHECK((op.liveness == magda::engine::LivenessDomain::Live) == (op.key.trackId == 3));
-        }
+    using magda::engine::OpKind;
+    CHECK(tracksWith(plan, OpKind::ClipMidi, true) == std::set<TrackId>{3});
+    CHECK(tracksWith(plan, OpKind::ClipMidi, false) == std::set<TrackId>{4});
+    CHECK(tracksWith(plan, OpKind::MidiInput, true) == std::set<TrackId>{3});
+    CHECK(tracksWith(plan, OpKind::ClipAudio, true) == std::set<TrackId>{3});
 
     PlanValues values;
     magda::engine::resolvePlanValues(plan, tracks, makeMaster(), values);
@@ -467,5 +487,35 @@ TEST_CASE("Only tracks playing audio files render ahead", "[engine][plan][1898]"
     magda::engine::PlanExecutor executor;
     executor.prepare(plan, store.realise(plan, context), context, nullptr, &values);
     REQUIRE(executor.isPrepared());
-    CHECK(executor.aheadTracks() == std::vector<TrackId>{1, 2});
+    CHECK(executor.aheadTracks() == std::vector<TrackId>{1, 2, 4});
+}
+
+TEST_CASE("A track sending MIDI to hardware renders at the callback unplayed",
+          "[engine][plan][1898]") {
+    // Rendered ahead, its notes would leave for the hardware a look-ahead early.
+    auto tracks = project();
+    auto external = makeSynth(3);
+    external.midiOutputDevice = "Hardware Synth";
+    tracks.push_back(external);
+
+    magda::engine::CompileOptions options;
+    options.auditionMidi = true;
+    options.playedInstruments = std::set<TrackId>{};
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), options);
+
+    using magda::engine::OpKind;
+    CHECK(tracksWith(plan, OpKind::ClipMidi, true) == std::set<TrackId>{3});
+    CHECK(tracksWith(plan, OpKind::MidiInput, true) == std::set<TrackId>{3});
+}
+
+TEST_CASE("Without render-ahead every instrument keeps its live input", "[engine][plan][1898]") {
+    auto tracks = project();
+    tracks.push_back(makeSynth(3));
+    tracks.push_back(makeSynth(4));
+
+    magda::engine::CompileOptions options;
+    options.auditionMidi = true;
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), options);
+
+    CHECK(tracksWith(plan, magda::engine::OpKind::MidiInput, true) == std::set<TrackId>{3, 4});
 }

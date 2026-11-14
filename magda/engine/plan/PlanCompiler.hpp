@@ -4,6 +4,7 @@
 #pragma once
 
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -60,10 +61,10 @@ struct CompileOptions {
     /// rendered ahead (#1898): a launch has to be heard when it fires, not a look-ahead later.
     std::set<TrackId> sessionTracks;
 
-    /// Only tracks playing audio files render ahead (#1898): a track whose chain reads MIDI is an
-    /// instrument, played from previews and keyboards that have to be heard now, and renders at
-    /// the callback.
-    bool aheadAudioOnly = false;
+    /// Set while anything renders ahead (#1898): the instruments being played, which keep their
+    /// live input and render at the callback. Every other instrument gets no live input and
+    /// renders ahead; a track sending MIDI to hardware always renders at the callback.
+    std::optional<std::set<TrackId>> playedInstruments;
 
     /// Tracks holding a device this build does not register (#3101), which render as a disabled
     /// one does. The host names them: the device catalogs are not the compiler's to read.
