@@ -19,6 +19,7 @@
 #include "exec/RenderThreadPool.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanDump.hpp"
+#include "plan/PlanHandoff.hpp"
 #include "plan/RenderPlan.hpp"
 
 /**
@@ -428,6 +429,69 @@ Render renderParallel(Scene scene, RenderThreadPool& pool, const std::vector<int
     return renderThrough(rig, executor, lengths);
 }
 
+/// @p rig's plan with its handoffs, as the host publishes it with render-ahead on (#1898).
+void guard(Rig& rig) {
+    rig.plan = magda::engine::insertHandoffs(rig.plan);
+    rig.values = {};
+    rig.valueMessages =
+        magda::engine::resolvePlanValues(rig.plan, rig.scene.tracks, rig.scene.master, rig.values);
+}
+
+/// Whole blocks of @p scene's guarded plan, on the reference executor.
+Render renderGuardedReference(Scene scene, int blocks) {
+    Rig rig(std::move(scene));
+    guard(rig);
+    PlanExecutor executor;
+    return renderThrough(rig, executor,
+                         std::vector<int>(static_cast<std::size_t>(blocks), kBlockSize));
+}
+
+/// Through @p pool split as render-ahead splits it, each block's ahead side one block early.
+Render renderSplit(Scene scene, RenderThreadPool& pool, int blocks) {
+    Rig rig(std::move(scene));
+    guard(rig);
+    ParallelPlanExecutor executor(&pool);
+    executor.setRenderAheadDepth(2);
+    for (const auto& message :
+         executor.prepare(rig.plan, rig.scene.bindings, rig.context, nullptr, &rig.values))
+        FAIL_CHECK(message);
+
+    juce::AudioBuffer<float> ahead(rig.output.getNumChannels(), kBlockSize);
+    Render render;
+    for (std::int64_t i = 0; i <= blocks; ++i) {
+        if (i < blocks)
+            REQUIRE(executor.processSide(0, static_cast<std::uint64_t>(i), rig.values,
+                                         blockAt(i * kBlockSize, kBlockSize), ahead));
+        if (i == 0)
+            continue;
+        REQUIRE(executor.processSide(1, static_cast<std::uint64_t>(i - 1), rig.values,
+                                     blockAt((i - 1) * kBlockSize, kBlockSize), rig.output));
+        for (int channel = 0; channel < rig.output.getNumChannels(); ++channel)
+            for (int sample = 0; sample < kBlockSize; ++sample)
+                render.samples.push_back(rig.output.getSample(channel, sample));
+    }
+    CHECK(executor.reference().handoffMisses() == 0);
+    CHECK(executor.reference().handoffDiscards() == 0);
+    render.meters = rig.readMeters();
+    return render;
+}
+
+/// Two live tracks meeting in a rendezvous and a clip track rendered ahead (#1898).
+Scene liveRendezvousScene(Meeting& meeting) {
+    Scene scene;
+    for (TrackId id = 1; id <= 3; ++id) {
+        auto track = makeTrack(id);
+        track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(900 + id)));
+        scene.tracks.push_back(track);
+        scene.bindings.clipAudio[id] = scene.own(std::make_unique<RampSource>(id));
+        scene.bindings.devices[DeviceKey{900 + id}] =
+            id == 3 ? scene.own(std::make_unique<GainDevice>(0.5f))
+                    : scene.own(std::make_unique<RendezvousDevice>(meeting, 2));
+    }
+    scene.options.sessionTracks = {1, 2};
+    return scene;
+}
+
 /// Where two renders first disagree, or -1. A sample index rather than a bare
 /// failure, because the index says which op got it wrong.
 int firstDifference(const std::vector<float>& expected, const std::vector<float>& actual) {
@@ -782,6 +846,59 @@ TEST_CASE("Ops on independent branches really do run at the same time",
 
     CHECK(meeting.mostAtOnce == 2);
     CHECK(meeting.met);
+}
+
+TEST_CASE("The callback's side of a block rendered ahead runs across the pool",
+          "[engine][exec][parallel][1898]") {
+    Meeting meeting;
+    Rig rig(liveRendezvousScene(meeting));
+    guard(rig);
+    RenderThreadPool pool(3, false);
+    ParallelPlanExecutor executor(&pool);
+    REQUIRE(
+        executor.prepare(rig.plan, rig.scene.bindings, rig.context, nullptr, &rig.values).empty());
+    REQUIRE(executor.reference().aheadTracks() == std::vector<TrackId>{3});
+
+    juce::AudioBuffer<float> ahead(2, kBlockSize);
+    REQUIRE(executor.processSide(0, 0, rig.values, blockAt(0, kBlockSize), ahead));
+    REQUIRE(executor.processSide(1, 0, rig.values, blockAt(0, kBlockSize), rig.output));
+
+    CHECK(executor.reference().handoffDiscards() == 0);
+    CHECK(meeting.mostAtOnce == 2);
+    CHECK(meeting.met);
+}
+
+TEST_CASE("A block the callback renders whole with render-ahead on runs across the pool",
+          "[engine][exec][parallel][1898]") {
+    Meeting meeting;
+    Rig rig(liveRendezvousScene(meeting));
+    guard(rig);
+    RenderThreadPool pool(3, false);
+    ParallelPlanExecutor executor(&pool);
+    REQUIRE(
+        executor.prepare(rig.plan, rig.scene.bindings, rig.context, nullptr, &rig.values).empty());
+
+    // The ahead side never reached block 0, so the callback renders all of it.
+    REQUIRE(executor.processSide(1, 0, rig.values, blockAt(0, kBlockSize), rig.output));
+
+    CHECK(meeting.mostAtOnce == 2);
+    CHECK(meeting.met);
+}
+
+TEST_CASE("A block split for render-ahead renders on the pool what the whole block does",
+          "[engine][exec][parallel][1898]") {
+    const auto withSessions = [] {
+        auto scene = wideScene();
+        scene.options.sessionTracks = {2, 5, 7};
+        return scene;
+    };
+    const auto reference = renderGuardedReference(withSessions(), kNumBlocks);
+    RenderThreadPool pool(3, false);
+    const auto split = renderSplit(withSessions(), pool, kNumBlocks);
+
+    REQUIRE(split.samples.size() == reference.samples.size());
+    CHECK(firstDifference(reference.samples, split.samples) == -1);
+    CHECK(split.meters == reference.meters);
 }
 
 namespace {

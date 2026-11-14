@@ -1736,7 +1736,10 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
                         published != HandoffRing::Published::whole && handoffs_.reached(sequence);
                     if (discontinuousAhead_)
                         handoffs_.discardFrom(sequence);
-                    process(values, requestedBlock, output);
+                    if (callbackRenderer_ != nullptr)
+                        callbackRenderer_->renderWhole(values, requestedBlock, output);
+                    else
+                        process(values, requestedBlock, output);
                     discontinuousAhead_ = false;
                     handoffs_.release(sequence);
                 }
@@ -1759,7 +1762,11 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
         aheadBlock_ = sequence;
     }
 
-    if (start.render) {
+    if (start.render && side == 1 && callbackRenderer_ != nullptr) {
+        renderMidiPrefix(values, start.block, side);
+        resolveParameters(values, start.block, side);
+        callbackRenderer_->renderCallbackSide(values, start.block, target, start.applyValues);
+    } else if (start.render) {
         renderMidiPrefix(values, start.block, side);
         resolveParameters(values, start.block, side);
 
