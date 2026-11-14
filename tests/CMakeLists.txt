@@ -202,6 +202,7 @@ set(TEST_SOURCES
     # The prompts' worked examples must satisfy the validator (Faust instrument
     # [idx:N] report)
     dsp/test_faust_prompt_examples.cpp
+    agents/test_dsl_contains_statement.cpp
     agents/test_dsl_project_commands.cpp
     agents/test_dsl_rack_commands.cpp
     agents/test_scale_detection.cpp

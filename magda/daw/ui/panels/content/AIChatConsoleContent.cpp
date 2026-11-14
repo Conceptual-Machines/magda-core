@@ -2584,10 +2584,27 @@ void AIChatConsoleContent::buildSlashCommands() {
     agent.name = "agent";
     agent.description = "Override the contextual AI surface for one request";
     agent.usage = "/agent <surface> <request>";
-    agent.details =
+    const juce::String surfaces =
         "Surfaces: arrangement, piano-roll, session, mixer, automation, device, master, drummer.";
-    agent.handler = [](const juce::String&, const std::map<juce::String, juce::String>&,
-                       const juce::String&) { return false; };
+    agent.details = surfaces;
+    // Valid requests return false so rewriteSlashCommand() routes them; only
+    // a missing request or an unknown surface is consumed here, as an error.
+    agent.handler = [this, surfaces](const juce::String& originalText,
+                                     const std::map<juce::String, juce::String>& /*flags*/,
+                                     const juce::String& positional) {
+        const auto tokens = juce::StringArray::fromTokens(positional, false);
+        const bool known =
+            !tokens.isEmpty() && magda::agentSurfaceForAlias(tokens[0].toStdString()) != nullptr;
+        if (known && tokens.size() >= 2)
+            return false;
+        appendToChat(juce::String::charToString(0x25CF) + " " + originalText);
+        const auto problem = tokens.isEmpty() ? juce::String("Missing surface.")
+                             : known          ? juce::String("Missing request.")
+                                              : "Unknown surface '" + tokens[0] + "'.";
+        appendToChat(juce::String::charToString(0x25C6) + " " + problem +
+                     " Usage: /agent <surface> <request>. " + surfaces);
+        return true;
+    };
     slashRegistry_->add(std::move(agent));
 
     // /dsl — run MAGDA DSL directly, no model involved. The handler reads the raw text
