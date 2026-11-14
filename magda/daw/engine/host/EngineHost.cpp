@@ -851,6 +851,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         const auto* master = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
         if (session_ == nullptr || master == nullptr)
             return false;
+        const auto started = juce::Time::getMillisecondCounterHiRes();
 
         // Before the plan binds them, so an "all" route resolves to the inputs
         // this machine has now rather than to whichever of them has already
@@ -879,9 +880,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         if (plan == nullptr)
             plan = compilePlan(tracks, *master);
+        const auto compiled = juce::Time::getMillisecondCounterHiRes();
         compiledSessionTracks_ = sessionRendersAhead_ ? sessionTracks() : std::set<TrackId>{};
-        compiledPlayedInstruments_ =
-            sessionRendersAhead_ ? playedInstruments() : std::set<TrackId>{};
+        auto played = sessionRendersAhead_ ? playedInstruments() : std::set<TrackId>{};
+        const auto playedMoved = played != compiledPlayedInstruments_;
+        compiledPlayedInstruments_ = std::move(played);
         report("plan", plan->diagnostics);
 
         // Values and ids off the model rather than what plays: a frozen chain's
@@ -893,6 +896,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         const auto ids = idsToRetain(valueTracks, *master);
         const auto result = session_->publish(plan, context_, ids, std::move(values));
         report("publish", result.messages);
+
+        // How long this held the message thread, and whether a selection moved it (#1898).
+        const auto finished = juce::Time::getMillisecondCounterHiRes();
+        juce::Logger::writeToLog(
+            "[engine] plan published in " + juce::String(finished - started, 1) + " ms (compile " +
+            juce::String(compiled - started, 1) + ", swap " + juce::String(finished - compiled, 1) +
+            ")" + (playedMoved ? ", played instruments moved" : ""));
 
         if (!result.published)
             return false;
