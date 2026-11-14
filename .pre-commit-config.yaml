@@ -6,8 +6,8 @@
 # upstream, which is the one thing a pinned copy has to keep clean. The legacy
 # corpus (#2079) is real files saved by released versions, asserted byte for
 # byte as they were written; a fixer that touches one erases the evidence the
-# corpus exists to keep.
-exclude: ^(third_party/|tests/corpus/)
+# corpus exists to keep. A JUCE patch carries JUCE's CRLF lines, which it must match to apply.
+exclude: ^(third_party/|tests/corpus/|patches/juce-)
 
 repos:
   # Standard pre-commit hooks
