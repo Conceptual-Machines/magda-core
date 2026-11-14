@@ -411,12 +411,14 @@ def reconstruct(intent: str, tokens, tags) -> list[dict]:
         if not plugs:
             plugs = _plugins_from_tokens(tokens)
         if not plugs:
-            return [{"type": "add_plugin", "name": name, "plugin": None}]
+            return [{"type": "unsupported"}]  # nothing to add (#3312)
         # Fan out: one add_plugin action per plugin, like create_track.
         return [{"type": "add_plugin", "name": name, "plugin": p} for p in plugs]
     if intent == "rename_track":
-        return [{"type": "rename_track", "name": name,
-                 "new_name": _canon_name(s.get("NEW_NAME", [""])[0])}]
+        new_name = _canon_name(s.get("NEW_NAME", [""])[0])
+        if not new_name:
+            return [{"type": "unsupported"}]
+        return [{"type": "rename_track", "name": name, "new_name": new_name}]
     if intent == "delete_track":
         return [{"type": intent, "name": name}]
     if intent == "select_all_clips":
@@ -445,6 +447,8 @@ def reconstruct(intent: str, tokens, tags) -> list[dict]:
         colour = None
         for w in s.get("COLOR", []):
             colour = vocab.resolve_color(w) or colour
+        if colour is None:
+            return [{"type": "unsupported"}]
         return [{"type": "set_track_color", "name": name, "colour": colour}]
     if intent == "set_track_volume":
         return [{"type": "set_track_volume", "name": name,
@@ -489,8 +493,10 @@ def reconstruct(intent: str, tokens, tags) -> list[dict]:
             act["index"] = _parse_number(s["VALUE"][0])
         return [act]
     if intent == "clip_rename":
-        return [{"type": "clip_rename", "name": name,
-                 "clip_name": _canon_name(s.get("CLIP_NAME", [""])[0])}]
+        clip_name = _canon_name(s.get("CLIP_NAME", [""])[0])
+        if not clip_name:
+            return [{"type": "unsupported"}]
+        return [{"type": "clip_rename", "name": name, "clip_name": clip_name}]
     if intent == "clip_delete":
         return [{"type": "clip_delete", "name": name,
                  "index": _value_or_first_number(s, tokens)}]
@@ -579,22 +585,15 @@ def _refine_intent(intent: str, tokens, name: str = "") -> str:
     """Guard the one intent whose errors are unrecoverable.
 
     delete_track destroys work, so it is the one place worth being deterministic
-    rather than trusting the classifier. Without a resolved track name it needs
-    both a deletion verb AND a mention of a track; otherwise nothing in the
-    sentence actually asked to delete anything in the project.
-
-    "undo that" has neither and used to render track(name="").delete().
-    "scrap that" has the verb but no object — "that" is the previous action, not
-    a track. "delete the selected track" has no name span but says "track", so
-    it passes.
+    rather than trusting the classifier. It needs a deletion verb AND a target,
+    either a resolved name or the word "track". "hello" resolved a name and
+    deleted that track (#3312); "scrap that" has the verb but no object.
     """
     if intent != "delete_track":
         return intent
-    if name:
-        return "delete_track"          # an explicit target settles it
     text = " ".join(tokens).lower()
     has_verb = any(re.search(r"\b" + v + r"\b", text) for v in _DELETE_VERBS)
-    names_a_track = re.search(r"\btracks?\b", text) is not None
+    names_a_track = bool(name) or re.search(r"\btracks?\b", text) is not None
     # A verb alone is not enough: "scrap that" and "delete that" carry one but
     # point at no track — "that" is the previous action, not an object in the
     # project. Require something track-shaped to act on.

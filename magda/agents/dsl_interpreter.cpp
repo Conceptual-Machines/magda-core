@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <random>
 #include <ranges>
+#include <regex>
 #include <sstream>
 
 #include "../daw/api/clip_api.hpp"
@@ -3014,6 +3015,11 @@ bool Interpreter::executeGrooveList() {
             ctx_.addResult("  " + n);
     }
     return true;
+}
+
+bool containsStatement(const std::string& text) {
+    static const std::regex kStatementHead(R"(\b(track|filter)\(|\b(groove|project)\.[a-z_])");
+    return std::regex_search(text, kStatementHead);
 }
 
 }  // namespace magda::dsl
