@@ -1144,7 +1144,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         g.fillRect(headerArea.withBottom(headerArea.getBottom() + 2));
     }
     const auto headerForeground =
-        compact ? ActiveTheme::getTextColour() : juce::Colours::white.withAlpha(0.92f);
+        compact ? ActiveTheme::getTextColour() : deriveSwatchInk(colour).withAlpha(0.92f);
 
     // Ghost clips (link-group members) show a link glyph at the left of the
     // header and an italicised name.

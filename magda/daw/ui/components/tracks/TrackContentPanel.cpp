@@ -1031,7 +1031,7 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
             CORNER_RADIUS);
 
         if (bounds.getWidth() > 40) {
-            g.setColour(juce::Colours::white.withAlpha(0.92f));
+            g.setColour(deriveSwatchInk(baseColour).withAlpha(0.92f));
             g.setFont(10.0f);
             g.drawText("Recording...", headerArea.reduced(4, 0), juce::Justification::centredLeft,
                        true);

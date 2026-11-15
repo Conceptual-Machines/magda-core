@@ -571,8 +571,8 @@ void TrackInspector::applyHeaderStyle() {
     nameOutline_ = fullBar ? juce::Colours::transparentBlack : ActiveTheme::getBorderColour();
     trackNameValue_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     trackNameValue_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
-    trackNameValue_.setColour(juce::Label::textColourId,
-                              fullBar ? juce::Colours::white : ActiveTheme::getTextColour());
+    const auto ink = fullBar ? magda::deriveSwatchInk(track->colour) : ActiveTheme::getTextColour();
+    trackNameValue_.setColour(juce::Label::textColourId, ink);
     repaint();
 }
 

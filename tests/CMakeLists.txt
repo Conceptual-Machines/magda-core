@@ -960,6 +960,7 @@ target_sources(magda_juce_tests PRIVATE
     automation/test_automation_grid_ticks_juce.cpp
     ../magda/daw/ui/components/automation/AutomationLaneHeader.cpp
     ui/test_runtime_theme_juce.cpp
+    ui/test_track_swatch_juce.cpp
     ui/test_user_theme_juce.cpp
     ui/test_syntax_highlighting_juce.cpp
     ../magda/daw/ui/code/SyntaxTheme.cpp

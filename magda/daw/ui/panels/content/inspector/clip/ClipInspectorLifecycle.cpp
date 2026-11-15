@@ -93,10 +93,10 @@ void ClipInspector::applyHeaderStyle() {
     nameFill_ = fullBar ? magda::deriveTrackSwatch(clip->colour) : juce::Colours::transparentBlack;
     clipNameValue_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     clipNameValue_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
-    clipNameValue_.setColour(juce::Label::textColourId,
-                             fullBar ? juce::Colours::white : ActiveTheme::getTextColour());
+    const auto ink = fullBar ? magda::deriveSwatchInk(clip->colour) : ActiveTheme::getTextColour();
+    clipNameValue_.setColour(juce::Label::textColourId, ink);
     clipSubline_.setColour(juce::Label::textColourId,
-                           fullBar ? juce::Colours::white.withAlpha(0.7f)
+                           fullBar ? ink.withAlpha(0.7f)
                                    : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
     repaint();
 }

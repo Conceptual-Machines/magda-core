@@ -44,11 +44,12 @@ inline juce::Colour oklchToColour(float L, float C, float hueDegrees, float alph
             static_cast<juce::uint8>(juce::jlimit(0.0f, 255.0f, alpha * 255.0f + 0.5f))};
 }
 
-// Converts a JUCE sRGB Colour to its true OKLCH hue in degrees. NOTE: this is
-// NOT the same angle as juce::Colour::getHue() (HSL hue) — HSL and OKLCH hue
-// wheels point in different directions for the same colour, so the two must
-// never be substituted for each other.
-inline float sRgbToOklchHue(juce::Colour colour) {
+/** @brief A colour in OKLab: perceptual lightness @c L and the two opponent axes. */
+struct Oklab {
+    float L, a, b;
+};
+
+inline Oklab sRgbToOklab(juce::Colour colour) {
     auto toLinear = [](float c) {
         return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
     };
@@ -64,16 +65,44 @@ inline float sRgbToOklchHue(juce::Colour colour) {
     const float m_ = std::cbrt(m);
     const float s_ = std::cbrt(s);
 
-    const float a = 1.9779984951f * l_ - 2.4285922050f * m_ + 0.4505937099f * s_;
-    const float bLab = 0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_;
-
-    return juce::radiansToDegrees(std::atan2(bLab, a));
+    return {0.2104542553f * l_ + 0.7936177850f * m_ - 0.0040720468f * s_,
+            1.9779984951f * l_ - 2.4285922050f * m_ + 0.4505937099f * s_,
+            0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_};
 }
 
-// Derives a track's header/clip swatch from its stored (user-picked) colour:
-// same hue, but normalized to a fixed lightness and chroma so every track
-// reads at the same visual energy. Colours near the "no colour" sentinel
-// (near-zero saturation) pass through unchanged.
+/**
+ * @brief A colour's true OKLCH hue in degrees.
+ *
+ * Not the angle juce::Colour::getHue() gives: HSL and OKLCH hue wheels point in different
+ * directions for the same colour, so the two must never be substituted for each other.
+ */
+inline float sRgbToOklchHue(juce::Colour colour) {
+    const auto lab = sRgbToOklab(colour);
+    return juce::radiansToDegrees(std::atan2(lab.b, lab.a));
+}
+
+/// OKLCH lightness above which a track colour shows as picked (#3307); defaults reach 0.72.
+inline constexpr float kLightTrackColourLightness = 0.8f;
+
+/** @brief Whether @p stored is light enough to show as picked, under dark ink (#3307). */
+inline bool isLightTrackColour(juce::Colour stored) {
+    return sRgbToOklab(stored).L > kLightTrackColourLightness;
+}
+
+/** @brief Text and glyphs drawn on @p stored's swatch: near-black on a light colour, else white. */
+inline juce::Colour deriveSwatchInk(juce::Colour stored) {
+    return isLightTrackColour(stored) ? juce::Colour(0xFF1A1A1A) : juce::Colours::white;
+}
+
+/**
+ * @brief @p stored's hue at the lightness and chroma every track shares.
+ *
+ * The target is slightly deeper on light surfaces so clips and headers keep their contrast.
+ * Greys (near-zero saturation, the "no colour" sentinel among them) pass through unchanged.
+ */
+juce::Colour deriveLevelledSwatch(juce::Colour stored, float alpha = 1.0f);
+
+/** @brief A track's header/clip swatch: the levelled hue, or a light colour as picked (#3307). */
 juce::Colour deriveTrackSwatch(juce::Colour stored, float alpha = 1.0f);
 
 /**
@@ -744,9 +773,6 @@ class ThemeManager {
     static const ActiveTheme::SyntaxPalette& builtInSyntaxPalette(const std::string& themeId);
 };
 
-// User colours stay stored verbatim. Only their presentation swatch is
-// normalized, with a slightly deeper target on light surfaces so clips and
-// headers retain contrast without changing hue.
 /** @brief A group's wrapper: its swatch at the group's own end, lifting toward the far end. */
 inline juce::ColourGradient groupWrapperGradient(juce::Colour swatch, juce::Point<float> from,
                                                  juce::Point<float> to) {
@@ -759,13 +785,18 @@ inline juce::Colour deriveShadedTrackSwatch(juce::Colour stored, float shade) {
     return shade > 0.0f ? swatch.darker(shade) : swatch;
 }
 
-inline juce::Colour deriveTrackSwatch(juce::Colour stored, float alpha) {
+inline juce::Colour deriveLevelledSwatch(juce::Colour stored, float alpha) {
     if (stored.getSaturation() < 0.05f)
         return stored.withAlpha(alpha);
 
     const float lightness = ThemeManager::isLightTheme() ? 0.48f : 0.55f;
     const float chroma = ThemeManager::isLightTheme() ? 0.12f : 0.10f;
     return oklchToColour(lightness, chroma, sRgbToOklchHue(stored), alpha);
+}
+
+inline juce::Colour deriveTrackSwatch(juce::Colour stored, float alpha) {
+    return isLightTrackColour(stored) ? stored.withAlpha(alpha)
+                                      : deriveLevelledSwatch(stored, alpha);
 }
 
 // Clip bodies darken the swatch on dark surfaces so the border and the black

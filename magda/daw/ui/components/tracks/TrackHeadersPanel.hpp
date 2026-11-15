@@ -199,6 +199,7 @@ class TrackHeadersPanel : public juce::Component,
         bool enabled = true;
         juce::String unavailable;  // The missing devices holding it off (#3101)
         juce::Colour trackColour{0xFF5588AA};
+        juce::Colour chevronInk;  // What the collapse chevron's icon was last drawn in
         float volume = 0.8f;
         float pan = 0.0f;
         int height = DEFAULT_TRACK_HEIGHT;
