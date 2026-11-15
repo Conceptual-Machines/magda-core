@@ -43,7 +43,8 @@
 
 namespace magda::engine {
 
-class ParallelPlanExecutor final : private RenderThreadPool::Job {
+class ParallelPlanExecutor final : private RenderThreadPool::Job,
+                                   private PlanExecutor::CallbackRenderer {
   public:
     /**
      * @brief Render on @p pool, or on the calling thread alone when it is null.
@@ -89,7 +90,8 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     void process(const PlanValues& values, const BlockInfo& block,
                  juce::AudioBuffer<float>& output);
 
-    /// One side of one block, on the calling thread (PlanExecutor::processSide).
+    /// One side of one block (PlanExecutor::processSide): the ahead side on the calling thread,
+    /// the callback's across the pool like process().
     bool processSide(int side, std::uint64_t sequence, const PlanValues& values,
                      const BlockInfo& block, juce::AudioBuffer<float>& output,
                      const std::function<bool()>& underClaim = {}, bool whole = false) {
@@ -180,6 +182,17 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// while none is ready.
     void finishOnCaller() override;
 
+    void renderWhole(const PlanValues& values, const BlockInfo& block,
+                     juce::AudioBuffer<float>& output) override;
+    void renderCallbackSide(const PlanValues& values, const BlockInfo& block,
+                            juce::AudioBuffer<float>& output, bool applyValues) override;
+
+    /// The drain, then the ops left for this thread, for the block set in block_ and output_.
+    void renderScheduled();
+
+    /// Render @p op on this thread if it is on the side being rendered.
+    void renderTail(OpId op);
+
     /// Render @p op and everything it releases that this thread carries straight on with.
     /// A released consumer is carried when it is the op's only consumer or
     /// its last one, and queued for another thread otherwise.
@@ -234,6 +247,10 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     const PlanValues* values_ = nullptr;
     bool applyValues_ = false;
     juce::AudioBuffer<float>* output_ = nullptr;
+
+    /// The side this drain renders (PlanExecutor::sideOf), or -1 for the whole block. The other
+    /// side's ops still pass through the schedule, unrendered, to release their consumers.
+    int side_ = -1;
 
     /// Ops that drive the hardware output. Run by whoever drove the block, in
     /// plan order, once the graph has drained: they all accumulate into the one

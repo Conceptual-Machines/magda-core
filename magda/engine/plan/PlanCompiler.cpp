@@ -165,15 +165,24 @@ class Compiler {
     RenderPlan run();
 
   private:
-    /// @p op, live when @p track plays session clips or an instrument (CompileOptions).
+    /// @p op, live when @p track plays session clips, sends MIDI to hardware or is an
+    /// instrument being played (CompileOptions).
     OpId playedLive(const TrackInfo& track, OpId op) {
         if (options_.sessionTracks.contains(track.id) ||
-            (options_.aheadAudioOnly && (chainConsumesMidi(track) || sendsMidiOut(track)))) {
+            (options_.playedInstruments &&
+             (sendsMidiOut(track) ||
+              (chainConsumesMidi(track) && options_.playedInstruments->contains(track.id))))) {
             auto& planOp = plan_.ops[static_cast<std::size_t>(op)];
             planOp.liveness = LivenessDomain::Live;
             planOp.liveByPlayback = true;
         }
         return op;
+    }
+
+    /// Whether @p track, reading MIDI or not, gets a live MIDI input (CompileOptions).
+    bool hearsLiveMidi(const TrackInfo& track, bool readsMidi) const {
+        return !options_.playedInstruments || !readsMidi || sendsMidiOut(track) ||
+               options_.playedInstruments->contains(track.id);
     }
 
     OpId addOp(OpKind kind, const OpKey& key, std::vector<PortRef> inputs,
@@ -1867,7 +1876,8 @@ void Compiler::emitTrack(const TrackInfo& track) {
     // whether or not the track monitors it; the live routing snapshot decides
     // what it reads (#2612).
     const auto route = midiInputRoute(track);
-    if (route.kind == RouteKind::External || (options_.auditionMidi && readsMidi))
+    if ((route.kind == RouteKind::External || (options_.auditionMidi && readsMidi)) &&
+        hearsLiveMidi(track, readsMidi))
         midiSources.push_back(emitLiveMidiInput(track.id));
 
     switch (route.kind) {
