@@ -361,15 +361,34 @@ void ChordClipContent::updateBlockDrag(int mouseX) {
             return;
     }
 
-    // Live preview: move the annotation only (display); notes commit on mouseUp.
+    // Live preview of the block and its notes; the notes commit on mouseUp.
     // For an alt-copy the original must stay put, so skip the live move.
     if (!copyDrag_) {
         auto& a = clip->chordAnnotations[static_cast<size_t>(dragAnnIndex_)];
         a.beatPosition = dragNewStart_;
         a.lengthBeats = dragNewEnd_ - dragNewStart_;
+        for (const auto& dn : dragNotes_) {
+            const auto [start, length] = draggedNoteSpan(dn);
+            showNoteAt(dn.index, start, length);
+        }
     }
     placeWheel();  // its "+" moves with the chord
     repaint();
+}
+
+std::pair<double, double> ChordClipContent::draggedNoteSpan(const DragNote& dn) const {
+    const double startDelta = dragNewStart_ - dragOrigStart_;
+    switch (blockDrag_) {
+        case BlockDrag::Move:
+            return {dn.start + startDelta, dn.length};
+        case BlockDrag::ResizeLeft:
+            return {dn.start + startDelta, dragNewEnd_ - dragNewStart_};
+        case BlockDrag::ResizeRight:
+            return {dn.start, dragNewEnd_ - dn.start};
+        case BlockDrag::None:
+            break;
+    }
+    return {dn.start, dn.length};
 }
 
 void ChordClipContent::commitBlockDrag() {
@@ -397,17 +416,14 @@ void ChordClipContent::commitBlockDrag() {
     }
 
     if (moved) {
-        const double startDelta = dragNewStart_ - dragOrigStart_;
         for (const auto& dn : dragNotes_) {
-            if (blockDrag_ != BlockDrag::ResizeRight && std::abs(startDelta) > 1e-6)
-                undo.executeCommand(std::make_unique<magda::MoveMidiNoteCommand>(
-                    clipId, dn.index, dn.start + startDelta, dn.note));
-            if (blockDrag_ != BlockDrag::Move) {
-                const double newStart =
-                    (blockDrag_ == BlockDrag::ResizeLeft) ? dragNewStart_ : dn.start;
-                undo.executeCommand(std::make_unique<magda::ResizeMidiNoteCommand>(
-                    clipId, dn.index, dragNewEnd_ - newStart));
-            }
+            const auto [start, length] = draggedNoteSpan(dn);
+            if (std::abs(start - dn.start) > 1e-6)
+                undo.executeCommand(
+                    std::make_unique<magda::MoveMidiNoteCommand>(clipId, dn.index, start, dn.note));
+            if (std::abs(length - dn.length) > 1e-6)
+                undo.executeCommand(
+                    std::make_unique<magda::ResizeMidiNoteCommand>(clipId, dn.index, length));
         }
     }
 
@@ -513,11 +529,15 @@ void ChordClipContent::paintOverChildren(juce::Graphics& g) {
     }
     paintWheelDragLabel(g);
 
-    if (!copyDrag_ || blockDrag_ == BlockDrag::None)
-        return;
+    if (dropGhostBar_.has_value())
+        paintChordGhost(g, *dropGhostBar_, *dropGhostBar_ + beatsPerBar());
+    if (copyDrag_ && blockDrag_ != BlockDrag::None)
+        paintChordGhost(g, dragNewStart_, dragNewEnd_);
+}
 
-    const int x1 = std::max(chordLaneLeftX(), chordRowXForBeat(dragNewStart_));
-    const int x2 = chordRowXForBeat(dragNewEnd_);
+void ChordClipContent::paintChordGhost(juce::Graphics& g, double startBeat, double endBeat) const {
+    const int x1 = std::max(chordLaneLeftX(), chordRowXForBeat(startBeat));
+    const int x2 = chordRowXForBeat(endBeat);
     if (x2 <= x1)
         return;
 
@@ -759,35 +779,38 @@ void ChordClipContent::showChordContextMenu(int annIndex) {
         });
 }
 
-bool ChordClipContent::insertChordAtBeat(double clipRelativeBeat, const std::vector<int>& pitches) {
-    const auto clipId = getEditingClipId();
-    if (clipId == magda::INVALID_CLIP_ID || pitches.empty())
-        return false;
-
-    const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+std::optional<double> ChordClipContent::freeChordBar(double clipRelativeBeat) const {
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
     if (clip == nullptr)
-        return false;
+        return std::nullopt;
 
-    // Chords snap to the bar so the per-bar chord detection picks them up
-    // cleanly. A chord defaults to one bar long.
+    // Chords snap to the bar so the per-bar chord detection picks them up cleanly.
     const double barBeats = beatsPerBar();
     const double bar = std::max(0.0, std::round(clipRelativeBeat / barBeats) * barBeats);
-    constexpr int kDefaultVelocity = 100;
 
     // A bar that already has a chord is for editing it, not stacking a new one.
     const auto coversBar = [bar](const magda::ClipInfo::ChordAnnotation& ann) {
         return bar >= ann.beatPosition && bar < ann.beatPosition + ann.lengthBeats;
     };
     if (std::ranges::any_of(clip->chordAnnotations, coversBar))
+        return std::nullopt;
+    return bar;
+}
+
+bool ChordClipContent::insertChordAtBeat(double clipRelativeBeat, const std::vector<int>& pitches) {
+    const auto clipId = getEditingClipId();
+    const auto bar = freeChordBar(clipRelativeBeat);
+    if (clipId == magda::INVALID_CLIP_ID || pitches.empty() || !bar.has_value())
         return false;
 
     // Insert the notes, then detection builds the (linked) chord-lane block, so
-    // later note edits re-sync the chord via syncChordAnnotations().
+    // later note edits re-sync the chord via syncChordAnnotations(). A chord is one bar long.
+    constexpr int kDefaultVelocity = 100;
     magda::CompoundOperationScope scope("Add Chord");
     auto& undo = magda::UndoManager::getInstance();
     for (int pitch : pitches) {
         undo.executeCommand(std::make_unique<magda::AddMidiNoteCommand>(
-            clipId, bar, std::clamp(pitch, 0, 127), barBeats, kDefaultVelocity));
+            clipId, *bar, std::clamp(pitch, 0, 127), beatsPerBar(), kDefaultVelocity));
     }
 
     redetectChords();
@@ -1103,9 +1126,33 @@ bool ChordClipContent::isInterestedInFileDrag(const juce::StringArray& files) {
     return std::ranges::any_of(files, isMidiFile);
 }
 
+void ChordClipContent::fileDragEnter(const juce::StringArray& files, int x, int y) {
+    fileDragMove(files, x, y);
+}
+
+void ChordClipContent::fileDragMove(const juce::StringArray& /*files*/, int x, int y) {
+    setDropGhostBar(isOnChordLane(y) ? freeChordBar(chordRowBeatForX(x)) : std::nullopt);
+}
+
+void ChordClipContent::fileDragExit(const juce::StringArray& /*files*/) {
+    setDropGhostBar(std::nullopt);
+}
+
+void ChordClipContent::setDropGhostBar(std::optional<double> bar) {
+    if (bar != dropGhostBar_) {
+        dropGhostBar_ = bar;
+        repaint();
+    }
+}
+
+bool ChordClipContent::isOnChordLane(int y) const {
+    return y >= chordRowTop() && y < chordRowTop() + chordRowHeight();
+}
+
 void ChordClipContent::filesDropped(const juce::StringArray& files, int x, int y) {
+    setDropGhostBar(std::nullopt);
     // Only the chord lane accepts chord drops.
-    if (y < chordRowTop() || y >= chordRowTop() + chordRowHeight())
+    if (!isOnChordLane(y))
         return;
 
     for (const auto& f : files) {
