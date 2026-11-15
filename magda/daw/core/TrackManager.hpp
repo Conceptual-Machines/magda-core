@@ -497,9 +497,6 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // 1-16, or 0: any channel in, the channel as it was out (#2209).
     void setTrackMidiInputChannel(TrackId trackId, int channel);
     void setTrackMidiOutputChannel(TrackId trackId, int channel);
-    // Clear midiInputDevice on every track listening to sourceTrackId
-    // (optionally keeping excludeTrackId's routing intact).
-    void clearMidiTrackListeners(TrackId sourceTrackId, TrackId excludeTrackId = INVALID_TRACK_ID);
     void setTrackAudioInput(TrackId trackId, const juce::String& deviceId);
     void setTrackAudioOutput(TrackId trackId, const juce::String& routing);
 

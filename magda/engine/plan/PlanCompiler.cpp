@@ -229,6 +229,8 @@ class Compiler {
     TrackRoute midiInputRoute(const TrackInfo& track) const;
     /// The track @p track's MIDI Out sends to, if it names one (#2209).
     TrackRoute midiOutputRoute(const TrackInfo& track) const;
+    /// Whether @p sender's MIDI Out reaches @p receiver, not refused as a loop.
+    bool sendsMidiOutTo(TrackId sender, TrackId receiver) const;
 
     /**
      * @brief The op the live audio input reaches @p trackId's chain through.
@@ -508,6 +510,12 @@ TrackRoute Compiler::midiOutputRoute(const TrackInfo& track) const {
     if (!carriesClips(track) || !track.midiOutputDevice.startsWith("track:"))
         return {RouteKind::None, INVALID_TRACK_ID};
     return parseTrackRoute(track.midiOutputDevice);
+}
+
+bool Compiler::sendsMidiOutTo(TrackId sender, TrackId receiver) const {
+    const auto senders = midiOutSenders_.find(receiver);
+    return senders != midiOutSenders_.end() && std::ranges::contains(senders->second, sender) &&
+           !refusedMidiOutRoutes_.contains({receiver, sender});
 }
 
 TrackId Compiler::resolveAudioDestination(const TrackInfo& track) {
@@ -1886,6 +1894,9 @@ void Compiler::emitTrack(const TrackInfo& track) {
             // not what its own chain made of it.
             if (refusedMidiRoutes_.contains(track.id)) {
                 // Reported where the loop was found.
+            } else if (sendsMidiOutTo(route.trackId, track.id)) {
+                // The source's MIDI Out names this track too. One connection made from both
+                // ends, so it is delivered once, by the MIDI Out route below.
             } else if (const auto source = trackMidiInput_.find(route.trackId);
                        source != trackMidiInput_.end()) {
                 const auto gate = emitInputRouteGate(track.id, 1, source->second);

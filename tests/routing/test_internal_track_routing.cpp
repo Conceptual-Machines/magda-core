@@ -291,13 +291,13 @@ TEST_CASE("A track's MIDI channels are clamped and saved with its routing",
     CHECK(info->routingState().midiOutputChannel == 16);
 }
 
-TEST_CASE("Selecting a hardware MIDI output clears the source's track listeners",
-          "[routing][midi-out]") {
+TEST_CASE("A track's MIDI Out leaves the tracks taking it as input alone", "[routing][midi-out]") {
     InternalRoutingFixture fixture;
 
     auto trackA = fixture.createTrack("A");
     auto trackB = fixture.createTrack("B");
     auto trackC = fixture.createTrack("C");
+    auto trackD = fixture.createTrack("D");
 
     // Fan-out created from the destination side: B and C both listen to A
     fixture.tm().setTrackMidiInput(trackB, fixture.trackInput(trackA));
@@ -305,19 +305,21 @@ TEST_CASE("Selecting a hardware MIDI output clears the source's track listeners"
 
     SECTION("hardware device") {
         fixture.tm().setTrackMidiOutput(trackA, "hw-midi-out");
-
         REQUIRE(fixture.tm().getTrack(trackA)->midiOutputDevice == "hw-midi-out");
-        REQUIRE(fixture.tm().getTrack(trackB)->midiInputDevice.isEmpty());
-        REQUIRE(fixture.tm().getTrack(trackC)->midiInputDevice.isEmpty());
+    }
+
+    SECTION("another track") {
+        fixture.tm().routeMidiOutputToTrack(trackA, trackD);
+        REQUIRE(fixture.tm().getTrack(trackA)->midiOutputDevice == fixture.trackInput(trackD));
     }
 
     SECTION("none") {
         fixture.tm().setTrackMidiOutput(trackA, "");
-
         REQUIRE(fixture.tm().getTrack(trackA)->midiOutputDevice.isEmpty());
-        REQUIRE(fixture.tm().getTrack(trackB)->midiInputDevice.isEmpty());
-        REQUIRE(fixture.tm().getTrack(trackC)->midiInputDevice.isEmpty());
     }
+
+    CHECK(fixture.tm().getTrack(trackB)->midiInputDevice == fixture.trackInput(trackA));
+    CHECK(fixture.tm().getTrack(trackC)->midiInputDevice == fixture.trackInput(trackA));
 }
 
 TEST_CASE("Rejected routeMidiOutputToTrack changes nothing", "[routing][midi-out][cycle]") {

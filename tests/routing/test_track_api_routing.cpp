@@ -183,6 +183,37 @@ TEST_CASE("A MIDI Out to a track is the sender's, and several may name one track
     CHECK(fixture.tracks.getTrack(first)->midiOutputDevice.isEmpty());
 }
 
+TEST_CASE("Several tracks may take one as MIDI input, and its MIDI Out is its own",
+          "[routing][api][2209]") {
+    RoutingApiFixture fixture;
+    const auto source = fixture.add("Source");
+    const auto first = fixture.add("First");
+    const auto second = fixture.add("Second");
+    const auto elsewhere = fixture.add("Elsewhere");
+    const auto sourceRoute = "track:" + juce::String(source);
+
+    TrackRoutingPatch listen;
+    listen.midiInputEndpointId = sourceRoute;
+    REQUIRE(fixture.api.setRouting(first, listen).status == SetTrackRoutingStatus::Applied);
+    REQUIRE(fixture.api.setRouting(second, listen).status == SetTrackRoutingStatus::Applied);
+    CHECK(fixture.tracks.getTrack(first)->midiInputDevice == sourceRoute);
+
+    // The source's own MIDI Out is not whoever listens to it.
+    const auto unset = fixture.api.getRouting(source);
+    REQUIRE(unset.has_value());
+    CHECK(unset->midiOutputEndpointId == noneId(RoutingMedia::Midi, RoutingDirection::Output));
+
+    TrackRoutingPatch send;
+    send.midiOutputEndpointId = "track:" + juce::String(elsewhere);
+    const auto result = fixture.api.setRouting(source, send);
+    REQUIRE(result.status == SetTrackRoutingStatus::Applied);
+    CHECK(result.droppedConnections.empty());
+    CHECK(fixture.tracks.getTrack(first)->midiInputDevice == sourceRoute);
+    CHECK(fixture.tracks.getTrack(second)->midiInputDevice == sourceRoute);
+    CHECK(fixture.api.getRouting(source)->midiOutputEndpointId ==
+          "track:" + juce::String(elsewhere));
+}
+
 TEST_CASE("A MIDI channel outside 0-16 is refused", "[routing][api][2209]") {
     RoutingApiFixture fixture;
     const auto track = fixture.add("Track");
