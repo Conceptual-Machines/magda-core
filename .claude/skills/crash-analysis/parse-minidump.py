@@ -10,6 +10,7 @@ With --pdb: stack addresses are resolved to function names using
 llvm-pdbutil (installed at /opt/homebrew/opt/llvm/bin/ on macOS).
 """
 
+import re
 import struct
 import sys
 import os
@@ -159,43 +160,57 @@ def _find_tool(name):
     homebrew = f"/opt/homebrew/opt/llvm/bin/{name}"
     return homebrew if os.path.exists(homebrew) else name
 
-def build_symbol_map(pdb_path):
-    """
-    Dump public symbols from PDB via llvm-pdbutil and return a sorted list of
-    (rva, name) pairs. Section 1 (.text) offsets are used as RVA approximations.
-    """
+def _pdbutil_dump(pdb_path, what):
     tool = _find_tool("llvm-pdbutil")
     try:
-        result = subprocess.run(
-            [tool, "dump", "--publics", pdb_path],
-            capture_output=True, text=True, timeout=60
-        )
+        return subprocess.run([tool, "dump", what, pdb_path],
+                              capture_output=True, text=True, timeout=120).stdout
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
         print(f"  [warn] {tool}: {e}", file=sys.stderr)
-        return []
+        return ""
 
-    symbols = []
-    current_name = None
-    for line in result.stdout.splitlines():
-        line = line.strip()
-        if line.startswith("demangled ="):
-            current_name = line.split("=", 1)[1].strip()
-        elif line.startswith("mangled =") and not current_name:
-            current_name = line.split("=", 1)[1].strip()
-        elif line.startswith("addr =") and current_name:
-            addr_str = line.split("=", 1)[1].strip()
-            try:
-                section_str, offset_str = addr_str.split(":")
-                section = int(section_str, 16)
-                offset  = int(offset_str, 16)
-                if section == 1:          # .text section → offset ≈ RVA
-                    symbols.append((offset, current_name))
-            except ValueError:
-                pass  # ignore malformed addr lines in llvm-pdbutil output
-            current_name = None
+def build_symbol_map(pdb_path):
+    """
+    Public symbols as a sorted list of (rva, mangled name). llvm-pdbutil prints
+    a symbol's address as section:offset with the offset in decimal, and each
+    section's virtual address in hex.
+    """
+    sections, number = {}, None
+    for line in _pdbutil_dump(pdb_path, "--section-headers").splitlines():
+        header = re.match(r"\s*SECTION HEADER #(\d+)", line)
+        if header:
+            number = int(header.group(1))
+        elif number is not None and line.strip().endswith("virtual address"):
+            sections[number] = int(line.split()[0], 16)
 
-    symbols.sort(key=lambda x: x[0])
+    symbols, name = [], None
+    for line in _pdbutil_dump(pdb_path, "--publics").splitlines():
+        public = re.search(r"S_PUB32 .*`(.*)`", line)
+        if public:
+            name = public.group(1)
+            continue
+        addr = re.search(r"addr = (\d+):(\d+)", line)
+        if addr and name and int(addr.group(1)) in sections:
+            symbols.append((sections[int(addr.group(1))] + int(addr.group(2)), name))
+        name = None
+
+    symbols.sort()
     return symbols
+
+_demangled = {}
+
+def demangle(name):
+    if not name.startswith("?"):
+        return name
+    if name not in _demangled:
+        try:
+            out = subprocess.run([_find_tool("llvm-undname"), name],
+                                 capture_output=True, text=True, timeout=10).stdout
+            lines = [l for l in out.splitlines() if l.strip()]
+            _demangled[name] = lines[-1] if len(lines) > 1 else name
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            _demangled[name] = name
+    return _demangled[name]
 
 def lookup_symbol(rva, symbol_map):
     """Binary search: nearest symbol at or before rva."""
@@ -224,7 +239,7 @@ def fmt_addr(addr, modules, symbol_map):
     if mn.lower() == "magda.exe" and symbol_map:
         sym, fn_off = lookup_symbol(mo, symbol_map)
         if sym:
-            return f"0x{addr:016X}  {sym}+0x{fn_off:X}"
+            return f"0x{addr:016X}  {demangle(sym)}+0x{fn_off:X}"
     return f"0x{addr:016X}  {mn}+0x{mo:X}"
 
 # ── Top-level parse ───────────────────────────────────────────────────────────
