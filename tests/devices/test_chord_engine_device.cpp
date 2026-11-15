@@ -122,7 +122,54 @@ TEST_CASE("Scale filtering keeps suggestions inside the chosen scale", "[chord]"
     CHECK_FALSE(filtered.empty());
     CHECK(outsidePentatonic(filtered) == 0);
 
-    // Past 40% novelty the filter lets the non-diatonic chords through, past 80% everything.
-    params.novelty = 0.9f;
-    CHECK(outsidePentatonic(engine.generateSuggestions(recent, params, "C", "major")) > 0);
+    // Novelty does not loosen a chosen scale (#3291).
+    params.novelty = 1.0f;
+    const auto wild = engine.generateSuggestions(recent, params, "C", "major");
+    CHECK_FALSE(wild.empty());
+    CHECK(outsidePentatonic(wild) == 0);
+}
+
+TEST_CASE("With no scale picked, the filter keeps suggestions inside the detected scales",
+          "[chord]") {
+    using magda::music::ChordEngine;
+    using magda::music::ChordQuality;
+    using magda::music::ChordRoot;
+    using magda::music::ChordSuggestionEngine;
+
+    ChordSuggestionEngine engine;
+    ChordSuggestionEngine::SuggestionParams params;
+    auto& chords = ChordEngine::getInstance();
+    double t = 0.0;
+    for (const auto [root, quality] : {std::pair{ChordRoot::C, ChordQuality::Major},
+                                       std::pair{ChordRoot::A, ChordQuality::Minor},
+                                       std::pair{ChordRoot::F, ChordQuality::Major},
+                                       std::pair{ChordRoot::G, ChordQuality::Major}})
+        engine.processNewChord(chords.buildChordInRootPosition(root, quality), t += 1.0, params);
+    const auto recent = engine.getRecentChords();
+
+    // Detected scales were looked up by a renamed name, so major and minor added nothing (#3291).
+    for (const float novelty : {0.3f, 1.0f}) {
+        CAPTURE(novelty);
+        params.novelty = novelty;
+        std::set<int> detected;
+        for (const auto& scale : engine.getTopDetectedScales(3, novelty))
+            detected.insert(scale.pitches.begin(), scale.pitches.end());
+        REQUIRE(detected.size() < 12);
+        const auto outsideDetected =
+            [&](const std::vector<ChordSuggestionEngine::SuggestionItem>& s) {
+                return std::ranges::count_if(s, [&](const auto& item) {
+                    return std::ranges::any_of(item.chord.notes, [&](const auto& note) {
+                        return !detected.contains(note.noteNumber % 12);
+                    });
+                });
+            };
+
+        params.useScaleFiltering = false;
+        CHECK(outsideDetected(engine.generateSuggestions(recent, params, "C", "major")) > 0);
+
+        params.useScaleFiltering = true;
+        const auto filtered = engine.generateSuggestions(recent, params, "C", "major");
+        CHECK_FALSE(filtered.empty());
+        CHECK(outsideDetected(filtered) == 0);
+    }
 }
