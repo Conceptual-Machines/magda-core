@@ -1226,7 +1226,11 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     {
         const auto head = juce::Rectangle<int>(0, 0, ownBounds.getWidth(), headHeight());
         if (fullBar && coloured) {
-            setHeadFill();
+            // The mixer's short head fades bottom up, and sooner than a track's (#3307).
+            constexpr float kMixerHeadTintSpan = 0.15f;
+            const auto area = head.toFloat();
+            g.setGradientFill(deriveTrackHeadGradient(trackColour_, shade_, area.getBottomLeft(),
+                                                      area.getTopLeft(), kMixerHeadTintSpan));
             g.fillRect(head);
             if (selected) {
                 g.setColour(swatch.brighter(0.6f));
@@ -1759,7 +1763,7 @@ void MixerView::ChannelStrip::applyLabelColour() {
     const bool colouredHead = Config::getInstance().getTrackColourStyle() == "full" && !isMaster_ &&
                               trackColour_ != juce::Colour(0xFF444444);
     trackLabel->setColour(juce::Label::textColourId,
-                          colouredHead ? juce::Colours::white
+                          colouredHead ? trackHeadNameColour()
                                        : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
 }
 

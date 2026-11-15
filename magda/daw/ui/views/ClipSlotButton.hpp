@@ -540,12 +540,20 @@ class TrackHeaderButton : public juce::TextButton {
 
         // Selection as the arrangement draws it: Spine lifts the head, Full bar keeps the
         // colour and adds a light line under it.
-        auto fill = filled      ? swatch
-                    : selected_ ? ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2)
-                                : ActiveTheme::getColour(ActiveTheme::SURFACE);
-        if (shouldDrawButtonAsHighlighted)
-            fill = fill.brighter(0.06f);
-        g.fillAll(fill);
+        if (filled) {
+            g.setGradientFill(deriveTrackHeadGradient(trackColour_, shade_, bounds));
+            g.fillAll();
+            if (shouldDrawButtonAsHighlighted) {
+                g.setColour(juce::Colours::white.withAlpha(0.04f));
+                g.fillAll();
+            }
+        } else {
+            auto fill = selected_ ? ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2)
+                                  : ActiveTheme::getColour(ActiveTheme::SURFACE);
+            if (shouldDrawButtonAsHighlighted)
+                fill = fill.brighter(0.06f);
+            g.fillAll(fill);
+        }
 
         auto content = getLocalBounds().reduced(8, 0);
         if (filled && selected_) {
@@ -562,9 +570,15 @@ class TrackHeaderButton : public juce::TextButton {
                              .withCentre({static_cast<float>(content.getRight()) - kDotSize * 0.5f,
                                           bounds.getCentreY()});
         if (foldChevron_ == nullptr) {
-            g.setColour(filled ? juce::Colours::white.withAlpha(0.4f)
-                               : ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.6f));
-            g.fillEllipse(dot);
+            if (filled) {
+                g.setColour(headMarkSocket());
+                g.fillEllipse(dot);
+                g.setColour(juce::Colours::white.withAlpha(0.45f));
+                g.fillEllipse(dot.reduced(1.5f));
+            } else {
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.6f));
+                g.fillEllipse(dot);
+            }
             if (midiActivity_ > 0.01f) {
                 g.setColour(juce::Colour(0xFF00FFFF).withAlpha(midiActivity_));
                 g.fillEllipse(dot);
@@ -572,7 +586,7 @@ class TrackHeaderButton : public juce::TextButton {
         }
         content.removeFromRight(static_cast<int>(kDotSize) + 8);
 
-        g.setColour(filled ? juce::Colours::white
+        g.setColour(filled ? trackHeadNameColour()
                            : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         g.setFont(FontManager::getInstance().getHeadingFont(14.0f));
         g.drawText(getButtonText(), content, juce::Justification::centredLeft, true);
