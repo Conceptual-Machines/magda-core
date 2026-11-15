@@ -110,7 +110,7 @@ class ClipInspector : public BaseInspector,
     };
     NamePopupListener namePopupListener_;
     bool nameFilled_ = false;
-    juce::Colour nameFill_;
+    juce::Colour nameColour_;  // Full bar: the colour the name block fades into
     juce::Rectangle<int> nameArea_;
     void applyHeaderStyle();
     void configChanged() override;

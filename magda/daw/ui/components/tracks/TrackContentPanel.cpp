@@ -216,6 +216,7 @@ TrackContentPanel::TrackContentPanel() {
 
     // Register as ClipManager listener
     ClipManager::getInstance().addListener(this);
+    Config::getInstance().addListener(this);
 
     // Register as SelectionManager listener so multi-track selection drives
     // lane highlights, not just the single selectedTrackIndex.
@@ -247,6 +248,7 @@ TrackContentPanel::~TrackContentPanel() {
 
     // Unregister from ClipManager
     ClipManager::getInstance().removeListener(this);
+    Config::getInstance().removeListener(this);
 
     // Unregister from SelectionManager
     SelectionManager::getInstance().removeListener(this);
@@ -1025,13 +1027,17 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
 
         // Header with "Recording..." label
         auto headerArea = bounds.withHeight(HEADER_HEIGHT);
-        g.setColour(deriveTrackSwatch(baseColour));
-        g.fillRoundedRectangle(
-            headerArea.toFloat().withBottom(static_cast<float>(headerArea.getBottom() + 2)),
-            CORNER_RADIUS);
+        const bool fullBar = Config::getInstance().getTrackColourStyle() == "full";
+        const auto headerFill =
+            headerArea.toFloat().withBottom(static_cast<float>(headerArea.getBottom() + 2));
+        if (fullBar)
+            g.setGradientFill(deriveTrackHeadGradient(baseColour, 0.0f, headerFill));
+        else
+            g.setColour(deriveTrackSwatch(baseColour));
+        g.fillRoundedRectangle(headerFill, CORNER_RADIUS);
 
         if (bounds.getWidth() > 40) {
-            g.setColour(deriveSwatchInk(baseColour).withAlpha(0.92f));
+            g.setColour((fullBar ? trackHeadNameColour() : juce::Colours::white).withAlpha(0.92f));
             g.setFont(10.0f);
             g.drawText("Recording...", headerArea.reduced(4, 0), juce::Justification::centredLeft,
                        true);

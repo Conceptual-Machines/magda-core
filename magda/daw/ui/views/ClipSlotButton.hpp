@@ -240,7 +240,7 @@ class ClipSlotButton : public juce::TextButton {
         const bool playing = hasClip && clipIsPlaying && transportIsPlaying;
         const bool recording = !hasClip && slotIsRecording;
         if (hasClip) {
-            const auto swatch = deriveLevelledSwatch(clipColour);
+            const auto swatch = deriveTrackSwatch(clipColour);
             fill = slotFill.interpolatedWith(swatch, playing ? 0.52f : 0.34f);
             border =
                 playing ? deriveTrackAccent(clipColour) : slotFill.interpolatedWith(swatch, 0.55f);
@@ -426,7 +426,6 @@ class TrackHeaderButton : public juce::TextButton {
         foldChevron_ = std::make_unique<FoldChevronButton>(FoldChevronButton::Direction::Left);
         foldChevron_->setTooltip("Fold the chord track");
         foldChevron_->onClick = std::move(onFold);
-        foldChevron_->setTrackColour(trackColour_);
         addAndMakeVisible(*foldChevron_);
         resized();
     }
@@ -489,8 +488,6 @@ class TrackHeaderButton : public juce::TextButton {
     }
 
     void setTrackColour(juce::Colour c) {
-        if (foldChevron_ != nullptr)
-            foldChevron_->setTrackColour(c);
         if (trackColour_ != c) {
             trackColour_ = c;
             repaint();
@@ -543,12 +540,20 @@ class TrackHeaderButton : public juce::TextButton {
 
         // Selection as the arrangement draws it: Spine lifts the head, Full bar keeps the
         // colour and adds a light line under it.
-        auto fill = filled      ? swatch
-                    : selected_ ? ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2)
-                                : ActiveTheme::getColour(ActiveTheme::SURFACE);
-        if (shouldDrawButtonAsHighlighted)
-            fill = fill.brighter(0.06f);
-        g.fillAll(fill);
+        if (filled) {
+            g.setGradientFill(deriveTrackHeadGradient(trackColour_, shade_, bounds));
+            g.fillAll();
+            if (shouldDrawButtonAsHighlighted) {
+                g.setColour(juce::Colours::white.withAlpha(0.04f));
+                g.fillAll();
+            }
+        } else {
+            auto fill = selected_ ? ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2)
+                                  : ActiveTheme::getColour(ActiveTheme::SURFACE);
+            if (shouldDrawButtonAsHighlighted)
+                fill = fill.brighter(0.06f);
+            g.fillAll(fill);
+        }
 
         auto content = getLocalBounds().reduced(8, 0);
         if (filled && selected_) {
@@ -565,9 +570,15 @@ class TrackHeaderButton : public juce::TextButton {
                              .withCentre({static_cast<float>(content.getRight()) - kDotSize * 0.5f,
                                           bounds.getCentreY()});
         if (foldChevron_ == nullptr) {
-            g.setColour(filled ? deriveSwatchInk(trackColour_).withAlpha(0.4f)
-                               : ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.6f));
-            g.fillEllipse(dot);
+            if (filled) {
+                g.setColour(headMarkSocket());
+                g.fillEllipse(dot);
+                g.setColour(juce::Colours::white.withAlpha(0.45f));
+                g.fillEllipse(dot.reduced(1.5f));
+            } else {
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.6f));
+                g.fillEllipse(dot);
+            }
             if (midiActivity_ > 0.01f) {
                 g.setColour(juce::Colour(0xFF00FFFF).withAlpha(midiActivity_));
                 g.fillEllipse(dot);
@@ -575,7 +586,7 @@ class TrackHeaderButton : public juce::TextButton {
         }
         content.removeFromRight(static_cast<int>(kDotSize) + 8);
 
-        g.setColour(filled ? deriveSwatchInk(trackColour_)
+        g.setColour(filled ? trackHeadNameColour()
                            : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         g.setFont(FontManager::getInstance().getHeadingFont(14.0f));
         g.drawText(getButtonText(), content, juce::Justification::centredLeft, true);

@@ -25,12 +25,8 @@ class FoldChevronButton : public juce::Button {
     explicit FoldChevronButton(Direction direction);
     void paintButton(juce::Graphics& g, bool highlighted, bool down) override;
 
-    /** @brief The head's stored colour, whose swatch ink it takes on a full-bar head. */
-    void setTrackColour(juce::Colour stored);
-
   private:
     Direction direction_;
-    juce::Colour trackColour_{0xFF444444};
 };
 
 /** @brief The chord track folded to a narrow strip: a chevron and its name. A click unfolds it. */

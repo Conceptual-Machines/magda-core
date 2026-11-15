@@ -34,6 +34,7 @@
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
+#include "core/Config.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/PasteTargetResolver.hpp"
@@ -1138,13 +1139,20 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         return;
 
     const auto colour = displayColour(clip);
+    // Full bar fades the header into the clip colour; Spine keeps it flat (#3307).
+    const bool fullBar = Config::getInstance().getTrackColourStyle() == "full";
     if (!compact) {
         // 2px past its bottom, where the body's content area starts.
-        g.setColour(deriveTrackSwatch(colour));
-        g.fillRect(headerArea.withBottom(headerArea.getBottom() + 2));
+        const auto fill = headerArea.withBottom(headerArea.getBottom() + 2);
+        if (fullBar)
+            g.setGradientFill(deriveTrackHeadGradient(colour, 0.0f, fill.toFloat()));
+        else
+            g.setColour(deriveTrackSwatch(colour));
+        g.fillRect(fill);
     }
     const auto headerForeground =
-        compact ? ActiveTheme::getTextColour() : deriveSwatchInk(colour).withAlpha(0.92f);
+        compact ? ActiveTheme::getTextColour()
+                : (fullBar ? trackHeadNameColour() : juce::Colours::white).withAlpha(0.92f);
 
     // Ghost clips (link-group members) show a link glyph at the left of the
     // header and an italicised name.
@@ -1206,8 +1214,17 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         marks.push_back(StatusGlyph::BeatMode);
     constexpr int markW = 13;
     if (headerArea.getWidth() > MIN_WIDTH_FOR_NAME + markW * static_cast<int>(marks.size())) {
-        g.setColour(headerForeground.withMultipliedAlpha(0.85f));
         headerArea.removeFromRight(3);
+        if (!compact && fullBar && !marks.empty()) {
+            // On the colour end of the fade, white marks sit in a dark socket (#3307).
+            const int width = markW * static_cast<int>(marks.size());
+            g.setColour(headMarkSocket());
+            g.fillRoundedRectangle(
+                headerArea.withLeft(headerArea.getRight() - width).toFloat().reduced(0.0f, 2.0f),
+                3.0f);
+        }
+        const auto markInk = compact ? headerForeground : juce::Colours::white.withAlpha(0.92f);
+        g.setColour(markInk.withMultipliedAlpha(0.85f));
         for (auto mark : marks)
             paintStatusGlyph(g, headerArea.removeFromRight(markW).toFloat(), mark);
     }

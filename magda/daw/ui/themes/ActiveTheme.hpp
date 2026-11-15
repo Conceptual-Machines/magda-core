@@ -81,28 +81,10 @@ inline float sRgbToOklchHue(juce::Colour colour) {
     return juce::radiansToDegrees(std::atan2(lab.b, lab.a));
 }
 
-/// OKLCH lightness above which a track colour shows as picked (#3307); defaults reach 0.72.
-inline constexpr float kLightTrackColourLightness = 0.8f;
-
-/** @brief Whether @p stored is light enough to show as picked, under dark ink (#3307). */
-inline bool isLightTrackColour(juce::Colour stored) {
-    return sRgbToOklab(stored).L > kLightTrackColourLightness;
-}
-
-/** @brief Text and glyphs drawn on @p stored's swatch: near-black on a light colour, else white. */
-inline juce::Colour deriveSwatchInk(juce::Colour stored) {
-    return isLightTrackColour(stored) ? juce::Colour(0xFF1A1A1A) : juce::Colours::white;
-}
-
-/**
- * @brief @p stored's hue at the lightness and chroma every track shares.
- *
- * The target is slightly deeper on light surfaces so clips and headers keep their contrast.
- * Greys (near-zero saturation, the "no colour" sentinel among them) pass through unchanged.
- */
-juce::Colour deriveLevelledSwatch(juce::Colour stored, float alpha = 1.0f);
-
-/** @brief A track's header/clip swatch: the levelled hue, or a light colour as picked (#3307). */
+// Derives a track's header/clip swatch from its stored (user-picked) colour:
+// same hue, but normalized to a fixed lightness and chroma so every track
+// reads at the same visual energy. Colours near the "no colour" sentinel
+// (near-zero saturation) pass through unchanged.
 juce::Colour deriveTrackSwatch(juce::Colour stored, float alpha = 1.0f);
 
 /**
@@ -773,6 +755,9 @@ class ThemeManager {
     static const ActiveTheme::SyntaxPalette& builtInSyntaxPalette(const std::string& themeId);
 };
 
+// User colours stay stored verbatim. Only their presentation swatch is
+// normalized, with a slightly deeper target on light surfaces so clips and
+// headers retain contrast without changing hue.
 /** @brief A group's wrapper: its swatch at the group's own end, lifting toward the far end. */
 inline juce::ColourGradient groupWrapperGradient(juce::Colour swatch, juce::Point<float> from,
                                                  juce::Point<float> to) {
@@ -785,18 +770,13 @@ inline juce::Colour deriveShadedTrackSwatch(juce::Colour stored, float shade) {
     return shade > 0.0f ? swatch.darker(shade) : swatch;
 }
 
-inline juce::Colour deriveLevelledSwatch(juce::Colour stored, float alpha) {
+inline juce::Colour deriveTrackSwatch(juce::Colour stored, float alpha) {
     if (stored.getSaturation() < 0.05f)
         return stored.withAlpha(alpha);
 
     const float lightness = ThemeManager::isLightTheme() ? 0.48f : 0.55f;
     const float chroma = ThemeManager::isLightTheme() ? 0.12f : 0.10f;
     return oklchToColour(lightness, chroma, sRgbToOklchHue(stored), alpha);
-}
-
-inline juce::Colour deriveTrackSwatch(juce::Colour stored, float alpha) {
-    return isLightTrackColour(stored) ? stored.withAlpha(alpha)
-                                      : deriveLevelledSwatch(stored, alpha);
 }
 
 // Clip bodies darken the swatch on dark surfaces so the border and the black
@@ -813,6 +793,53 @@ inline juce::Colour deriveClipTint(juce::Colour stored) {
     const bool light = ThemeManager::isLightTheme();
     const float chroma = stored.getSaturation() < 0.05f ? 0.0f : 0.035f;
     return oklchToColour(light ? 0.93f : 0.27f, chroma, sRgbToOklchHue(stored));
+}
+
+/// How far across a full-bar head its tint holds before fading into the track colour (#3307).
+inline constexpr float kHeadTintSpan = 0.3f;
+
+/** @brief The tint a full-bar head's name sits on: the clip-body tint, below a darker colour. */
+inline juce::Colour deriveHeadTint(juce::Colour stored) {
+    if (ThemeManager::isLightTheme())
+        return deriveClipTint(stored);
+    const float chroma = stored.getSaturation() < 0.05f ? 0.0f : 0.035f;
+    const float lightness = juce::jlimit(0.0f, 0.27f, sRgbToOklab(stored).L - 0.08f);
+    return oklchToColour(lightness, chroma, sRgbToOklchHue(stored));
+}
+
+/**
+ * @brief A full-bar head's fill, from @p tintEnd to @p colourEnd (#3307).
+ *
+ * The tint holds for @p tintSpan of the way, then fades into @p stored as picked, darkened by
+ * @p shade (core/TrackShade.hpp).
+ */
+inline juce::ColourGradient deriveTrackHeadGradient(juce::Colour stored, float shade,
+                                                    juce::Point<float> tintEnd,
+                                                    juce::Point<float> colourEnd,
+                                                    float tintSpan = kHeadTintSpan) {
+    const auto tint = deriveHeadTint(stored);
+    const auto colour = shade > 0.0f ? stored.darker(shade) : stored;
+    juce::ColourGradient gradient(tint, tintEnd, colour, colourEnd, false);
+    gradient.addColour(tintSpan, tint);
+    return gradient;
+}
+
+/** @brief A full-bar head's fill across @p area, left to right. */
+inline juce::ColourGradient deriveTrackHeadGradient(juce::Colour stored, float shade,
+                                                    juce::Rectangle<float> area) {
+    return deriveTrackHeadGradient(stored, shade, area.getTopLeft(), area.getTopRight());
+}
+
+/** @brief The dark socket under a mark on a head's colour end, so white marks read on any colour.
+ */
+inline juce::Colour headMarkSocket() {
+    return juce::Colours::black.withAlpha(0.35f);
+}
+
+/** @brief Names on a full-bar head: white on the dark tint, the theme's text on a light one. */
+inline juce::Colour trackHeadNameColour() {
+    return ThemeManager::isLightTheme() ? ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY)
+                                        : juce::Colours::white;
 }
 
 // The swatch's accent tone for borders, rims and progress lines; deeper on light surfaces.

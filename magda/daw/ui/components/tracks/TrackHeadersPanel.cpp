@@ -137,14 +137,6 @@ float dbToGain(float db) {
     return std::pow(10.0f, db / 20.0f);
 }
 
-/** @brief A group chevron's colour: dark on a light full-bar head, as the name is (#3307). */
-juce::Colour collapseChevronInk(juce::Colour trackColour, bool isMaster) {
-    const bool lightHead = Config::getInstance().getTrackColourStyle() == "full" && !isMaster &&
-                           isLightTrackColour(trackColour);
-    return lightHead ? deriveSwatchInk(trackColour)
-                     : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
-}
-
 // MIDI activity indicator - small blinking dot
 class MidiActivityIndicator : public juce::Component {
   public:
@@ -155,9 +147,9 @@ class MidiActivityIndicator : public juce::Component {
         repaint();
     }
 
-    /** @brief On a full-bar track colour the idle dot is the head's ink, translucent. */
-    void setOnColouredHead(std::optional<juce::Colour> headInk) {
-        headInk_ = headInk;
+    // On a full-bar track colour the idle dot is a translucent white.
+    void setOnColouredHead(bool coloured) {
+        onColouredHead_ = coloured;
         repaint();
     }
 
@@ -175,10 +167,16 @@ class MidiActivityIndicator : public juce::Component {
         float dotY = bounds.getY() + 2.0f;  // Small padding from top
         auto dotBounds = juce::Rectangle<float>(dotX, dotY, dotSize, dotSize);
 
-        // Inactive state: neutral dimmed dot (dark on the selected fill)
-        g.setColour(
-            headInk_.value_or(ActiveTheme::getColour(ActiveTheme::TEXT_DIM)).withAlpha(0.4f));
-        g.fillEllipse(dotBounds);
+        // Inactive state: neutral dimmed dot; on a full-bar head, in a dark socket (#3307).
+        if (onColouredHead_) {
+            g.setColour(headMarkSocket());
+            g.fillEllipse(dotBounds);
+            g.setColour(juce::Colours::white.withAlpha(0.45f));
+            g.fillEllipse(dotBounds.reduced(1.5f));
+        } else {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.4f));
+            g.fillEllipse(dotBounds);
+        }
 
         // Active state: bright cyan glow
         if (activity_ > 0.01f) {
@@ -190,7 +188,7 @@ class MidiActivityIndicator : public juce::Component {
 
   private:
     float activity_ = 0.0f;
-    std::optional<juce::Colour> headInk_;
+    bool onColouredHead_ = false;
 };
 
 // Session mode indicator button — shows resume icon, orange when track is in session mode
@@ -1436,8 +1434,8 @@ void TrackHeadersPanel::setGhostHeaders(const juce::StringArray& labels,
     repaint();
 }
 
-// Names read light on every head; a full-bar track colour gives them its swatch ink. Values
-// are JetBrains Mono.
+// Names read light on every head; a full-bar head gives them its own name colour. Values are
+// JetBrains Mono.
 void TrackHeadersPanel::updateHeaderSelectionColours() {
     const auto& config = Config::getInstance();
     const bool fullBar = config.getTrackColourStyle() == "full";
@@ -1447,10 +1445,10 @@ void TrackHeadersPanel::updateHeaderSelectionColours() {
         header->panLabel->setFont(valueFont);
         const bool colouredHead =
             fullBar && !header->isMaster && header->trackColour != juce::Colour(0xFF444444);
-        const auto headInk = deriveSwatchInk(header->trackColour);
-        header->nameLabel->setColour(
-            juce::Label::textColourId,
-            colouredHead ? headInk : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        header->nameLabel->setColour(juce::Label::textColourId,
+                                     colouredHead
+                                         ? trackHeadNameColour()
+                                         : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         header->nameLabel->setColour(juce::Label::textWhenEditingColourId,
                                      ActiveTheme::getTextColour());
         header->nameLabel->setColour(juce::Label::backgroundWhenEditingColourId,
@@ -1458,12 +1456,9 @@ void TrackHeadersPanel::updateHeaderSelectionColours() {
         header->nameLabel->setColour(juce::Label::outlineWhenEditingColourId,
                                      ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         static_cast<TrackNameLabel*>(header->nameLabel.get())
-            ->setTextShadow(colouredHead && !isLightTrackColour(header->trackColour));
+            ->setTextShadow(colouredHead && !ThemeManager::isLightTheme());
         static_cast<MidiActivityIndicator*>(header->midiIndicator.get())
-            ->setOnColouredHead(colouredHead ? std::optional(headInk) : std::nullopt);
-        if (header->collapseButton &&
-            header->chevronInk != collapseChevronInk(header->trackColour, header->isMaster))
-            updateCollapseButtonIcon(*header);
+            ->setOnColouredHead(colouredHead);
     }
 }
 
@@ -2183,7 +2178,8 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     if (!header.isMaster) {
         const auto nameBandArea = bgArea.withHeight(nameBandHeight);
         if (fullBar && coloured) {
-            g.setColour(swatch);
+            g.setGradientFill(deriveTrackHeadGradient(
+                header.trackColour, shadeOf(trackShades_, header.trackId), nameBandArea.toFloat()));
             g.fillRect(nameBandArea);
             // Selection's light rim and underline draw over the children (paintOverChildren).
         } else if (isSelected) {
@@ -3083,8 +3079,7 @@ int TrackHeadersPanel::getVisibleHeaderIndex(TrackId trackId) const {
 }
 
 void TrackHeadersPanel::updateCollapseButtonIcon(TrackHeader& header) {
-    header.chevronInk = collapseChevronInk(header.trackColour, header.isMaster);
-    const auto colour = header.chevronInk;
+    auto colour = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
     if (header.isCollapsed) {
         auto icon = juce::Drawable::createFromImageData(BinaryData::chevron_right_svg,
                                                         BinaryData::chevron_right_svgSize);
