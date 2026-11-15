@@ -346,6 +346,7 @@ class FreezeUnloadTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { reopenedFrozenProjectLoadsNothing(); });
         magda::test::runWithCleanJuceState([this] { onlyWhatTheFileHoldsIsReleased(); });
         magda::test::runWithCleanJuceState([this] { chainFrozenFollowsTheOutputRoute(); });
+        magda::test::runWithCleanJuceState([this] { renderedDevicesMoveOnlyWithAPublish(); });
     }
 
   private:
@@ -564,6 +565,39 @@ class FreezeUnloadTest final : public juce::UnitTest {
 
         expect(engineHost.renderedDevice(chainPath) != nullptr, "The chain is built again");
         expect(engineHost.renderedDevice(feedingPath) != nullptr, "And the track feeding it");
+
+        engineHost.stop();
+        devices.closeAudioDevice();
+    }
+
+    void renderedDevicesMoveOnlyWithAPublish() {
+        beginTest("A faceplate finds its device by path, and asks again only after a publish");
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto trackId = tracks.createTrack("Chorus");
+        tracks.getTrack(trackId)->chain.fxChainElements.emplace_back(chorus(1));
+
+        PumpManager devices;
+        Host engineHost;
+        if (!start(engineHost, devices))
+            return;
+        auto& device = *devices.device;
+        settle(engineHost, device);
+
+        const auto firstPath = magda::ChainNodePath::topLevelDevice(trackId, 1);
+        const auto secondPath = magda::ChainNodePath::topLevelDevice(trackId, 2);
+        expect(engineHost.renderedDevice(firstPath) != nullptr, "The device is found by its path");
+        expect(engineHost.renderedDevice(secondPath) == nullptr, "A path nothing renders is not");
+
+        const auto published = engineHost.publishCount();
+        tracks.setTrackVolume(trackId, 0.5f);
+        settle(engineHost, device);
+        expectEquals(engineHost.publishCount(), published, "A fader move publishes no devices");
+
+        tracks.getTrack(trackId)->chain.fxChainElements.emplace_back(chorus(2));
+        tracks.notifyTrackDevicesChanged(trackId);
+        settle(engineHost, device);
+        expect(engineHost.publishCount() > published, "Adding a device does");
+        expect(engineHost.renderedDevice(secondPath) != nullptr, "And the new one is found");
 
         engineHost.stop();
         devices.closeAudioDevice();

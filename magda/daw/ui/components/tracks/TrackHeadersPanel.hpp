@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "../../themes/MixerLookAndFeel.hpp"
+#include "../../utils/TrackNamesSnapshot.hpp"
 #include "../automation/AutomationLaneHeader.hpp"
 #include "../common/ChordAuditionControl.hpp"
 #include "../common/DraggableValueLabel.hpp"
@@ -62,6 +63,11 @@ class TrackHeadersPanel : public juce::Component,
 
     // TrackManagerListener
     void tracksChanged() final;
+
+    /// For a panel shown again: a rename notifies only the renamed track, but routing menus name
+    /// it.
+    void rebuildIfRenamed();
+
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(magda::TrackId trackId) override;
     void devicePropertyChanged(const magda::ChainNodePath& devicePath) override;
@@ -276,6 +282,7 @@ class TrackHeadersPanel : public juce::Component,
 
     double verticalZoom = 1.0;  // Track height multiplier
     ViewMode currentViewMode_ = ViewMode::Arrange;
+    TrackNamesSnapshot namesAtBuild_;
     MixerLookAndFeel sliderLookAndFeel_;  // Custom look and feel for sliders
     AudioEngine* audioEngine_ = nullptr;  // Reference to audio engine for metering
 

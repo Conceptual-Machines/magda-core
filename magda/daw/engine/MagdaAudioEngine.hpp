@@ -118,6 +118,7 @@ class MagdaAudioEngine final : public AudioEngine,
 
     std::shared_ptr<daw::audio::MagdaDevice> renderedDevice(
         const ChainNodePath& devicePath) const override;
+    std::uint64_t publishCount() const override;
     HostParameters describeDeviceParameters(const ChainNodePath& devicePath) const override;
     std::optional<float> observedParameter(const ChainNodePath& devicePath,
                                            int paramIndex) const override;

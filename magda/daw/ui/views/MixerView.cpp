@@ -1901,8 +1901,6 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
 // MixerView implementation
 MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     Config::getInstance().addListener(this);
-    // Get current view mode
-    currentViewMode_ = ViewModeController::getInstance().getViewMode();
 
     // Create channel container
     channelContainer = std::make_unique<juce::Component>();
@@ -1954,9 +1952,6 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // Register as SelectionManager listener so multi-selected strips light up
     SelectionManager::getInstance().addListener(this);
 
-    // Register as ViewModeController listener
-    ViewModeController::getInstance().addListener(this);
-
     // Build channel strips from TrackManager
     rebuildChannelStrips();
 
@@ -1973,8 +1968,7 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
             hardware->addListener(this);
     }
 
-    // Start timer for meter animation (30fps)
-    startTimer(33);
+    // The meter timer starts when the mixer is shown; see visibilityChanged().
 }
 
 void MixerView::midiDeviceListChanged() {
@@ -1995,7 +1989,6 @@ MixerView::~MixerView() {
     stopTimer();
     TrackManager::getInstance().removeListener(this);
     SelectionManager::getInstance().removeListener(this);
-    ViewModeController::getInstance().removeListener(this);
 
     // Explicitly clear all UI components before automatic member destruction
     // This ensures components release their LookAndFeel references before
@@ -2250,6 +2243,7 @@ void MixerView::rebuildChannelStrips() {
         }
     });
 
+    namesAtBuild_.take();
     resized();
 }
 
@@ -2366,11 +2360,6 @@ void MixerView::devicePropertyChanged(const ChainNodePath& devicePath) {
             return;
         }
     }
-}
-
-void MixerView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profile*/) {
-    currentViewMode_ = mode;
-    rebuildChannelStrips();
 }
 
 void MixerView::masterChannelChanged() {
@@ -2990,12 +2979,10 @@ void MixerView::timerCallback() {
 
     // A faceplate whose device has just been published re-reads its settings
     // here: the model's notification ran before the publish (#2663).
-    for (auto& strip : channelStrips)
-        strip->refreshAnalyserSettings();
-    for (auto& strip : pinnedStrips)
-        strip->refreshAnalyserSettings();
-    if (masterStrip)
-        masterStrip->refreshAnalyserSettings();
+    if (const auto published = audioEngine_->publishCount(); published != seenPublishCount_) {
+        seenPublishCount_ = published;
+        refreshAllAnalyserSettings();
+    }
 
     // Update channel strip meters
     for (auto& strip : channelStrips) {
@@ -3021,6 +3008,37 @@ void MixerView::timerCallback() {
         float masterPeakR = meters.getMasterPeakR();
         masterStrip->setPeakLevels(masterPeakL, masterPeakR);
     }
+}
+
+void MixerView::visibilityChanged() {
+    if (!isVisible()) {
+        stopTimer();
+        return;
+    }
+
+    if (namesAtBuild_.isStale())
+        rebuildChannelStrips();
+
+    // The rings filled while nothing read them; what they hold is not what plays now.
+    if (audioEngine_ != nullptr) {
+        auto& ring = audioEngine_->meters().mixer;
+        MeterData stale;
+        for (auto* strips : {&channelStrips, &pinnedStrips})
+            for (auto& strip : *strips)
+                drainPeak(ring, strip->getTrackId(), stale);
+        seenPublishCount_ = audioEngine_->publishCount();
+    }
+    refreshAllAnalyserSettings();
+    startTimer(33);
+}
+
+void MixerView::refreshAllAnalyserSettings() {
+    for (auto& strip : channelStrips)
+        strip->refreshAnalyserSettings();
+    for (auto& strip : pinnedStrips)
+        strip->refreshAnalyserSettings();
+    if (masterStrip)
+        masterStrip->refreshAnalyserSettings();
 }
 
 bool MixerView::keyPressed(const juce::KeyPress& /*key*/) {

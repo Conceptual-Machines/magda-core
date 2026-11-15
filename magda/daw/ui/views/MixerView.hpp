@@ -5,6 +5,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
@@ -29,6 +30,7 @@
 #include "../components/tracks/TrackSeparatorView.hpp"
 #include "../themes/MixerLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
+#include "../utils/TrackNamesSnapshot.hpp"
 #include "TrackWidthPresetButtons.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/io/AudioIOControl.hpp"
@@ -60,7 +62,6 @@ class MixerView : public juce::Component,
                   public juce::Timer,
                   public TrackManagerListener,
                   public SelectionManagerListener,
-                  public ViewModeListener,
                   public MidiBridge::Listener,
                   private HardwareChannels::Listener,
                   private ConfigListener {
@@ -85,6 +86,9 @@ class MixerView : public juce::Component,
     // Timer callback for meter animation
     void timerCallback() override;
 
+    /// Runs the meter timer only while the mixer is on screen.
+    void visibilityChanged() override;
+
     // TrackManagerListener
     void tracksChanged() override;
     void midiDeviceListChanged() override;
@@ -100,9 +104,6 @@ class MixerView : public juce::Component,
     // SelectionManagerListener
     void selectionTypeChanged(SelectionType newType) override;
     void multiTrackSelectionChanged(const std::unordered_set<TrackId>& trackIds) override;
-
-    // ViewModeListener
-    void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
 
     // DragAndDropTarget
     bool isInterestedInDragSource(const SourceDetails& details) override;
@@ -393,11 +394,14 @@ class MixerView : public juce::Component,
     void rebuildChannelStrips();
     void updateStripWidths();
     void relayoutAllStrips();
+    void refreshAllAnalyserSettings();
     // Ensure every non-master track has (or lacks) the Oscilloscope /
     // Spectrum Analyzer post-FX device to match the mixer rail toggles.
     static void reconcileAnalysisDevices();
     bool isResizeDragging_ = false;
-    bool wasPlaying_ = false;  // tracks transport edge to auto-reset peak holds
+    bool wasPlaying_ = false;             // tracks transport edge to auto-reset peak holds
+    std::uint64_t seenPublishCount_ = 0;  // the engine publish the analysers last re-read at
+    TrackNamesSnapshot namesAtBuild_;
     bool pendingResizeUpdate_ = false;
     bool pendingSendResizeUpdate_ = false;
     std::vector<TrackId> channelWidthResizeTargets_;
@@ -410,7 +414,7 @@ class MixerView : public juce::Component,
     bool selectedIsMaster = false;
 
     // View mode state
-    ViewMode currentViewMode_ = ViewMode::Mix;
+    const ViewMode currentViewMode_ = ViewMode::Mix;  // the only mode the mixer is on screen in
 
     // Custom look and feel for faders
     MixerLookAndFeel mixerLookAndFeel_;

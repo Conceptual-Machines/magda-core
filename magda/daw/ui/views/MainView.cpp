@@ -163,7 +163,8 @@ MainView::MainView(AudioEngine* audioEngine) : horizontalZoom(10.0), audioEngine
     // Register as TrackManager and ViewModeController listener
     TrackManager::getInstance().addListener(this);
     ViewModeController::getInstance().addListener(this);
-    currentViewMode_ = ViewModeController::getInstance().getViewMode();
+    if (const auto mode = ViewModeController::getInstance().getViewMode(); showsTimeline(mode))
+        currentViewMode_ = mode;
 
     // Initialize master visibility
     const auto& master = TrackManager::getInstance().getMasterChannel();
@@ -950,6 +951,9 @@ void MainView::masterChannelChanged() {
 // ===== ViewModeListener Implementation =====
 
 void MainView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profile*/) {
+    // Hidden in the other modes, where rebuilding for their settings would be work for nothing.
+    if (!showsTimeline(mode) || mode == currentViewMode_)
+        return;
     currentViewMode_ = mode;
 
     // Update master visibility for new view mode
@@ -968,6 +972,11 @@ void MainView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profil
 
     resized();
     repaint();  // clear stale pixels from the previous view (song map / grid)
+}
+
+void MainView::visibilityChanged() {
+    if (isVisible() && trackHeadersPanel != nullptr)
+        trackHeadersPanel->rebuildIfRenamed();
 }
 
 void MainView::updateModeContent() {

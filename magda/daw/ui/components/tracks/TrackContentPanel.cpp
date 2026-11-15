@@ -223,7 +223,8 @@ TrackContentPanel::TrackContentPanel() {
 
     // Register as ViewModeController listener
     ViewModeController::getInstance().addListener(this);
-    currentViewMode_ = ViewModeController::getInstance().getViewMode();
+    if (const auto mode = ViewModeController::getInstance().getViewMode(); showsTimeline(mode))
+        currentViewMode_ = mode;
 
     // Register as AutomationManager listener
     AutomationManager::getInstance().addListener(this);
@@ -265,6 +266,8 @@ TrackContentPanel::~TrackContentPanel() {
 }
 
 void TrackContentPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profile*/) {
+    if (!showsTimeline(mode) || mode == currentViewMode_)
+        return;  // The arrangement is hidden in that mode; see MainView::viewModeChanged.
     currentViewMode_ = mode;
     tracksChanged();  // Rebuild with new visibility settings
 }

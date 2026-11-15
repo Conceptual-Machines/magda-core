@@ -822,6 +822,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // two walks that disagree (#2570). Only a structural edit moves a
         // device, which is what gets here.
         devicePaths_ = adapter::devicePathsIn(model, *master);
+        deviceKeys_.clear();
+        for (const auto& [key, path] : devicePaths_)
+            deviceKeys_.emplace(path, key);
         rackIds_ = modelRacks(model, *master);
 
         const auto tracks = playedTracks();
@@ -850,6 +853,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         const auto ids = idsToRetain(valueTracks, *master);
         const auto result = session_->publish(plan, context_, ids, std::move(values));
         report("publish", result.messages);
+        ++publishCount_;
 
         if (!result.published)
             return false;
@@ -2606,6 +2610,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             araTracks_->forgetProject();
         routing_.reset();
         devicePaths_.clear();
+        deviceKeys_.clear();
+        ++publishCount_;
 
         // Before the next project names the same addresses, since the first
         // tick that reports over them is a frame away (#2570).
@@ -3794,10 +3800,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /**
      * @brief The MAGDA device rendering at @p devicePath, or null (#2585).
      *
-     * Addressed off the same map the slot meters read, so the device a
-     * faceplate draws and the device it reads telemetry off cannot come from
-     * two walks that disagree -- and so a repaint costs a scan of the project's
-     * devices rather than a walk of its chains.
+     * Addressed off the same reading of the model the slot meters use, so the
+     * device a faceplate draws and the device it reads telemetry off cannot
+     * come from two walks that disagree.
      *
      * The store's lease comes back with it: a UI reading a ring holds the
      * instance open for the duration of the read, whatever a publish does to
@@ -3807,12 +3812,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (session_ == nullptr || !devicePath.isValid())
             return {};
 
-        const auto slot = std::ranges::find(devicePaths_, devicePath,
-                                            [](const auto& entry) { return entry.second; });
-        if (slot == devicePaths_.end())
+        const auto slot = deviceKeys_.find(devicePath);
+        if (slot == deviceKeys_.end())
             return {};
 
-        return session_->device(slot->first);
+        return session_->device(slot->second);
     }
 
     void invalidateParameterWritesAt(const ChainNodePath& devicePath) const {
@@ -3829,6 +3833,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         auto* device = magdaIn(*held);
         return device != nullptr ? std::shared_ptr<audio::MagdaDevice>{std::move(held), device}
                                  : nullptr;
+    }
+
+    std::uint64_t publishCount() const {
+        return publishCount_;
     }
 
     std::optional<float> observedParameter(const ChainNodePath& devicePath, int paramIndex) const {
@@ -4262,6 +4270,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// Rebuilt with every plan, which is what a device moving is (#2570).
     std::map<engine::DeviceKey, ChainNodePath> devicePaths_;
 
+    /// The same map turned round, for the faceplates that look a device up by path every frame.
+    std::map<ChainNodePath, engine::DeviceKey> deviceKeys_;
+
+    /// Moves whenever what renderedDevice() answers may have changed.
+    std::uint64_t publishCount_ = 0;
+
     /// The racks the model holds, which a rack id alone addresses (#2649).
     std::set<RackId> rackIds_;
 
@@ -4469,6 +4483,10 @@ HostParameters EngineHost::describeDeviceParameters(const ChainNodePath& deviceP
 std::shared_ptr<audio::MagdaDevice> EngineHost::renderedDevice(
     const ChainNodePath& devicePath) const {
     return impl_->renderedDevice(devicePath);
+}
+
+std::uint64_t EngineHost::publishCount() const {
+    return impl_->publishCount();
 }
 
 void EngineHost::invalidateParameterWritesAt(const ChainNodePath& devicePath) const {

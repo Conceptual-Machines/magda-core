@@ -21,6 +21,7 @@
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
+#include "ui/utils/ScrolledIntoView.hpp"
 
 namespace magda::daw::ui {
 
@@ -637,7 +638,7 @@ void SpectrumAnalyzerUI::timerCallback() {
     advanceControlsFade();
     bool needsRepaint = fadeWasActive || controlsFadeActive_;
 
-    if (!isShowing())
+    if (!isScrolledIntoView(*this))
         return;
 
     // Keep the overlay picker current with track adds/renames, and refresh the

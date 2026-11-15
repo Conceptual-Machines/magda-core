@@ -1014,6 +1014,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/themes/FontManager.cpp
     ../magda/daw/ui/components/common/MagdaAlertWindow.cpp
     ui/test_arrangement_row_alignment_juce.cpp
+    ui/test_view_mode_rebuild_juce.cpp
     ui/test_gain_envelope_editor_juce.cpp
     ../magda/daw/ui/components/waveform/WaveformGridComponent.cpp
     ../magda/daw/ui/components/waveform/WaveformGridLabels.cpp

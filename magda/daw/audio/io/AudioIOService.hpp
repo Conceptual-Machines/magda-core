@@ -143,6 +143,8 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     }
 
   private:
+    Direction openDirection(bool inputs) const;
+
     /** @brief Which of @p open the saved choice ticked singly, when it is for @p interfaceName. */
     juce::BigInteger monoChannels(const juce::String& interfaceName, const juce::BigInteger& open,
                                   bool inputs) const;
