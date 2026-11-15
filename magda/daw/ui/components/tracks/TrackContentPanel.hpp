@@ -17,6 +17,7 @@
 #include "core/AutomationManager.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ClipTypes.hpp"
+#include "core/Config.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
@@ -44,6 +45,7 @@ class TrackContentPanel : public juce::Component,
                           public SelectionManagerListener,
                           public AutomationManagerListener,
                           public ViewModeListener,
+                          private ConfigListener,
                           private juce::ChangeListener,
                           private juce::Timer {
   public:
@@ -86,6 +88,11 @@ class TrackContentPanel : public juce::Component,
 
     // ViewModeListener implementation
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
+
+    /** @brief Repaints clip headers, which follow the Track colour style. */
+    void configChanged() override {
+        repaint();
+    }
 
     // AutomationManagerListener implementation
     void automationLanesChanged() override;

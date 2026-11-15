@@ -538,7 +538,7 @@ void TrackInspector::showColourMenu(juce::Component* target) {
             const auto idx = static_cast<size_t>(result - 2);
             if (idx < palette.size()) {
                 const auto colour = juce::Colour(palette[idx].colour);
-                swatch->setColour(magda::deriveTrackSwatch(colour));
+                swatch->setColour(colour);
                 for (auto tid : trackIds) {
                     magda::UndoManager::getInstance().executeCommand(
                         std::make_unique<magda::SetTrackColourCommand>(tid, colour));
@@ -566,13 +566,13 @@ void TrackInspector::applyHeaderStyle() {
         resized();
     }
     // The field itself is painted rounded in paint(); the label only draws the text.
-    nameFill_ = fullBar ? magda::deriveTrackSwatch(track->colour)
-                        : ActiveTheme::getColour(ActiveTheme::SURFACE);
+    nameFill_ = ActiveTheme::getColour(ActiveTheme::SURFACE);
+    nameTrackColour_ = fullBar ? track->colour : juce::Colour();
     nameOutline_ = fullBar ? juce::Colours::transparentBlack : ActiveTheme::getBorderColour();
     trackNameValue_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     trackNameValue_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
-    trackNameValue_.setColour(juce::Label::textColourId,
-                              fullBar ? juce::Colours::white : ActiveTheme::getTextColour());
+    trackNameValue_.setColour(juce::Label::textColourId, fullBar ? magda::trackHeadNameColour()
+                                                                 : ActiveTheme::getTextColour());
     repaint();
 }
 
@@ -735,7 +735,10 @@ void TrackInspector::paint(juce::Graphics& g) {
     if (trackNameValue_.isVisible()) {
         const auto field = trackNameValue_.getBounds().toFloat();
         const float radius = juce::jlimit(2.0f, 8.0f, field.getHeight() * 0.15f);
-        g.setColour(nameFill_);
+        if (nameFilled_)
+            g.setGradientFill(magda::deriveTrackHeadGradient(nameTrackColour_, 0.0f, field));
+        else
+            g.setColour(nameFill_);
         g.fillRoundedRectangle(field, radius);
         g.setColour(nameOutline_);
         g.drawRoundedRectangle(field.reduced(0.5f), radius, 1.0f);
@@ -1327,8 +1330,8 @@ void TrackInspector::updateFromSelectedTrack() {
         if (track->colour == juce::Colour(0xFF444444))
             swatch->clearColour();
         else
-            // The headers' normalised colour, so the swatch matches the name field.
-            swatch->setColour(magda::deriveTrackSwatch(track->colour));
+            // The picked colour, which the name field fades into.
+            swatch->setColour(track->colour);
 
         trackNameValue_.setText(track->name, juce::dontSendNotification);
         trackNameValue_.setEditable(true);  // re-enable after a master selection
