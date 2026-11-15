@@ -42,6 +42,16 @@ std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& 
                                                    double startBeat, double endBeat,
                                                    double windowBeats);
 
+/// How far into each window its chord is read: a 16th, capped at half the window.
+inline constexpr double kChordReadDelayBeats = 0.25;
+
+/**
+ * @brief Detects @p clip's chords bar by bar and links each one's notes to its annotation.
+ *
+ * What a MIDI clip landing on the chord track goes through, dropped or recorded.
+ */
+void annotateChordsFromNotes(ClipInfo& clip, double beatsPerBar);
+
 /**
  * @brief Build a canonical root-position voicing for a chord.
  *

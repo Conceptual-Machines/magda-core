@@ -112,9 +112,9 @@ struct TrackControlsPolicy {
             case TrackType::Separator:
                 return hidden();
             case TrackType::Chord:
-                // Volume and the audition control, which covers mute/solo/monitor
-                // in one (#3228).
-                p.mute = true;
+                // Volume, record-arm (#3325) and the audition control, which covers
+                // mute/solo/monitor in one (#3228).
+                p.mute = p.record = true;
                 p.muteStyle = MuteStyle::ChordAudition;
                 p.meter = false;
                 break;

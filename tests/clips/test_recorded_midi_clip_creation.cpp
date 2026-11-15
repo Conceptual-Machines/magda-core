@@ -6,6 +6,9 @@
 #include <vector>
 
 #include "core/ClipManager.hpp"
+#include "core/ClipPlacementPolicy.hpp"
+#include "core/TrackManager.hpp"
+#include "music/ChordEngine.hpp"
 
 namespace {
 
@@ -201,6 +204,46 @@ TEST_CASE("A Session recording publishes its slot and MIDI together without chan
     REQUIRE(arrangement->placement.lengthBeats == 8.0);
 
     clips.clearAllClips();
+}
+
+TEST_CASE("A take recorded on the chord track lands as a progression", "[clips][recording][3325]") {
+    auto& tracks = TrackManager::getInstance();
+    auto& clips = ClipManager::getInstance();
+    tracks.clearAllTracks();
+    clips.clearAllClips();
+    const auto chordTrack = tracks.createTrack("", TrackType::Chord);
+    const auto mediaTrack = tracks.createTrack("Keys", TrackType::Media);
+
+    // Played, not drawn: C struck just after the bar, G struck and C let go a little late.
+    MidiTake take;
+    for (const int pitch : {60, 64, 67})
+        take.notes.push_back(
+            {.noteNumber = pitch, .velocity = 100, .startBeat = 0.02, .lengthBeats = 4.03});
+    for (const int pitch : {67, 71, 74})
+        take.notes.push_back(
+            {.noteNumber = pitch, .velocity = 100, .startBeat = 4.08, .lengthBeats = 3.9});
+
+    const auto* clip = clips.getClip(clips.createRecordedMidiClip(
+        chordTrack, RecordedMidiClipData{.startBeat = 0.0, .lengthBeats = 8.0, .active = take}));
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->chordAnnotations.size() == 2);
+    const auto rootOf = [&](size_t i) {
+        return music::ChordEngine::parseChordName(clip->chordAnnotations[i].chordName).root;
+    };
+    CHECK(clip->chordAnnotations[0].beatPosition == 0.0);
+    CHECK(rootOf(0) == music::ChordRoot::C);
+    CHECK(clip->chordAnnotations[1].beatPosition == 4.0);
+    CHECK(rootOf(1) == music::ChordRoot::G);
+    CHECK(std::ranges::all_of(clip->midiNotes, [](const auto& n) { return n.chordGroup != 0; }));
+    CHECK(trackAcceptsClip(*tracks.getTrack(chordTrack), *clip));
+
+    const auto* media = clips.getClip(clips.createRecordedMidiClip(
+        mediaTrack, RecordedMidiClipData{.startBeat = 0.0, .lengthBeats = 8.0, .active = take}));
+    REQUIRE(media != nullptr);
+    CHECK(media->chordAnnotations.empty());
+
+    clips.clearAllClips();
+    tracks.clearAllTracks();
 }
 
 }  // namespace
