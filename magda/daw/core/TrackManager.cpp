@@ -1815,16 +1815,8 @@ void TrackManager::setTrackMidiOutput(TrackId trackId, const juce::String& devic
         }
     }
 
-    // The MIDI output selector is one exclusive choice: it also ends any track
-    // pulling this one's MIDI through its own input.
-    clearMidiTrackListeners(trackId);
-    // Re-fetch: clearMidiTrackListeners triggers notifyTrackPropertyChanged which
-    // may cause listeners to modify the tracks_ vector, invalidating our pointer.
-    auto* track = getTrack(trackId);
-    if (!track)
-        return;
-
-    track->midiOutputDevice = deviceId;
+    // Only this track's own route: tracks taking it as their MIDI input are theirs to change.
+    getTrack(trackId)->midiOutputDevice = deviceId;
 
     // The engine recompiles on the notification and sends to the port (#3048).
     notifyTrackPropertyChanged(trackId);
@@ -1850,18 +1842,6 @@ void TrackManager::setTrackMidiOutputChannel(TrackId trackId, int channel) {
         return;
     track->midiOutputChannel = juce::jlimit(0, 16, channel);
     notifyTrackPropertyChanged(trackId);
-}
-
-void TrackManager::clearMidiTrackListeners(TrackId sourceTrackId, TrackId excludeTrackId) {
-    // Collect ids first: the setter notifies listeners, which may mutate tracks_.
-    const juce::String trackInputId = "track:" + juce::String(sourceTrackId);
-    std::vector<TrackId> listenerIds;
-    for (const auto& t : tracks_) {
-        if (t.id != excludeTrackId && t.midiInputDevice == trackInputId)
-            listenerIds.push_back(t.id);
-    }
-    for (auto listenerId : listenerIds)
-        setTrackMidiInput(listenerId, "");
 }
 
 void TrackManager::setTrackAudioInput(TrackId trackId, const juce::String& deviceId) {

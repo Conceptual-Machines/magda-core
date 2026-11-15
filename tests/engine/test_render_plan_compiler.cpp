@@ -3204,6 +3204,32 @@ TEST_CASE("A MIDI Out loop is refused for the one sender that closes it",
     CHECK(refused == 1);
 }
 
+TEST_CASE("A track sent to and listening to the same track hears it once",
+          "[engine][plan][compiler][2209]") {
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[1].chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(9)));
+    tracks[0].midiOutputDevice = "track:2";
+    tracks[1].midiInputDevice = "track:1";
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+
+    CHECK(countRole(plan, OpRole::MidiOutRoute) == 1);
+    const auto inputGates = std::ranges::count_if(
+        opsWithRole(plan, OpRole::InputRouteGate), [&plan](magda::engine::OpId op) {
+            const auto& key = plan.ops[static_cast<std::size_t>(op)].key;
+            return key.trackId == 2 && key.index == 1;
+        });
+    CHECK(inputGates == 0);
+
+    // Without the MIDI Out, the input carries it.
+    tracks[0].midiOutputDevice.clear();
+    const auto listening = magda::engine::compileRenderPlan(tracks, makeMaster());
+    CHECK(countRole(listening, OpRole::MidiOutRoute) == 0);
+    CHECK(countRole(listening, OpRole::InputRouteGate) == 1);
+}
+
 TEST_CASE("A MIDI Out channel moves the plan's fingerprint", "[engine][plan][compiler][2209]") {
     std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
     tracks[0].midiOutputDevice = "track:2";

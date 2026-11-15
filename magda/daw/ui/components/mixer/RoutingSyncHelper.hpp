@@ -675,27 +675,18 @@ inline void syncSelectorsFromTrack(const TrackInfo& track, RoutingSelector* audi
         // Always re-populate with the current track context (see audio note above).
         populateMidiOutputOptions(midiOutSelector, midiOutputTrackMapping, currentTrackId);
 
-        // The track this one's MIDI Out names (#2209), or else the first track
-        // pulling this one's MIDI through its own input.
-        TrackId listenerId = INVALID_TRACK_ID;
-        if (track.midiOutputDevice.startsWith("track:")) {
-            listenerId =
-                track.midiOutputDevice.fromFirstOccurrenceOf("track:", false, false).getIntValue();
-        } else if (currentTrackId != INVALID_TRACK_ID) {
-            const juce::String trackInputId = "track:" + juce::String(currentTrackId);
-            for (const auto& t : TrackManager::getInstance().getTracks()) {
-                if (t.id != currentTrackId && t.midiInputDevice == trackInputId) {
-                    listenerId = t.id;
-                    break;
-                }
-            }
-        }
+        // The track this one's MIDI Out names (#2209). Tracks taking this one as their
+        // MIDI input show that on their own input, not here.
+        const auto destinationId =
+            track.midiOutputDevice.startsWith("track:")
+                ? track.midiOutputDevice.fromFirstOccurrenceOf("track:", false, false).getIntValue()
+                : INVALID_TRACK_ID;
 
         juce::String currentMidiOutput = track.midiOutputDevice;
-        if (listenerId != INVALID_TRACK_ID) {
+        if (destinationId != INVALID_TRACK_ID) {
             int selectedId = 1;  // "None" fallback
             for (const auto& [oid, tid] : midiOutputTrackMapping) {
-                if (tid == listenerId) {
+                if (tid == destinationId) {
                     selectedId = oid;
                     break;
                 }
