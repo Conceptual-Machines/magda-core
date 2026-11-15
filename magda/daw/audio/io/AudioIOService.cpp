@@ -322,7 +322,7 @@ HardwareChannels::Direction AudioIOService::openDirection(bool inputs) const {
         const auto setup = manager_.getAudioDeviceSetup();
         interfaceName = inputs ? setup.inputDeviceName : setup.outputDeviceName;
         open = inputs ? device->getActiveInputChannels() : device->getActiveOutputChannels();
-        channelNames = inputs ? device->getInputChannelNames() : device->getOutputChannelNames();
+        channelNames = reportedChannelNames(*device, inputs);
     }
 
     return {.open = open,
@@ -330,6 +330,18 @@ HardwareChannels::Direction AudioIOService::openDirection(bool inputs) const {
             .routeNames = routeNamesByChannel(channelNames, open, inputs),
             .userNames = Config::getInstance().getChannelNames(interfaceName.toStdString(), inputs),
             .mono = monoChannels(interfaceName, open, inputs)};
+}
+
+juce::StringArray AudioIOService::reportedChannelNames(juce::AudioIODevice& device,
+                                                       bool inputs) const {
+    auto& reported = inputs ? reportedInputNames_ : reportedOutputNames_;
+    const auto identity = device.getTypeName() + "/" + device.getName();
+    if (reported.device != &device || reported.identity != identity)
+        reported = {.device = &device,
+                    .identity = identity,
+                    .names =
+                        inputs ? device.getInputChannelNames() : device.getOutputChannelNames()};
+    return reported.names;
 }
 
 juce::AudioIODeviceType* AudioIOService::backendNamed(const juce::String& name) {
@@ -519,6 +531,8 @@ void AudioIOService::applyAsync(const AudioIOSettings& settings,
 }
 
 void AudioIOService::changeListenerCallback(juce::ChangeBroadcaster*) {
+    reportedInputNames_ = {};
+    reportedOutputNames_ = {};
     notifyChanged();
 }
 

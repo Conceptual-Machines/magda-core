@@ -28,8 +28,6 @@ constexpr int kChevronStripH = 16;  // dedicated strip below the waveform for th
 }  // namespace
 
 OscilloscopeUI::OscilloscopeUI() {
-    window_.assign(static_cast<size_t>(kMaxWindow), 0.0f);
-
     timeLabel_.setText("Time", juce::dontSendNotification);
     timeLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
     timeLabel_.setColour(juce::Label::textColourId,
@@ -390,6 +388,9 @@ void OscilloscopeUI::timerCallback() {
     if (telemetry_ != nullptr) {
         const auto writePosition = telemetry_->writePosition();
         if (writePosition != lastTapWritePosition_) {
+            // 1 MB, so taken on the first frame read rather than by every mixer strip's faceplate.
+            if (window_.empty())
+                window_.assign(static_cast<size_t>(kMaxWindow), 0.0f);
             lastTapWritePosition_ = telemetry_->readLatest(window_.data(), span_.readCount);
             const double trigger =
                 audio::findRisingTrigger(window_.data(), span_.readCount, span_.searchSamples);
