@@ -3903,23 +3903,8 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                 if (clip->chordAnnotations.empty() && !clip->midiNotes.empty()) {
                     if (const auto* clipTrack = TrackManager::getInstance().getTrack(clipTrackId);
                         clipTrack != nullptr &&
-                        traitsOf(clipTrack->type).userClips == UserClipAcceptance::Progressions) {
-                        for (const auto& detected :
-                             extractChordsFromNotes(clip->midiNotes, beatsPerBar)) {
-                            ClipInfo::ChordAnnotation ann;
-                            ann.beatPosition = detected.startBeat;
-                            ann.lengthBeats = detected.lengthBeats;
-                            ann.chordName = detected.name;
-
-                            const int groupId = clip->nextChordGroupId++;
-                            for (const auto noteIndex : detected.noteIndices)
-                                if (noteIndex < clip->midiNotes.size())
-                                    clip->midiNotes[noteIndex].chordGroup = groupId;
-
-                            ann.chordGroup = detected.noteIndices.empty() ? 0 : groupId;
-                            clip->chordAnnotations.push_back(ann);
-                        }
-                    }
+                        traitsOf(clipTrack->type).userClips == UserClipAcceptance::Progressions)
+                        annotateChordsFromNotes(*clip, beatsPerBar);
                 }
 
                 ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId);
