@@ -1434,31 +1434,44 @@ TrackId routedFrom(const juce::String& route) {
 }  // namespace
 
 bool TrackManager::wouldCreateInputRoutingCycle(TrackId destTrackId, TrackId sourceTrackId) const {
-    if (sourceTrackId == destTrackId)
-        return true;
+    return tracksFeeding(sourceTrackId).contains(destTrackId);
+}
 
-    // Upstream from the source over every edge into a track: its audio and MIDI
-    // inputs, and each track whose MIDI Out names it (#2209).
-    std::unordered_set<TrackId> visited;
-    std::vector<TrackId> pending{sourceTrackId};
+std::set<TrackId> TrackManager::tracksFedBy(TrackId trackId) const {
+    return reachableByRouting(trackId, false);
+}
+
+std::set<TrackId> TrackManager::tracksFeeding(TrackId trackId) const {
+    return reachableByRouting(trackId, true);
+}
+
+std::set<TrackId> TrackManager::reachableByRouting(TrackId trackId, bool upstream) const {
+    // Every edge into a track: its audio and MIDI inputs, and each MIDI Out that names it (#2209).
+    std::map<TrackId, std::vector<TrackId>> next;
+    const auto link = [&next, upstream](TrackId from, TrackId to) {
+        if (from != INVALID_TRACK_ID && to != INVALID_TRACK_ID)
+            next[upstream ? to : from].push_back(upstream ? from : to);
+    };
+    const auto addEdges = [&link](const TrackInfo& track) {
+        link(routedFrom(track.audioInputDevice), track.id);
+        link(routedFrom(track.midiInputDevice), track.id);
+        link(track.id, routedFrom(track.midiOutputDevice));
+    };
+    for (const auto& track : tracks_)
+        addEdges(track);
+    addEdges(masterTrack_);
+
+    std::set<TrackId> reached{trackId};
+    std::vector<TrackId> pending{trackId};
     while (!pending.empty()) {
         const auto current = pending.back();
         pending.pop_back();
-        if (current == destTrackId)
-            return true;
-        if (!visited.insert(current).second)
-            continue;
-
-        if (const auto* track = getTrack(current)) {
-            for (const auto* input : {&track->audioInputDevice, &track->midiInputDevice})
-                if (const auto from = routedFrom(*input); from != INVALID_TRACK_ID)
-                    pending.push_back(from);
-        }
-        for (const auto& other : tracks_)
-            if (routedFrom(other.midiOutputDevice) == current)
-                pending.push_back(other.id);
+        if (const auto found = next.find(current); found != next.end())
+            for (const auto neighbour : found->second)
+                if (reached.insert(neighbour).second)
+                    pending.push_back(neighbour);
     }
-    return false;
+    return reached;
 }
 
 // ============================================================================

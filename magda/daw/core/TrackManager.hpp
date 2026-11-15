@@ -371,6 +371,13 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // sourceTrackId through a track input or a MIDI Out to a track.
     bool wouldCreateInputRoutingCycle(TrackId destTrackId, TrackId sourceTrackId) const;
 
+    /// @p trackId and every track it reaches through track inputs and MIDI Outs: none of them
+    /// can feed it without a cycle. One walk, for a menu that would otherwise ask per track.
+    std::set<TrackId> tracksFedBy(TrackId trackId) const;
+
+    /// @p trackId and every track that reaches it: it can feed none of them without a cycle.
+    std::set<TrackId> tracksFeeding(TrackId trackId) const;
+
     /**
      * @brief Preview a MIDI note on a track (for keyboard audition)
      * @param trackId Track to send note to
@@ -1375,6 +1382,9 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
   private:
     TrackManager();
     ~TrackManager() override = default;
+
+    /// @p trackId and every track reachable from it along routing edges, one way or the other.
+    std::set<TrackId> reachableByRouting(TrackId trackId, bool upstream) const;
 
     // Register a track with MidiBridge for input monitoring. No-op when no audio
     // engine is attached or the track takes no external input (Aux, Group).

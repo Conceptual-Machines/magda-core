@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <catch2/catch_test_macros.hpp>
+#include <set>
 
 #include "magda/daw/core/TrackManager.hpp"
 
@@ -275,6 +276,30 @@ TEST_CASE("A MIDI Out to a track is an edge the cycle check sees", "[routing][cy
 
     fixture.tm().setTrackMidiInput(trackA, fixture.trackInput(trackC));
     CHECK(fixture.tm().getTrack(trackA)->midiInputDevice != fixture.trackInput(trackC));
+}
+
+TEST_CASE("One walk answers what the cycle check answers pair by pair", "[routing][cycle]") {
+    InternalRoutingFixture fixture;
+
+    auto trackA = fixture.createTrack("A");
+    auto trackB = fixture.createTrack("B");
+    auto trackC = fixture.createTrack("C");
+    auto trackD = fixture.createTrack("D");
+
+    // A -> B by A's MIDI Out, B -> C by C's audio input; D stands apart.
+    fixture.tm().routeMidiOutputToTrack(trackA, trackB);
+    fixture.tm().setTrackAudioInput(trackC, fixture.trackInput(trackB));
+
+    CHECK(fixture.tm().tracksFedBy(trackA) == std::set<magda::TrackId>{trackA, trackB, trackC});
+    CHECK(fixture.tm().tracksFeeding(trackC) == std::set<magda::TrackId>{trackA, trackB, trackC});
+    CHECK(fixture.tm().tracksFedBy(trackD) == std::set<magda::TrackId>{trackD});
+
+    for (const auto dest : {trackA, trackB, trackC, trackD})
+        for (const auto source : {trackA, trackB, trackC, trackD}) {
+            const bool cycle = fixture.tm().wouldCreateInputRoutingCycle(dest, source);
+            CHECK(fixture.tm().tracksFedBy(dest).contains(source) == cycle);
+            CHECK(fixture.tm().tracksFeeding(source).contains(dest) == cycle);
+        }
 }
 
 TEST_CASE("A track's MIDI channels are clamped and saved with its routing",

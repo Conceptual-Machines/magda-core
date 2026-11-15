@@ -137,6 +137,7 @@ inline void populateAudioInputOptions(RoutingSelector* selector,
 
         // Collect descendants to prevent routing cycles
         std::vector<TrackId> descendants = trackManager.getAllDescendants(currentTrackId);
+        const auto fedByThis = trackManager.tracksFedBy(currentTrackId);
 
         if (outInputTrackMapping)
             outInputTrackMapping->clear();
@@ -148,7 +149,7 @@ inline void populateAudioInputOptions(RoutingSelector* selector,
                 continue;
             if (std::ranges::contains(descendants, t.id))
                 continue;
-            if (trackManager.wouldCreateInputRoutingCycle(currentTrackId, t.id))
+            if (fedByThis.contains(t.id))
                 continue;
             if (t.type == TrackType::Media || t.type == TrackType::Group ||
                 t.type == TrackType::Aux) {
@@ -394,6 +395,7 @@ inline void populateMidiInputOptions(RoutingSelector* selector,
         const auto& allTracks = trackManager.getTracks();
 
         outMidiInputTrackMapping->clear();
+        const auto fedByThis = trackManager.tracksFedBy(currentTrackId);
 
         std::vector<RoutingSelector::RoutingOption> trackOptions;
         int id = 200;
@@ -404,7 +406,7 @@ inline void populateMidiInputOptions(RoutingSelector* selector,
             // plays live and drives instrument tracks (issue #1507)
             if (t.type != TrackType::Media && t.type != TrackType::Chord)
                 continue;
-            if (trackManager.wouldCreateInputRoutingCycle(currentTrackId, t.id))
+            if (fedByThis.contains(t.id))
                 continue;
             trackOptions.push_back({id, t.name});
             (*outMidiInputTrackMapping)[id] = t.id;
@@ -446,6 +448,7 @@ inline void populateMidiOutputOptions(RoutingSelector* selector,
     if (currentTrackId != INVALID_TRACK_ID) {
         auto& trackManager = TrackManager::getInstance();
         const auto& allTracks = trackManager.getTracks();
+        const auto feedingThis = trackManager.tracksFeeding(currentTrackId);
 
         std::vector<RoutingSelector::RoutingOption> trackOptions;
         int id = 200;
@@ -455,8 +458,8 @@ inline void populateMidiOutputOptions(RoutingSelector* selector,
             if (t.type != TrackType::Media)
                 continue;
             // The edge created is candidate ← current (candidate listens to
-            // the current track), so the candidate is the destination here.
-            if (trackManager.wouldCreateInputRoutingCycle(t.id, currentTrackId))
+            // the current track), so a candidate already feeding it would close a loop.
+            if (feedingThis.contains(t.id))
                 continue;
             trackOptions.push_back({id, t.name});
             outTrackMapping[id] = t.id;

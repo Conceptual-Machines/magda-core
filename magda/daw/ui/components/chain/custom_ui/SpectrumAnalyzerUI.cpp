@@ -303,6 +303,10 @@ void SpectrumAnalyzerUI::setTrackId(magda::TrackId trackId) {
 }
 
 void SpectrumAnalyzerUI::refreshOverlayList() {
+    // The picker is the full editor's; a mixer strip's compact faceplate has none to fill.
+    if (compact_)
+        return;
+
     auto& tm = magda::TrackManager::getInstance();
     std::vector<magda::TrackId> items;
     juce::String sig;
@@ -423,6 +427,7 @@ void SpectrumAnalyzerUI::setCompact(bool compact) {
         controlsExpanded_ = false;  // the full editor always shows controls; no toggle
         controlsFadeActive_ = false;
         controlsAlpha_ = 1.0f;
+        refreshOverlayList();
     }
     updateControlVisibility();
     resized();
