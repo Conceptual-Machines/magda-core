@@ -1352,21 +1352,6 @@ class Config {
         showInfoLine = show;
     }
 
-    // Render ahead (#1898): the deterministic side of the mix rendered ahead of the callback
-    bool getRenderAheadEnabled() const {
-        return renderAheadEnabled;
-    }
-    void setRenderAheadEnabled(bool enabled) {
-        renderAheadEnabled = enabled;
-    }
-    /// How far ahead, as a time: the device's block size turns it into blocks.
-    int getRenderAheadMs() const {
-        return renderAheadMs;
-    }
-    void setRenderAheadMs(int milliseconds) {
-        renderAheadMs = std::clamp(milliseconds, 5, 200);
-    }
-
     /// Whether the master and live MIDI are kept for capture: off until switched on at MEM.
     bool getCaptureEnabled() const {
         return captureEnabled;
@@ -1721,8 +1706,6 @@ class Config {
     // Auto-monitor settings
     bool autoMonitorSelectedTrack = false;  // Auto-enable input monitor on selected track
 
-    bool renderAheadEnabled = false;
-    int renderAheadMs = 20;
     bool captureEnabled = false;
     int captureSeconds = 300;
     int captureBars = 8;
