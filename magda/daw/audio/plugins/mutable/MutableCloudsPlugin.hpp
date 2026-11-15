@@ -60,10 +60,6 @@ class MutableCloudsPlugin : public MagdaDevice, public GrainEnvelopeTelemetry {
     }
     static const char* xmlTypeName;
 
-    /// The lowpass either side of the 32 kHz DSP. Its corner drops to stay
-    /// under Nyquist at low rates, so the .cpp designs it per rate.
-    static constexpr double kBandLimitHz = 15000.0;
-
     /// Output lag: the grain block, the placed output cushion and both filters.
     /// Measured, not derived: the filters' group delay is not the analog
     /// prototype's sum(1/Q)/w0, since the bilinear transform collapses it as
