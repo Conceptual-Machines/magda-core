@@ -284,6 +284,10 @@ class EngineHost {
      */
     std::shared_ptr<audio::MagdaDevice> renderedDevice(const ChainNodePath& devicePath) const;
 
+    /// Moves whenever what renderedDevice() answers may have changed: every publish, and a
+    /// project closing. Message thread.
+    std::uint64_t publishCount() const;
+
     /// @brief Rewrites every parameter of the MAGDA device at @p devicePath on its next block.
     /// For a state restored onto the rendered instance, which resets its parameters.
     void invalidateParameterWritesAt(const ChainNodePath& devicePath) const;

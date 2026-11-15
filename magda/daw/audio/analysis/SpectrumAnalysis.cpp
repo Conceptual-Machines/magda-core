@@ -19,10 +19,12 @@ constexpr float kHannScallopDb = 1.42f;
 void OverlappedSpectrum::prepare(int fftOrder) {
     fftOrder_ = juce::jlimit(kMinOrder, kMaxOrder, fftOrder);
     fftSize_ = 1 << fftOrder_;
-    fft_ = std::make_unique<juce::dsp::FFT>(fftOrder_);
-    // JUCE normalises the window to unity coherent gain, so 2/N scales a sine to its amplitude.
-    window_ = std::make_unique<juce::dsp::WindowingFunction<float>>(
-        static_cast<size_t>(fftSize_), juce::dsp::WindowingFunction<float>::hann);
+    // Built by the first analyse(): an FFT setup costs more than a mixer strip's hidden
+    // faceplate should pay on every rebuild.
+    if (fft_ != nullptr && fft_->getSize() != fftSize_) {
+        fft_.reset();
+        window_.reset();
+    }
     frame_.assign(static_cast<size_t>(fftSize_) * 2, 0.0f);
     power_.assign(static_cast<size_t>(numBins()), 0.0f);
     analysedTo_ = 0;
@@ -45,6 +47,13 @@ int OverlappedSpectrum::samplesToRead(std::size_t writePosition, int maxSamples)
 
 void OverlappedSpectrum::analyse(const float* samples, int numSamples, std::size_t writePosition,
                                  std::vector<float>& dbOut) {
+    if (fft_ == nullptr) {
+        fft_ = std::make_unique<juce::dsp::FFT>(fftOrder_);
+        // JUCE normalises the window to unity coherent gain, so 2/N scales a sine to its amplitude.
+        window_ = std::make_unique<juce::dsp::WindowingFunction<float>>(
+            static_cast<size_t>(fftSize_), juce::dsp::WindowingFunction<float>::hann);
+    }
+
     const int hop = fftSize_ / 2;
     const int frames = std::max(1, (numSamples - fftSize_) / hop + 1);
     const auto n = static_cast<size_t>(fftSize_);

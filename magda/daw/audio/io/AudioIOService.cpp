@@ -286,7 +286,10 @@ AudioIOSettings AudioIOService::chosen() const {
 }
 
 bool AudioIOService::isOpen() const {
-    return getActiveConfiguration().backend.isNotEmpty();
+    // Without the channel names and latency getActiveConfiguration() asks the interface for:
+    // routing menus check this per track.
+    auto* device = manager_.getCurrentAudioDevice();
+    return device != nullptr && device->isOpen() && device->getTypeName().isNotEmpty();
 }
 
 juce::BigInteger AudioIOService::monoChannels(const juce::String& interfaceName,
@@ -303,24 +306,30 @@ juce::BigInteger AudioIOService::monoChannels(const juce::String& interfaceName,
 }
 
 HardwareChannels::Direction AudioIOService::inputs() const {
-    const auto active = getActiveConfiguration();
-    return {.open = active.inputChannels,
-            .channelNames = active.inputChannelNames,
-            .routeNames = routeNamesByChannel(active.inputChannelNames, active.inputChannels, true),
-            .userNames =
-                Config::getInstance().getChannelNames(active.inputInterface.toStdString(), true),
-            .mono = monoChannels(active.inputInterface, active.inputChannels, true)};
+    return openDirection(true);
 }
 
 HardwareChannels::Direction AudioIOService::outputs() const {
-    const auto active = getActiveConfiguration();
-    return {.open = active.outputChannels,
-            .channelNames = active.outputChannelNames,
-            .routeNames =
-                routeNamesByChannel(active.outputChannelNames, active.outputChannels, false),
-            .userNames =
-                Config::getInstance().getChannelNames(active.outputInterface.toStdString(), false),
-            .mono = monoChannels(active.outputInterface, active.outputChannels, false)};
+    return openDirection(false);
+}
+
+HardwareChannels::Direction AudioIOService::openDirection(bool inputs) const {
+    // Only the side asked for: each name the interface reports is a round trip to it.
+    juce::String interfaceName;
+    juce::BigInteger open;
+    juce::StringArray channelNames;
+    if (auto* device = manager_.getCurrentAudioDevice(); device != nullptr && device->isOpen()) {
+        const auto setup = manager_.getAudioDeviceSetup();
+        interfaceName = inputs ? setup.inputDeviceName : setup.outputDeviceName;
+        open = inputs ? device->getActiveInputChannels() : device->getActiveOutputChannels();
+        channelNames = inputs ? device->getInputChannelNames() : device->getOutputChannelNames();
+    }
+
+    return {.open = open,
+            .channelNames = channelNames,
+            .routeNames = routeNamesByChannel(channelNames, open, inputs),
+            .userNames = Config::getInstance().getChannelNames(interfaceName.toStdString(), inputs),
+            .mono = monoChannels(interfaceName, open, inputs)};
 }
 
 juce::AudioIODeviceType* AudioIOService::backendNamed(const juce::String& name) {

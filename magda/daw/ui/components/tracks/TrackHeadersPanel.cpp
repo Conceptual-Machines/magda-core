@@ -472,7 +472,8 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
 
     // Register as ViewModeController listener
     ViewModeController::getInstance().addListener(this);
-    currentViewMode_ = ViewModeController::getInstance().getViewMode();
+    if (const auto mode = ViewModeController::getInstance().getViewMode(); showsTimeline(mode))
+        currentViewMode_ = mode;
 
     // Register as SelectionManager listener
     SelectionManager::getInstance().addListener(this);
@@ -600,6 +601,8 @@ void TrackHeadersPanel::timerCallback() {
 }
 
 void TrackHeadersPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profile*/) {
+    if (!showsTimeline(mode) || mode == currentViewMode_)
+        return;  // The arrangement is hidden in that mode; see MainView::viewModeChanged.
     currentViewMode_ = mode;
     tracksChanged();  // Rebuild with new visibility settings
 }
@@ -1019,7 +1022,13 @@ void TrackHeadersPanel::tracksChanged() {
 
     updateTrackHeaderLayout();
     updateHeaderSelectionColours();
+    namesAtBuild_.take();
     repaint();
+}
+
+void TrackHeadersPanel::rebuildIfRenamed() {
+    if (namesAtBuild_.isStale())
+        tracksChanged();
 }
 
 void TrackHeadersPanel::trackPropertyChanged(int trackId) {
@@ -1253,8 +1262,19 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
-    // Draw track headers and automation lane headers
+    // Draw track headers and automation lane headers, for the rows the repaint covers: a
+    // meter repaints a few pixels many times a second. A child's group strip reaches back
+    // across the row above, hence the previous row's top.
+    const auto clip = g.getClipBounds();
+    int rowTop = 0;
+    int previousRowTop = 0;
     for (size_t i = 0; i < trackHeaders.size(); ++i) {
+        const int rowBottom = rowTop + getTrackTotalHeight(static_cast<int>(i));
+        const bool inClip = rowBottom > clip.getY() && previousRowTop < clip.getBottom();
+        previousRowTop = std::exchange(rowTop, rowBottom);
+        if (!inClip)
+            continue;
+
         auto headerArea = getTrackHeaderArea(static_cast<int>(i));
         if (headerArea.intersects(getLocalBounds())) {
             paintTrackHeader(g, *trackHeaders[i], headerArea,

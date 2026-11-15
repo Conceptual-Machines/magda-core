@@ -16,6 +16,7 @@
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
+#include "ui/utils/ScrolledIntoView.hpp"
 
 namespace magda::daw::ui {
 
@@ -383,7 +384,7 @@ void OscilloscopeUI::timerCallback() {
     advanceControlsFade();
     bool needsRepaint = fadeWasActive || controlsFadeActive_;
 
-    if (!isShowing())
+    if (!isScrolledIntoView(*this))
         return;
 
     if (telemetry_ != nullptr) {
