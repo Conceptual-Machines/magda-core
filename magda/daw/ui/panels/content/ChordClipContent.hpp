@@ -51,6 +51,9 @@ class ChordClipContent : public PianoRollContent,
     // Accept a chord dragged from the engine panel (a temp MIDI file) dropped on
     // the chord lane.
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
+    void fileDragEnter(const juce::StringArray& files, int x, int y) override;
+    void fileDragMove(const juce::StringArray& files, int x, int y) override;
+    void fileDragExit(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
 
     // The chord panel drags that temp MIDI file as an internal {type:"files"}
@@ -80,7 +83,7 @@ class ChordClipContent : public PianoRollContent,
     void mouseUp(const juce::MouseEvent& e) override;
     // Double-click a chord block to edit its root / quality / octave / inversion.
     void mouseDoubleClick(const juce::MouseEvent& e) override;
-    // Draws the alt-drag copy ghost + "+" badge over the lane.
+    // Draws the alt-drag copy ghost and the chord drop ghost over the lane.
     void paintOverChildren(juce::Graphics& g) override;
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -119,6 +122,13 @@ class ChordClipContent : public PianoRollContent,
     // then re-detect so the chord lane shows the linked block. Returns false if
     // there's no clip or that bar already has a chord.
     bool insertChordAtBeat(double clipRelativeBeat, const std::vector<int>& pitches);
+    /** @brief The bar nearest @p clipRelativeBeat a new chord would go in, unless it has one. */
+    std::optional<double> freeChordBar(double clipRelativeBeat) const;
+    bool isOnChordLane(int y) const;
+    /** @brief The bar a chord dragged from the panel will land on, ghosted on the lane. */
+    void setDropGhostBar(std::optional<double> bar);
+    void paintChordGhost(juce::Graphics& g, double startBeat, double endBeat) const;
+    std::optional<double> dropGhostBar_;
     // Open the rich chord editor (CallOutBox) for the chord at annIndex.
     void openChordEditor(int annIndex);
     // Replace the chord at annIndex with the given pitches (same bar/length).
@@ -192,6 +202,8 @@ class ChordClipContent : public PianoRollContent,
         int note;
     };
     std::vector<DragNote> dragNotes_;
+    /** @brief Where the block drag puts @p dn, as {start, length}; drawn live, committed on up. */
+    std::pair<double, double> draggedNoteSpan(const DragNote& dn) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChordClipContent)
 };

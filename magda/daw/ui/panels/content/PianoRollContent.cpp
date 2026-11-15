@@ -1207,6 +1207,11 @@ void PianoRollContent::redetectChords() {
     detectChordsFromNotes();
 }
 
+void PianoRollContent::showNoteAt(size_t noteIndex, double beat, double length) {
+    if (gridComponent_)
+        gridComponent_->showNoteAt(getEditingClipId(), noteIndex, beat, length);
+}
+
 void PianoRollContent::setGridToggleActive(bool on) {
     if (gridToggleBtn_)
         gridToggleBtn_->setActive(on);

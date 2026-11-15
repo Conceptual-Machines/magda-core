@@ -1601,6 +1601,18 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
     rebuildSelectedPitchRows();
 }
 
+void PianoRollGridComponent::showNoteAt(ClipId clipId, size_t noteIndex, double beat,
+                                        double length) {
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr || noteIndex >= clip->midiNotes.size())
+        return;
+    const auto it = std::ranges::find_if(noteComponents_, [&](const auto& nc) {
+        return nc->getSourceClipId() == clipId && nc->getNoteIndex() == noteIndex;
+    });
+    if (it != noteComponents_.end())
+        updateNotePosition(it->get(), beat, clip->midiNotes[noteIndex].noteNumber, length);
+}
+
 void PianoRollGridComponent::setCopyDragPreview(double beat, int noteNumber, double length,
                                                 juce::Colour colour, bool active,
                                                 size_t sourceNoteIndex) {

@@ -218,6 +218,8 @@ class PianoRollGridComponent : public juce::Component,
 
     // Refresh note components from clip data
     void refreshNotes();
+    /** @brief Draws a note at @p beat / @p length without editing it; refreshNotes() undoes it. */
+    void showNoteAt(ClipId clipId, size_t noteIndex, double beat, double length);
 
     // Request a note to be selected after the next refresh
     void selectNoteAfterRefresh(ClipId clipId, int noteIndex);
