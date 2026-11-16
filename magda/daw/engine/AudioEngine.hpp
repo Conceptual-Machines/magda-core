@@ -119,6 +119,10 @@ struct OfflineRenderRequest {
 
     /// The track a freeze renders: up to its fader, unmuted, with no track soloed.
     TrackId freezeTrackId = INVALID_TRACK_ID;
+
+    /// The track a stem renders: its output alone, faders kept, with no track soloed (#54).
+    /// trackIds holds it and its stemSources().
+    TrackId stemTrackId = INVALID_TRACK_ID;
 };
 
 struct OfflineRenderResult {

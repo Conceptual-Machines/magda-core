@@ -19,7 +19,9 @@
 #include "magda/daw/engine/host/EngineHost.hpp"
 #include "magda/daw/engine/host/EngineOfflineRender.hpp"
 #include "magda/daw/engine/host/EngineProject.hpp"
+#include "magda/daw/engine/host/StemRender.hpp"
 #include "magda/daw/engine/host/TrackFreeze.hpp"
+#include "magda/engine/exec/PlanValues.hpp"
 
 /**
  * @file test_engine_offline_render_juce.cpp
@@ -253,6 +255,7 @@ class EngineOfflineRenderTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testBorrowedDeviceStartsClean(); });
         magda::test::runWithCleanJuceState([this] { testDeclaredTail(); });
         magda::test::runWithCleanJuceState([this] { testFreezeRendersUpToTheFader(); });
+        magda::test::runWithCleanJuceState([this] { testStemsRenderEachTrackAlone(); });
     }
 
   private:
@@ -616,6 +619,58 @@ class EngineOfflineRenderTest final : public juce::UnitTest {
         file.deleteFile();
         host::unfreezeTracksWithoutFiles();
         expect(!trackManager.getTrack(frozenId)->frozen, "A frozen track without its file thaws");
+    }
+
+    void testStemsRenderEachTrackAlone() {
+        beginTest("A stem is its track at its fader, and a return's stem is its sends alone (#54)");
+
+        const auto signal = sine(0.5f, 441.0);
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto sourceId = trackPlaying(writeSource("stem_source", signal));
+        const auto otherId = trackPlaying(writeSource("stem_other", sine(0.5f, 882.0)));
+        const auto returnId = trackManager.createTrack("Return", magda::TrackType::Aux);
+        trackManager.addSend(sourceId, returnId);
+
+        auto* source = trackManager.getTrack(sourceId);
+        auto* other = trackManager.getTrack(otherId);
+        auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(source != nullptr && other != nullptr && master != nullptr &&
+                   source->sends.size() == 1,
+               "The tracks and the send exist");
+        if (source == nullptr || other == nullptr || master == nullptr || source->sends.size() != 1)
+            return;
+
+        source->volume = 0.5f;
+        other->soloed = true;
+        master->volume = 0.1f;
+
+        const auto fader = magda::engine::faderGainFromVolume(0.5f);
+        const auto send = magda::engine::faderGainFromVolume(source->sends.front().level);
+
+        auto expectStem = [&](magda::TrackId trackId, const juce::String& name, float gain) {
+            const auto file = scratchDirectory().getChildFile(name + ".wav");
+            auto request = requestFor(file, 32, magda::OfflineRenderDither::None);
+            request.useMasterPlugins = false;
+            request.trackIds = host::stemSources(trackManager.getTracks(), trackId);
+            request.stemTrackId = trackId;
+
+            const auto result = render(request);
+            expect(result.success, name + " renders: " + result.error);
+
+            const auto stored = readBack(file);
+            expectEquals(stored.getNumSamples(), kRangeSamples, name + " is the range");
+            if (stored.getNumSamples() != kRangeSamples)
+                return;
+
+            auto worst = 0.0f;
+            for (auto sample = 0; sample < kRangeSamples; ++sample)
+                worst =
+                    std::max(worst, std::abs(stored.getSample(0, sample) - gain * signal(sample)));
+            expect(worst <= 1.0e-4f, name + " is off by " + juce::String(worst));
+        };
+
+        expectStem(sourceId, "stem_of_source", fader);
+        expectStem(returnId, "stem_of_return", fader * send);
     }
 };
 

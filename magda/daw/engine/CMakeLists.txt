@@ -51,6 +51,7 @@ target_sources(magda_daw_app PRIVATE
         host/OfflineRenderModel.cpp
         host/SlotLauncher.cpp
         host/SessionArrangementCapture.cpp
+        host/StemRender.cpp
         host/TrackFreeze.cpp
         host/TracksBeingPlayed.cpp
         host/EngineHost.hpp
@@ -70,6 +71,7 @@ target_sources(magda_daw_app PRIVATE
         host/OfflineRenderModel.hpp
         host/SlotLauncher.hpp
         host/SessionArrangementCapture.hpp
+        host/StemRender.hpp
         host/TrackFreeze.hpp
     )
     add_library(magda::engine_host ALIAS magda_engine_host)

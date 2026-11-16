@@ -31,8 +31,9 @@ struct OfflineRenderModel {
  * A track the request leaves out takes its routes with it: a track that fed it
  * goes to the master instead, and sends to it are dropped. Every lane plays its
  * arrangement, with no session slots. A chain the request renders without
- * plugins loses its fader too. A freeze cuts
- * its track at the fader, unmuted, and clears every solo.
+ * plugins loses its fader too, except in a stem. A freeze cuts its track at the
+ * fader, unmuted, and clears every solo. A stem sends its track alone to the
+ * master, and clears every solo.
  */
 OfflineRenderModel narrowForRender(OfflineRenderModel model, const OfflineRenderRequest& request);
 

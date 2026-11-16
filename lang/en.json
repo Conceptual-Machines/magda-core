@@ -273,7 +273,12 @@
     "bit_depth.24": "24-bit",
     "bit_depth.32_float": "32-bit Float",
     "dither.off": "Off",
-    "dither.shaped": "Noise Shaped"
+    "dither.shaped": "Noise Shaped",
+    "label.output": "Output:",
+    "option.mix": "Mix",
+    "option.stems": "Stems (one file per track)",
+    "toggle.track_fx": "Track FX",
+    "toggle.selected_tracks": "Selected tracks only ({0})"
   },
   "export_midi": {
     "label.midi_format": "{0} Format:",
@@ -371,7 +376,14 @@
     "error.no_midi_clips": "No {0} clips to export.",
     "error.no_midi_notes": "No {0} clips with notes to export.",
     "error.midi_write_failed": "Failed to write {0} file.",
-    "error.cannot_create_file": "Could not create output file:"
+    "error.cannot_create_file": "Could not create output file:",
+    "progress.exporting_stems": "Exporting Stems",
+    "choose_stems_folder": "Choose a Folder for the Stems",
+    "alert.stems_success_prefix": "{0} stems exported to:",
+    "alert.replace_title": "Replace Files?",
+    "alert.replace_body": "{0} of the stems already exist in this folder. Replace them?",
+    "alert.replace_button": "Replace",
+    "error.no_stems": "There are no tracks to export: every track is muted or off."
   },
   "mix_analysis": {
     "cleanup_failed": "Cleaning up after mix analysis failed."
