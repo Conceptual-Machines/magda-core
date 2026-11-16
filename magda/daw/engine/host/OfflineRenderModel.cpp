@@ -95,6 +95,21 @@ void keepPreFader(TrackInfo& track) {
         track.chain.postFxChainElements.clear();
 }
 
+/** @brief Send a stem's track to the master, and cut every other output that leaves the stem. */
+void isolateStem(TrackInfo& track, TrackId stemTrackId, const std::set<TrackId>& kept) {
+    track.soloed = false;
+
+    if (track.id == stemTrackId) {
+        track.audioOutputDevice = "master";
+        return;
+    }
+
+    // A track that reaches the stem through a send alone plays nothing out of its output.
+    if (const auto route = engine::parseTrackRoute(track.audioOutputDevice);
+        !route.namesTrack() || route.trackId == MASTER_TRACK_ID || !kept.contains(route.trackId))
+        track.audioOutputDevice = engine::kNoRoute;
+}
+
 bool automatesFader(const AutomationLaneInfo& lane, TrackId trackId) {
     return lane.target.devicePath.trackId == trackId &&
            (lane.target.kind == ControlTarget::Kind::TrackVolume ||
@@ -130,10 +145,15 @@ OfflineRenderModel narrowForRender(OfflineRenderModel model, const OfflineRender
         else if (!request.useTrackEffects)
             keepInstrumentOnly(track.chain);
 
-        if (!request.usePlugins || !request.useTrackEffects) {
+        // A stem keeps its faders: it is the track as the mix plays it (#54).
+        if ((!request.usePlugins || !request.useTrackEffects) &&
+            request.stemTrackId == INVALID_TRACK_ID) {
             faderToUnity(track);
             unityFaders.insert(track.id);
         }
+
+        if (request.stemTrackId != INVALID_TRACK_ID)
+            isolateStem(track, request.stemTrackId, kept);
 
         if (request.freezeTrackId != INVALID_TRACK_ID) {
             track.soloed = false;

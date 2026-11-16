@@ -2095,6 +2095,9 @@ void Compiler::routeOutput(const TrackInfo& track, PortRef out) {
     }
 
     const auto outputRoute = parseTrackRoute(track.audioOutputDevice);
+    if (outputRoute.kind == RouteKind::None)
+        return;
+
     if (outputRoute.kind == RouteKind::External && track.audioOutputDevice.isNotEmpty() &&
         track.audioOutputDevice != "master") {
         const auto name = track.audioOutputDevice.toStdString();

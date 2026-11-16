@@ -23,8 +23,13 @@ namespace magda::engine {
 /// External: a broken "track:..." value is a broken internal route, and
 /// collapsing the two would quietly reinterpret it as a hardware device or as
 /// the default master routing instead of reporting it. None means the track
-/// does not read that input at all, so there is nothing to route or report.
+/// does not read that input, or sends nothing out of that output, so there is
+/// nothing to route or report.
 enum class RouteKind { None, External, Track, Malformed };
+
+/// An output that goes nowhere. Only a render sets it: a stem's senders feed
+/// it through their sends and nothing else (#54).
+inline constexpr const char* kNoRoute = "none";
 
 struct TrackRoute {
     RouteKind kind = RouteKind::External;
@@ -35,9 +40,13 @@ struct TrackRoute {
     }
 };
 
-/// Parses a routing field: "track:<id>" for an internal route, anything else
-/// (a hardware device name, the default "master", an empty field) is external.
+/// Parses a routing field: "track:<id>" for an internal route, kNoRoute for
+/// none, anything else (a hardware device name, the default "master", an empty
+/// field) is external.
 inline TrackRoute parseTrackRoute(const juce::String& routing) {
+    if (routing == kNoRoute)
+        return {RouteKind::None, INVALID_TRACK_ID};
+
     if (!routing.startsWith("track:"))
         return {RouteKind::External, INVALID_TRACK_ID};
 

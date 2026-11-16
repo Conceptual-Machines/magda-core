@@ -4,6 +4,7 @@
 #include "ExportAudioDialog.hpp"
 
 #include <iterator>
+#include <utility>
 
 #include "../../core/Config.hpp"
 #include "../../project/ProjectManager.hpp"
@@ -140,6 +141,30 @@ ExportAudioDialog::ExportAudioDialog() {
     exportLoopRegionButton_.setEnabled(false);  // Disabled by default
     addAndMakeVisible(exportLoopRegionButton_);
 
+    // The mix, or one file per track (#54)
+    outputLabel_.setText(tr("export_audio.label.output"), juce::dontSendNotification);
+    outputLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    addAndMakeVisible(outputLabel_);
+
+    exportMixButton_.setButtonText(tr("export_audio.option.mix"));
+    exportMixButton_.setRadioGroupId(2);
+    exportMixButton_.setToggleState(true, juce::dontSendNotification);
+    exportMixButton_.onClick = [this]() { updateStemRows(); };
+    addAndMakeVisible(exportMixButton_);
+
+    exportStemsButton_.setButtonText(tr("export_audio.option.stems"));
+    exportStemsButton_.setRadioGroupId(2);
+    exportStemsButton_.onClick = [this]() { updateStemRows(); };
+    addAndMakeVisible(exportStemsButton_);
+
+    stemTrackEffectsCheckbox_.setButtonText(tr("export_audio.toggle.track_fx"));
+    stemTrackEffectsCheckbox_.setToggleState(true, juce::dontSendNotification);
+    addAndMakeVisible(stemTrackEffectsCheckbox_);
+
+    selectedTracksOnlyCheckbox_.setToggleState(true, juce::dontSendNotification);
+    addChildComponent(selectedTracksOnlyCheckbox_);
+    updateStemRows();
+
     // Export button
     exportButton_.setButtonText(tr("export_audio.button.export"));
     exportButton_.onClick = [this]() {
@@ -174,7 +199,7 @@ ExportAudioDialog::ExportAudioDialog() {
     addAndMakeVisible(cancelButton_);
 
     // Set preferred size
-    setSize(500, 488);
+    setSize(500, 561);
 }
 
 ExportAudioDialog::~ExportAudioDialog() {
@@ -255,6 +280,20 @@ void ExportAudioDialog::resized() {
     exportLoopRegionButton_.setBounds(bounds.removeFromTop(24));
     bounds.removeFromTop(20);
 
+    // The mix or stems, with the stem switches beneath
+    auto outputArea = bounds.removeFromTop(24);
+    outputLabel_.setBounds(outputArea.removeFromLeft(120));
+    outputArea.removeFromLeft(10);
+    exportMixButton_.setBounds(outputArea.removeFromLeft(80));
+    exportStemsButton_.setBounds(outputArea);
+    bounds.removeFromTop(5);
+
+    auto stemArea = bounds.removeFromTop(24);
+    stemArea.removeFromLeft(130);
+    stemTrackEffectsCheckbox_.setBounds(stemArea.removeFromLeft(110));
+    selectedTracksOnlyCheckbox_.setBounds(stemArea);
+    bounds.removeFromTop(20);
+
     // Buttons at bottom
     const int buttonHeight = 32;
     const int buttonWidth = 100;
@@ -331,6 +370,11 @@ ExportAudioDialog::Settings ExportAudioDialog::getSettings() const {
         settings.exportRange = ExportRange::EntireSong;
     }
 
+    settings.stems = exportStemsButton_.getToggleState();
+    settings.stemTrackEffects = stemTrackEffectsCheckbox_.getToggleState();
+    if (settings.stems && !selectedTracks_.empty() && selectedTracksOnlyCheckbox_.getToggleState())
+        settings.stemTrackIds = selectedTracks_;
+
     return settings;
 }
 
@@ -346,6 +390,20 @@ void ExportAudioDialog::setLoopRegionAvailable(bool available) {
     if (!available && exportLoopRegionButton_.getToggleState()) {
         exportEntireSongButton_.setToggleState(true, juce::dontSendNotification);
     }
+}
+
+void ExportAudioDialog::setSelectedTracks(std::vector<TrackId> trackIds) {
+    selectedTracks_ = std::move(trackIds);
+    selectedTracksOnlyCheckbox_.setButtonText(
+        tr("export_audio.toggle.selected_tracks")
+            .replace("{0}", juce::String(selectedTracks_.size())));
+    selectedTracksOnlyCheckbox_.setVisible(!selectedTracks_.empty());
+}
+
+void ExportAudioDialog::updateStemRows() {
+    const auto stems = exportStemsButton_.getToggleState();
+    stemTrackEffectsCheckbox_.setEnabled(stems);
+    selectedTracksOnlyCheckbox_.setEnabled(stems);
 }
 
 void ExportAudioDialog::onFormatChanged() {
@@ -427,10 +485,12 @@ bool ExportAudioDialog::isMp3Selected() const {
 
 void ExportAudioDialog::showDialog(juce::Component* parent,
                                    std::function<void(const Settings&)> exportCallback,
-                                   bool hasTimeSelection, bool hasLoopRegion) {
+                                   bool hasTimeSelection, bool hasLoopRegion,
+                                   std::vector<TrackId> selectedTracks) {
     auto* dialog = new ExportAudioDialog();
     dialog->setTimeSelectionAvailable(hasTimeSelection);
     dialog->setLoopRegionAvailable(hasLoopRegion);
+    dialog->setSelectedTracks(std::move(selectedTracks));
     dialog->onExport = std::move(exportCallback);
 
     juce::DialogWindow::LaunchOptions options;

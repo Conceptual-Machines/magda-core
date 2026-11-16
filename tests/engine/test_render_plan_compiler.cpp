@@ -14,6 +14,7 @@
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanDump.hpp"
 #include "plan/RenderPlan.hpp"
+#include "plan/TrackRouting.hpp"
 
 using namespace magda;
 using magda::engine::CompileOptions;
@@ -1754,6 +1755,26 @@ TEST_CASE("An unavailable hardware output is silent and diagnosed",
         CHECK(plan.ops[static_cast<std::size_t>(masterInput)].key.trackId == MASTER_TRACK_ID);
         CHECK(plan.ops[static_cast<std::size_t>(masterInput)].inputs.empty());
     }
+}
+
+TEST_CASE("A track routed nowhere feeds its sends and nothing else",
+          "[engine][plan][compiler][54]") {
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2, TrackType::Aux)};
+    tracks[1].auxBusIndex = 0;
+    tracks[0].sends.push_back(SendInfo{0, 1.0f, false, 2});
+    tracks[0].audioOutputDevice = magda::engine::kNoRoute;
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+
+    const auto inputs = opsWithRole(plan, OpRole::TrackAudioInput);
+    REQUIRE_FALSE(inputs.empty());
+    const auto masterInput = inputs.back();
+    REQUIRE(plan.ops[static_cast<std::size_t>(masterInput)].key.trackId == MASTER_TRACK_ID);
+    REQUIRE(plan.ops[static_cast<std::size_t>(masterInput)].inputs.size() == 1);
+    CHECK(plan.ops[static_cast<std::size_t>(inputOp(plan, masterInput, 0))].key.trackId == 2);
+    CHECK(opsWithRole(plan, OpRole::SendTap).size() == 1);
 }
 
 TEST_CASE("A send to a track that no longer exists is reported as such",
