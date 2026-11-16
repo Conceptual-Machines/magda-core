@@ -343,7 +343,34 @@
   "footer": {
     "tooltip.session": "Session",
     "tooltip.arrangement": "Arrangement",
-    "tooltip.mix": "Mix"
+    "tooltip.mix": "Mix",
+    "tooltip.model_downloading": "Local LLM: downloading, {0}",
+    "tooltip.model_checking": "Local LLM: checking the download, {0}%",
+    "menu.cancel_download": "Cancel download",
+    "menu.open_local_settings": "Open Local settings"
+  },
+  "model_download": {
+    "button.download": "Download a model",
+    "button.cancel": "Cancel download",
+    "button.resume": "Resume download",
+    "button.discard": "Discard",
+    "status.connecting": "Connecting",
+    "status.stopping": "Stopping",
+    "status.progress": "{0} of {1}",
+    "status.rate": "{0}/s",
+    "status.paused": "Paused at {0} of {1}",
+    "status.checking": "Checking the download, {0}%",
+    "status.done": "Download complete",
+    "size.gb": "{0} GB",
+    "size.mb": "{0} MB",
+    "time.under_minute": "less than a minute left",
+    "time.minutes": "{0} min left",
+    "time.hours": "{0} h {1} min left",
+    "error.unreachable": "Could not reach the download server",
+    "error.network": "The connection kept dropping",
+    "error.disk": "Could not write the model file",
+    "error.damaged": "The download was damaged and has been removed",
+    "error.move": "Could not move the model into place"
   },
   "main_window": {
     "loading.initializing": "Initializing",

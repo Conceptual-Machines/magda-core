@@ -14,6 +14,7 @@
 #include "../../magda/agents/llama_model_manager.hpp"
 #include "../../magda/agents/llm_client_factory.hpp"
 #include "../../magda/agents/llm_presets.hpp"
+#include "../../magda/agents/model_downloader.hpp"
 #include "api/magda_api_live.hpp"
 #include "api/osc_command_sink_live.hpp"
 #include "api/osc_feedback_live.hpp"
@@ -582,6 +583,8 @@ class MagdaDAWApplication : public JUCEApplication {
             modelLoadThread_.join();
         if (sampleTaggerLoadThread_.joinable())
             sampleTaggerLoadThread_.join();
+        // Keeps what has downloaded; Settings offers to resume it next launch (#1830).
+        magda::ModelDownloadManager::getInstance().shutdown();
 
         // Feedback first of all: it holds a tap on the OSC router, a listener
         // on the remote API's change source and a sink on the controller

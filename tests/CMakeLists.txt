@@ -22,6 +22,7 @@ set(TEST_SOURCES
     project/test_command.cpp
     agents/test_command_model.cpp
     agents/test_command_model_downloader.cpp
+    agents/test_ranged_download.cpp
     agents/test_unigram_tokenizer.cpp
     agents/test_command_model_onnx.cpp
     utilities/test_interfaces.cpp
