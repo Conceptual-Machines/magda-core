@@ -477,7 +477,7 @@ class EngineHost {
     /** @brief Launch @p clipId's slot, at the clip's own quantization. */
     void launchClip(ClipId clipId);
 
-    /** @brief Stop @p clipId's slot and give its track back to the arrangement. */
+    /** @brief Stop what @p clipId's track is playing, at the stopping clip's quantization. */
     void stopClip(ClipId clipId);
 
     /** @brief Scene @p sceneIndex across @p trackIds, launched on one beat. */
