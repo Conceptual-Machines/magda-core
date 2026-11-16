@@ -5,12 +5,15 @@
 
 #include <BinaryData.h>
 
+#include <cmath>
 #include <ranges>
 
 #include "../../../agents/llama_model_manager.hpp"
+#include "../../../agents/model_downloader.hpp"
 #include "../../scripting_app.hpp"
 #include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
+#include "../utils/ModelDownloadText.hpp"
 #include "audio/midi/MidiDeviceMatch.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
@@ -222,6 +225,7 @@ void FooterBar::paint(juce::Graphics& g) {
                 dotColour = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.95f);
                 break;
             case LocalModelState::Loading:
+            case LocalModelState::Downloading:
                 dotColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.95f);
                 break;
             case LocalModelState::Idle:
@@ -238,6 +242,8 @@ void FooterBar::paint(juce::Graphics& g) {
         g.setColour(dotColour);
         g.fillEllipse(dotArea.reduced(1.5f));
     }
+
+    paintLocalModelDownload(g);
 }
 
 void FooterBar::resized() {
@@ -496,8 +502,10 @@ void FooterBar::setupLocalModelButtons() {
         localModelButtons_[i]->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         localModelButtons_[i]->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         localModelButtons_[i]->setIconPadding(3.0f);
-        localModelButtons_[i]->onClick = [this]() {
-            if (onLocalModelsClicked)
+        localModelButtons_[i]->onClick = [this, i]() {
+            if (i == 0 && ModelDownloadManager::getInstance().status().transferring())
+                showLocalModelDownloadMenu();
+            else if (onLocalModelsClicked)
                 onLocalModelsClicked();
         };
         addAndMakeVisible(*localModelButtons_[i]);
@@ -513,7 +521,21 @@ bool FooterBar::refreshLocalModelStatus() {
     const bool hasConfiguredLocalModel =
         configuredModelPath.isNotEmpty() && juce::File(configuredModelPath).existsAsFile();
 
-    if (llama.isLoaded()) {
+    const auto download = ModelDownloadManager::getInstance().status();
+    float downloadFraction = 0.0f;
+
+    if (download.transferring() || download.phase == ModelDownloadManager::Phase::Verifying) {
+        nextStates[0] = LocalModelState::Downloading;
+        const bool checking = !download.transferring();
+        const auto reached = checking ? download.bytesChecked : download.bytesDone;
+        if (download.bytesTotal > 0)
+            downloadFraction = static_cast<float>(static_cast<double>(reached) /
+                                                  static_cast<double>(download.bytesTotal));
+        tooltips[0] = checking ? tr("footer.tooltip.model_checking")
+                                     .replace("{0}", juce::String(downloadCheckedPercent(download)))
+                               : tr("footer.tooltip.model_downloading")
+                                     .replace("{0}", downloadProgressText(download, true));
+    } else if (llama.isLoaded()) {
         nextStates[0] = LocalModelState::Loaded;
         tooltips[0] = "Local LLM: loaded";
     } else if (llama.isLoading()) {
@@ -547,8 +569,10 @@ bool FooterBar::refreshLocalModelStatus() {
         tooltips[1] = "Sample Analyzer: not installed";
     }
 
-    bool changed = nextStates != localModelStates_;
+    bool changed = nextStates != localModelStates_ ||
+                   std::abs(downloadFraction - localModelDownloadFraction_) > 0.001f;
     localModelStates_ = nextStates;
+    localModelDownloadFraction_ = downloadFraction;
 
     for (size_t i = 0; i < localModelButtons_.size(); ++i) {
         if (localModelButtons_[i] == nullptr)
@@ -560,6 +584,49 @@ bool FooterBar::refreshLocalModelStatus() {
     }
 
     return changed;
+}
+
+void FooterBar::paintLocalModelDownload(juce::Graphics& g) const {
+    const auto* button = localModelButtons_[0].get();
+    if (button == nullptr || !button->isVisible() ||
+        localModelStates_[0] != LocalModelState::Downloading)
+        return;
+
+    const auto bounds = button->getBounds().toFloat();
+    const auto radius = bounds.getWidth() * 0.5f + 1.5f;
+    const auto centre = bounds.getCentre();
+    const juce::PathStrokeType stroke(1.5f, juce::PathStrokeType::curved,
+                                      juce::PathStrokeType::rounded);
+
+    juce::Path track;
+    track.addCentredArc(centre.x, centre.y, radius, radius, 0.0f, 0.0f,
+                        juce::MathConstants<float>::twoPi, true);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.35f));
+    g.strokePath(track, stroke);
+
+    if (localModelDownloadFraction_ <= 0.0f)
+        return;
+
+    juce::Path progress;
+    progress.addCentredArc(centre.x, centre.y, radius, radius, 0.0f, 0.0f,
+                           juce::MathConstants<float>::twoPi * localModelDownloadFraction_, true);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    g.strokePath(progress, stroke);
+}
+
+void FooterBar::showLocalModelDownloadMenu() {
+    juce::PopupMenu menu;
+    menu.addItem(1, tr("footer.menu.cancel_download"));
+    menu.addItem(2, tr("footer.menu.open_local_settings"));
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(localModelButtons_[0].get()),
+                       [safeThis = juce::Component::SafePointer<FooterBar>(this)](int result) {
+                           if (result == 1)
+                               ModelDownloadManager::getInstance().cancel();
+                           else if (result == 2 && safeThis != nullptr &&
+                                    safeThis->onLocalModelsClicked)
+                               safeThis->onLocalModelsClicked();
+                       });
 }
 
 void FooterBar::setupBottomCollapseButton() {

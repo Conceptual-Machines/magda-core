@@ -64,6 +64,8 @@ set(AGENTS_SOURCES
     llm_client_factory.hpp
     model_downloader.hpp
     model_downloader.cpp
+    ranged_download.hpp
+    ranged_download.cpp
     theme_agent.cpp
     poly_step_sequencer_agent.hpp
     poly_step_sequencer_agent.cpp

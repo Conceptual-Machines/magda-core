@@ -25,6 +25,7 @@
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/DialogLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../utils/ModelDownloadText.hpp"
 #include "SettingsSections.hpp"
 #include "SettingsToolbar.hpp"
 #include "magda/agents/command_model_downloader.hpp"
@@ -697,14 +698,17 @@ class AISettingsPages::CloudPage : public juce::Component {
 // LocalPage — embedded model configuration
 // ============================================================================
 
-class AISettingsPages::LocalPage : public juce::Component {
+class AISettingsPages::LocalPage : public juce::Component, private juce::Timer {
   public:
     LocalPage() {
-        // Download model button
-        downloadButton_.setButtonText(
-            juce::String(juce::CharPointer_UTF8("Download a model\xe2\x80\xa6")));
-        downloadButton_.onClick = [this]() { startDownload(); };
+        downloadButton_.onClick = [this]() { downloadClicked(); };
         addAndMakeVisible(downloadButton_);
+        discardButton_.setButtonText(tr("model_download.button.discard"));
+        discardButton_.onClick = [this]() {
+            ModelDownloadManager::getInstance().discard();
+            refreshDownload();
+        };
+        addChildComponent(discardButton_);
 
         // Model file
         modelLabel_.setText("File (.gguf)", juce::dontSendNotification);
@@ -774,6 +778,11 @@ class AISettingsPages::LocalPage : public juce::Component {
         addAndMakeVisible(runtimeHeader_);
 
         updateStatus();
+
+        // The download belongs to the app; the page only shows it (#1830).
+        downloadPhase_ = ModelDownloadManager::getInstance().status().phase;
+        refreshDownload();
+        startTimerHz(4);
     }
 
     juce::Component& getBadge() {
@@ -805,6 +814,10 @@ class AISettingsPages::LocalPage : public juce::Component {
         loadButton_.setBounds(row.removeFromLeft(textWidth(loadButton_) + 8));
         row.removeFromLeft(8);
         downloadButton_.setBounds(row.removeFromLeft(textWidth(downloadButton_)));
+        if (discardButton_.isVisible()) {
+            row.removeFromLeft(8);
+            discardButton_.setBounds(row.removeFromLeft(textWidth(discardButton_)));
+        }
         row.removeFromLeft(12);
         statusLabel_.setBounds(row);
 
@@ -867,67 +880,90 @@ class AISettingsPages::LocalPage : public juce::Component {
             });
     }
 
-    void startDownload() {
-        chooser_ =
-            std::make_unique<juce::FileChooser>("Save MAGDA Model",
-                                                juce::File(modelEditor_.getText())
-                                                    .getParentDirectory()
-                                                    .getChildFile("magda-v0.3.0-q4_k_m.gguf"),
-                                                "*.gguf");
+    void downloadClicked() {
+        auto& downloads = ModelDownloadManager::getInstance();
+        const auto status = downloads.status();
+        if (status.transferring())
+            downloads.cancel();
+        else if (status.resumable)
+            downloads.resume();
+        else
+            chooseDownloadTarget();
+        refreshDownload();
+    }
+
+    void chooseDownloadTarget() {
+        auto folder = juce::File(modelEditor_.getText()).getParentDirectory();
+        if (!folder.isDirectory())
+            folder = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+
+        chooser_ = std::make_unique<juce::FileChooser>(
+            "Save MAGDA Model", folder.getChildFile(ModelDownloadManager::fileName()), "*.gguf");
         chooser_->launchAsync(
-            juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
+            juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
+                juce::FileBrowserComponent::warnAboutOverwriting,
             [this](const juce::FileChooser& fc) {
-                auto result = fc.getResult();
+                const auto result = fc.getResult();
                 if (result == juce::File())
                     return;
-
-                auto targetFile = result.withFileExtension("gguf");
-
-                downloadButton_.setEnabled(false);
-                downloadButton_.setButtonText("0%");
-                statusLabel_.setText("Downloading...", juce::dontSendNotification);
-                statusLabel_.setColour(juce::Label::textColourId, juce::Colours::yellow);
-
-                downloader_ = std::make_unique<ModelDownloader>();
-                downloader_->startDownload(
-                    ModelDownloader::getDefaultModelUrl(), targetFile,
-                    [this](int64_t bytesDownloaded, int64_t totalBytes) {
-                        juce::MessageManager::callAsync([this, bytesDownloaded, totalBytes]() {
-                            if (totalBytes > 0) {
-                                int pct = static_cast<int>(bytesDownloaded * 100 / totalBytes);
-                                downloadButton_.setButtonText(juce::String(pct) + "%");
-                                auto mb = static_cast<double>(bytesDownloaded) / (1024.0 * 1024.0);
-                                auto totalMb = static_cast<double>(totalBytes) / (1024.0 * 1024.0);
-                                statusLabel_.setText(juce::String(mb, 0) + " / " +
-                                                         juce::String(totalMb, 0) + " MB",
-                                                     juce::dontSendNotification);
-                            } else {
-                                auto mb = static_cast<double>(bytesDownloaded) / (1024.0 * 1024.0);
-                                statusLabel_.setText(juce::String(mb, 0) + " MB downloaded",
-                                                     juce::dontSendNotification);
-                            }
-                        });
-                    },
-                    [this](bool success, const juce::String& modelPath) {
-                        juce::MessageManager::callAsync([this, success, modelPath]() {
-                            downloadButton_.setEnabled(true);
-                            downloadButton_.setButtonText(juce::String(
-                                juce::CharPointer_UTF8("Download a model\xe2\x80\xa6")));
-
-                            if (success) {
-                                modelEditor_.setText(modelPath, juce::dontSendNotification);
-                                statusLabel_.setText("Download complete",
-                                                     juce::dontSendNotification);
-                                statusLabel_.setColour(juce::Label::textColourId,
-                                                       juce::Colours::limegreen);
-                            } else {
-                                statusLabel_.setText("Download failed", juce::dontSendNotification);
-                                statusLabel_.setColour(juce::Label::textColourId,
-                                                       juce::Colours::red);
-                            }
-                        });
-                    });
+                ModelDownloadManager::getInstance().start(result.withFileExtension("gguf"));
+                refreshDownload();
             });
+    }
+
+    void timerCallback() override {
+        refreshDownload();
+    }
+
+    void refreshDownload() {
+        using Phase = ModelDownloadManager::Phase;
+        const auto status = ModelDownloadManager::getInstance().status();
+
+        if (status.phase == Phase::Done && downloadPhase_ != Phase::Done) {
+            modelEditor_.setText(status.target.getFullPathName(), juce::dontSendNotification);
+            finishedHere_ = true;
+        }
+        downloadPhase_ = status.phase;
+
+        juce::String buttonText = trEllipsis("model_download.button.download");
+        if (status.running())
+            buttonText = tr("model_download.button.cancel");
+        else if (status.resumable)
+            buttonText = tr("model_download.button.resume");
+
+        const bool showDiscard = !status.running() && status.resumable;
+        if (buttonText != downloadButton_.getButtonText() ||
+            showDiscard != discardButton_.isVisible()) {
+            downloadButton_.setButtonText(buttonText);
+            discardButton_.setVisible(showDiscard);
+            resized();
+        }
+        downloadButton_.setEnabled(!status.running() || status.transferring());
+
+        // Written only when it changes, so a model load's own message is not overwritten.
+        // "Download complete" is news once, not on every visit to the page.
+        const auto text = status.phase == Phase::Done && !finishedHere_
+                              ? juce::String()
+                              : downloadStatusText(status);
+        if (text != downloadText_) {
+            downloadText_ = text;
+            statusLabel_.setText(text, juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId, downloadColour(status.phase));
+        }
+    }
+
+    static juce::Colour downloadColour(ModelDownloadManager::Phase phase) {
+        switch (phase) {
+            case ModelDownloadManager::Phase::Done:
+                return juce::Colours::limegreen;
+            case ModelDownloadManager::Phase::Failed:
+                return juce::Colours::red;
+            case ModelDownloadManager::Phase::Paused:
+            case ModelDownloadManager::Phase::Idle:
+                return ActiveTheme::getColour(ActiveTheme::TEXT_DIM);
+            default:
+                return juce::Colours::yellow;
+        }
     }
 
     void toggleModel() {
@@ -1016,7 +1052,7 @@ class AISettingsPages::LocalPage : public juce::Component {
     juce::Label modelLabel_, gpuLabel_, ctxLabel_;
     juce::TextEditor modelEditor_, gpuCustomEditor_, ctxEditor_;
     juce::ComboBox gpuCombo_;
-    juce::TextButton browseButton_, downloadButton_, loadButton_;
+    juce::TextButton browseButton_, downloadButton_, discardButton_, loadButton_;
     juce::Label runtimeHeader_;
     juce::Label tokensLabel_;
     SettingsStatusBadge badge_;
@@ -1024,7 +1060,9 @@ class AISettingsPages::LocalPage : public juce::Component {
     juce::ToggleButton loadOnStartupToggle_;
     juce::Label statusLabel_;
     std::unique_ptr<juce::FileChooser> chooser_;
-    std::unique_ptr<ModelDownloader> downloader_;
+    ModelDownloadManager::Phase downloadPhase_ = ModelDownloadManager::Phase::Idle;
+    juce::String downloadText_;
+    bool finishedHere_ = false;
 };
 
 // ============================================================================

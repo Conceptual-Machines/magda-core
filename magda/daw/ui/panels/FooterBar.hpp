@@ -84,14 +84,19 @@ class FooterBar : public juce::Component,
         Idle,
         Loading,
         Loaded,
+        Downloading,
     };
 
     std::array<std::unique_ptr<SvgButton>, NUM_LOCAL_MODELS> localModelButtons_;
     std::array<LocalModelState, NUM_LOCAL_MODELS> localModelStates_ = {
         LocalModelState::Unavailable, LocalModelState::Unavailable};
     juce::Rectangle<int> localModelStripArea_;
+    /// How far the Local LLM download (or its check) has got, while Downloading (#1830).
+    float localModelDownloadFraction_ = 0.0f;
     bool refreshLocalModelStatus();
     void setupLocalModelButtons();
+    void paintLocalModelDownload(juce::Graphics& g) const;
+    void showLocalModelDownloadMenu();
 
     InfoLine infoLine_;
 
