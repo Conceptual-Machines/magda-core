@@ -5,8 +5,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <optional>
+
+#include "plugins/mutable/MutableResampler.hpp"
 
 // Upstream Mutable Instruments DSP (third_party/eurorack, magda::mutable),
 // compiled with -DTEST. Walled behind the pimpl so this is the only TU in the
@@ -22,6 +26,18 @@ constexpr int kBlock = static_cast<int>(rings::kMaxBlockSize);  // 24
 const float kInternalRate = rings::kSampleRate;                 // 48 kHz (runtime const)
 
 constexpr int kNumModels = 6;
+
+/**
+ * @brief A string's -60 dB time at @p damping: 0.07 * 2^(8 d(2 - d)) seconds (string.cc).
+ *
+ * None from 0.95, where it crossfades to infinite decay.
+ */
+std::optional<double> stringSeconds(float damping) {
+    if (damping >= 0.95f)
+        return std::nullopt;
+    const double lf = damping * (2.0 - damping);
+    return 0.07 * std::pow(2.0, 8.0 * lf);
+}
 
 /// One slot's metadata. The ids, order and display ranges are pinned to what
 /// the retired host-native plugin registered, because projects store parameter
@@ -127,15 +143,6 @@ sdk::ParameterDescriptor slotInfo(int index) {
     return info;
 }
 
-// 4-point, 3rd-order Hermite (Catmull-Rom) interpolation between x[1] and x[2].
-inline float cubic(const float* x, float t) {
-    const float a = -0.5f * x[0] + 1.5f * x[1] - 1.5f * x[2] + 0.5f * x[3];
-    const float b = x[0] - 2.5f * x[1] + 2.0f * x[2] - 0.5f * x[3];
-    const float c = -0.5f * x[0] + 0.5f * x[2];
-    const float d = x[1];
-    return ((a * t + b) * t + c) * t + d;
-}
-
 }  // namespace
 
 //==============================================================================
@@ -152,16 +159,17 @@ struct MutableRingsPlugin::Impl {
     }
 
     void prepare(double hostRate) {
-        ratio_ = kInternalRate / hostRate;
+        leg_.prepare(kInternalRate, hostRate);
         resetVoice();
     }
 
+    double latencySeconds() const {
+        return leg_.latencySeconds();
+    }
+
     void resetVoice() {
-        primed_ = false;
-        frac_ = 0.0;
+        leg_.reset();
         chunkPos_ = kBlock;
-        std::memset(xL_, 0, sizeof(xL_));
-        std::memset(xR_, 0, sizeof(xR_));
         pendingCount_ = 0;
         currentNote_ = 60;
     }
@@ -193,29 +201,7 @@ struct MutableRingsPlugin::Impl {
     }
 
     void generate(float* outL, float* outR, int n) {
-        if (!primed_) {
-            for (int j = 0; j < 4; ++j)
-                nextSource(xL_[j], xR_[j]);
-            frac_ = 0.0;
-            primed_ = true;
-        }
-        for (int i = 0; i < n; ++i) {
-            const auto t = static_cast<float>(frac_);
-            outL[i] = cubic(xL_, t);
-            if (outR != nullptr)
-                outR[i] = cubic(xR_, t);
-            frac_ += ratio_;
-            while (frac_ >= 1.0) {
-                frac_ -= 1.0;
-                xL_[0] = xL_[1];
-                xL_[1] = xL_[2];
-                xL_[2] = xL_[3];
-                xR_[0] = xR_[1];
-                xR_[1] = xR_[2];
-                xR_[2] = xR_[3];
-                nextSource(xL_[3], xR_[3]);
-            }
-        }
+        leg_.render(outL, outR, n, [this](float& l, float& r) { nextSource(l, r); });
     }
 
   private:
@@ -258,11 +244,7 @@ struct MutableRingsPlugin::Impl {
     float aux_[kBlock];
     int chunkPos_ = kBlock;
 
-    double ratio_ = kInternalRate / 44100.0;
-    double frac_ = 0.0;
-    float xL_[4]{};
-    float xR_[4]{};
-    bool primed_ = false;
+    mutable_resampling::OutputLeg leg_;
 
     /// Note-ons waiting for an internal block to strum them. A chord is four
     /// voices at most, and a queue several times that outlives any host block.
@@ -285,6 +267,7 @@ MutableRingsPlugin::MutableRingsPlugin() : impl_(std::make_unique<Impl>()) {
         values_[static_cast<size_t>(index)] =
             ParameterUtils::realToNormalized(info.defaultValue, ParameterUtils::domainOf(info));
     }
+    updateTail();
 }
 
 MutableRingsPlugin::~MutableRingsPlugin() = default;
@@ -305,6 +288,62 @@ void MutableRingsPlugin::setParameterValue(int index, float value) {
     if (index < 0 || index >= kNumParams)
         return;
     values_[static_cast<size_t>(index)] = juce::jlimit(0.0f, 1.0f, value);
+
+    if (index == kModel || index == kDamping || index == kLevel)
+        updateTail();
+}
+
+double MutableRingsPlugin::tailSecondsFor(int model, float damping, float levelDb) {
+    std::optional<double> seconds;
+    switch (model) {
+        case rings::RESONATOR_MODEL_MODAL: {
+            // The fundamental's mode has Q = 1 + f q, q = 500 * 10^(4 damping) (resonator.cc),
+            // so its -60 dB time is ln(1000) q / (pi * 48 kHz) whatever the pitch. The 1 adds
+            // up to 0.3 s at the lowest notes.
+            const double q = 500.0 * std::pow(10.0, 4.0 * damping);
+            seconds = std::log(1000.0) * q /
+                          (juce::MathConstants<double>::pi * static_cast<double>(kInternalRate)) +
+                      0.3;
+            break;
+        }
+        case rings::RESONATOR_MODEL_SYMPATHETIC_STRING:
+        case rings::RESONATOR_MODEL_SYMPATHETIC_STRING_QUANTIZED:
+            // The sympathetic strings ring at 0.7 + 0.27 damping (part.cc), past the struck one.
+            seconds = stringSeconds(0.7f + 0.27f * damping);
+            break;
+        case rings::RESONATOR_MODEL_STRING:
+            seconds = stringSeconds(damping);
+            break;
+        case rings::RESONATOR_MODEL_FM_VOICE:
+            // Amplitude rt60 = 0.1 * 2^(8 damping) seconds (fm_voice.cc). Past 0.9 the
+            // envelope stops closing, so the voice sustains.
+            if (damping <= 0.9f)
+                seconds = 0.1 * std::pow(2.0, 8.0 * damping);
+            break;
+        case rings::RESONATOR_MODEL_STRING_AND_REVERB:
+            // The strings take damping (2 - damping) here (part.cc). The reverb outlasts them
+            // only where they stop at once: 0.44 s measured at Damping 0 and +12 dB.
+            seconds = stringSeconds(damping * (2.0f - damping));
+            if (seconds.has_value())
+                *seconds += 0.4;
+            break;
+        default:
+            break;
+    }
+    if (!seconds.has_value())
+        return kMaxTailSeconds;
+
+    // Level above 0 dB starts the decay that much further above -60 dBFS. Then 20% headroom,
+    // as Nimbus takes: the worst case measured, sympathetic at +12 dB, reached 95% of it unpadded.
+    const double scaled =
+        *seconds * 1.2 * (60.0 + std::max(0.0, static_cast<double>(levelDb))) / 60.0;
+    return juce::jlimit(0.25, kMaxTailSeconds, scaled);
+}
+
+void MutableRingsPlugin::updateTail() {
+    const int model = juce::jlimit(0, kNumModels - 1, juce::roundToInt(displayValue(kModel)));
+    tailSeconds_.store(tailSecondsFor(model, displayValue(kDamping), displayValue(kLevel)),
+                       std::memory_order_relaxed);
 }
 
 float MutableRingsPlugin::displayValue(int index) const {
@@ -315,6 +354,7 @@ float MutableRingsPlugin::displayValue(int index) const {
 void MutableRingsPlugin::prepare(const DevicePrepareContext& context) {
     sampleRate_ = context.sampleRate;
     impl_->prepare(sampleRate_);
+    latencySamples_ = juce::roundToInt(impl_->latencySeconds() * sampleRate_);
     scratch_.setSize(2, std::max(context.maximumBlockSize, 1), false, true, false);
 }
 

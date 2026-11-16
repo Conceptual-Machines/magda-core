@@ -5,8 +5,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
+
+#include "plugins/mutable/MutableResampler.hpp"
 
 // Upstream Mutable Instruments DSP (third_party/eurorack, magda::mutable).
 // Compiled with -DTEST (set on the magda_mutable target) so stmlib uses its
@@ -21,15 +25,6 @@ namespace {
 
 constexpr int kBlock = static_cast<int>(elements::kMaxBlockSize);  // 16
 const float kInternalRate = elements::kSampleRate;                 // 32 kHz (runtime const)
-
-// 4-point, 3rd-order Hermite (Catmull-Rom) interpolation between x[1] and x[2].
-inline float cubic(const float* x, float t) {
-    const float a = -0.5f * x[0] + 1.5f * x[1] - 1.5f * x[2] + 0.5f * x[3];
-    const float b = x[0] - 2.5f * x[1] + 2.0f * x[2] - 0.5f * x[3];
-    const float c = -0.5f * x[0] + 0.5f * x[2];
-    const float d = x[1];
-    return ((a * t + b) * t + c) * t + d;
-}
 
 // Parameter descriptors, in ParamIndex order.
 enum class Kind { Normalised, Pitch, Fine, Level };
@@ -130,16 +125,17 @@ struct MutableElementsPlugin::Impl {
     }
 
     void prepare(double hostRate) {
-        ratio_ = kInternalRate / hostRate;
+        leg_.prepare(kInternalRate, hostRate);
         resetVoice();
     }
 
+    double latencySeconds() const {
+        return leg_.latencySeconds();
+    }
+
     void resetVoice() {
-        primed_ = false;
-        frac_ = 0.0;
+        leg_.reset();
         chunkPos_ = kBlock;
-        std::memset(xL_, 0, sizeof(xL_));
-        std::memset(xR_, 0, sizeof(xR_));
         heldCount_ = 0;
         gate_ = false;
         strength_ = 0.8f;
@@ -191,29 +187,7 @@ struct MutableElementsPlugin::Impl {
 
     // Render n host-rate samples into outL/outR (outR may be null for mono).
     void generate(float* outL, float* outR, int n) {
-        if (!primed_) {
-            for (int j = 0; j < 4; ++j)
-                nextSource(xL_[j], xR_[j]);
-            frac_ = 0.0;
-            primed_ = true;
-        }
-        for (int i = 0; i < n; ++i) {
-            const auto t = static_cast<float>(frac_);
-            outL[i] = cubic(xL_, t);
-            if (outR != nullptr)
-                outR[i] = cubic(xR_, t);
-            frac_ += ratio_;
-            while (frac_ >= 1.0) {
-                frac_ -= 1.0;
-                xL_[0] = xL_[1];
-                xL_[1] = xL_[2];
-                xL_[2] = xL_[3];
-                xR_[0] = xR_[1];
-                xR_[1] = xR_[2];
-                xR_[2] = xR_[3];
-                nextSource(xL_[3], xR_[3]);
-            }
-        }
+        leg_.render(outL, outR, n, [this](float& l, float& r) { nextSource(l, r); });
     }
 
   private:
@@ -237,11 +211,7 @@ struct MutableElementsPlugin::Impl {
     float aux_[kBlock];
     int chunkPos_ = kBlock;
 
-    double ratio_ = kInternalRate / 44100.0;
-    double frac_ = 0.0;
-    float xL_[4]{};
-    float xR_[4]{};
-    bool primed_ = false;
+    mutable_resampling::OutputLeg leg_;
 
     std::array<uint8_t, 16> held_{};
     int heldCount_ = 0;
@@ -260,6 +230,7 @@ MutableElementsPlugin::MutableElementsPlugin() : impl_(std::make_unique<Impl>())
         values_[static_cast<size_t>(index)] =
             ParameterUtils::realToNormalized(info.defaultValue, ParameterUtils::domainOf(info));
     }
+    updateTail();
 }
 
 MutableElementsPlugin::~MutableElementsPlugin() = default;
@@ -278,6 +249,53 @@ void MutableElementsPlugin::setParameterValue(int index, float value) {
     if (index < 0 || index >= kNumParams)
         return;
     values_[static_cast<size_t>(index)] = juce::jlimit(0.0f, 1.0f, value);
+
+    if (index == kDamping || index == kSpace || index == kBow || index == kBlow || index == kLevel)
+        updateTail();
+}
+
+double MutableElementsPlugin::tailSecondsFor(float damping, float space, bool sustainedExciter,
+                                             float levelDb) {
+    // The fundamental's mode has Q = 1 + f q, q = 500 * 10^(3.2 damping) (resonator.cc), so its
+    // -60 dB time is ln(1000) q / (pi * 32 kHz) whatever the pitch. Low notes ring past it:
+    // struck at C1 and +12 dB, it needed 0.3 s more, so 0.5.
+    const double q = 500.0 * std::pow(10.0, 3.2 * damping);
+    double seconds = std::log(1000.0) * q /
+                         (juce::MathConstants<double>::pi * static_cast<double>(kInternalRate)) +
+                     0.5;
+
+    // Space's reverb, which part.cc only engages past 0.6: measured decay to -60 dBFS at
+    // Damping 0, so the resonator is out of it.
+    constexpr float kSpace[] = {0.6f, 0.65f, 0.7f, 0.75f, 0.8f, 0.85f, 0.9f, 0.95f, 1.0f};
+    constexpr double kReverbSeconds[] = {0.0, 0.84, 1.19, 1.81, 2.07, 2.65, 3.54, 4.71, 6.75};
+    constexpr int kPoints = static_cast<int>(std::size(kSpace));
+    if (space >= kSpace[kPoints - 1]) {
+        seconds += kReverbSeconds[kPoints - 1];
+    } else {
+        for (int i = 1; i < kPoints; ++i) {
+            if (space <= kSpace[i] && space > kSpace[i - 1]) {
+                const double t = (space - kSpace[i - 1]) / (kSpace[i] - kSpace[i - 1]);
+                seconds += kReverbSeconds[i - 1] + t * (kReverbSeconds[i] - kReverbSeconds[i - 1]);
+                break;
+            }
+        }
+    }
+
+    // A bowed or blown note keeps exciting through its release: 3.0 s measured, at Contour 0.5.
+    if (sustainedExciter)
+        seconds += 3.0;
+
+    // Level above 0 dB starts the decay that much further above -60 dBFS. Then 20% headroom,
+    // as Nimbus takes: the worst case measured, blown at +12 dB, reached 96% of it unpadded.
+    seconds *= 1.2 * (60.0 + std::max(0.0, static_cast<double>(levelDb))) / 60.0;
+    return juce::jlimit(0.25, kMaxTailSeconds, seconds);
+}
+
+void MutableElementsPlugin::updateTail() {
+    tailSeconds_.store(tailSecondsFor(displayValue(kDamping), displayValue(kSpace),
+                                      displayValue(kBow) > 0.0f || displayValue(kBlow) > 0.0f,
+                                      displayValue(kLevel)),
+                       std::memory_order_relaxed);
 }
 
 float MutableElementsPlugin::displayValue(int index) const {
@@ -288,6 +306,7 @@ float MutableElementsPlugin::displayValue(int index) const {
 void MutableElementsPlugin::prepare(const DevicePrepareContext& context) {
     sampleRate_ = context.sampleRate;
     impl_->prepare(sampleRate_);
+    latencySamples_ = juce::roundToInt(impl_->latencySeconds() * sampleRate_);
     scratch_.setSize(2, std::max(context.maximumBlockSize, 1), false, true, false);
 }
 

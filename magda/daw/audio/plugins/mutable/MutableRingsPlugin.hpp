@@ -4,6 +4,8 @@
 #pragma once
 
 #include <array>
+#include <atomic>
+#include <cmath>
 #include <memory>
 
 #include "core/ParameterUtils.hpp"
@@ -68,9 +70,22 @@ class MutableRingsPlugin : public MagdaDevice {
         };
     }
 
-    /// A long resonator and reverb tail.
+    /// Past this the resonator is treated as sustaining: the string models stop decaying at all
+    /// near full Damping, and the modal one rings for well over a minute.
+    static constexpr double kMaxTailSeconds = 60.0;
+
+    /// Off the model, Damping and Level rather than a constant: 0.25 s to the ceiling (#2409).
     std::int64_t tailSamples() const override {
-        return static_cast<std::int64_t>(std::ceil(4.0 * sampleRate_));
+        return static_cast<std::int64_t>(
+            std::ceil(tailSeconds_.load(std::memory_order_relaxed) * sampleRate_));
+    }
+
+    /** @brief The tail after a strum those settings imply, in seconds. */
+    static double tailSecondsFor(int model, float damping, float levelDb);
+
+    /// The output leg's band limit, set at prepare (#2409).
+    int latencySamples() const override {
+        return latencySamples_;
     }
 
     void prepare(const DevicePrepareContext& context) override;
@@ -89,6 +104,7 @@ class MutableRingsPlugin : public MagdaDevice {
     /// domain rather than a freshly built ParameterInfo: this runs per block on
     /// the audio thread, and a ParameterInfo carries strings that allocate.
     float displayValue(int index) const;
+    void updateTail();
 
     struct Impl;
     std::unique_ptr<Impl> impl_;
@@ -97,6 +113,10 @@ class MutableRingsPlugin : public MagdaDevice {
     std::array<ParameterUtils::ParameterDomain, kNumParams> domains_{};
 
     double sampleRate_ = 44100.0;
+    int latencySamples_ = 0;
+
+    /// setParameterValue writes it, tailSamples() reads it off the message thread.
+    std::atomic<double> tailSeconds_{0.0};
 
     /// Rendered here, then added into the host buffer (#2370): the DSP writes
     /// straight into these pointers, so it can't itself sum onto whatever the

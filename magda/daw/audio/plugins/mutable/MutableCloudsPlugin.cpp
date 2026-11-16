@@ -10,6 +10,8 @@
 #include <cstring>
 #include <iterator>
 
+#include "plugins/mutable/MutableResampler.hpp"
+
 // Upstream Mutable Instruments DSP (third_party/eurorack, magda::mutable),
 // compiled with -DTEST. Walled behind the pimpl so this is the only TU in the
 // base device pack that sees the eurorack headers.
@@ -19,6 +21,11 @@
 namespace magda::daw::audio {
 
 namespace {
+
+using mutable_resampling::BandLimit;
+using mutable_resampling::bandLimitCorner;
+using mutable_resampling::RingResampler;
+using mutable_resampling::StereoRing;
 
 constexpr int kBlock = static_cast<int>(clouds::kMaxBlockSize);  // 32
 
@@ -32,82 +39,10 @@ const float kInternalRate = 32000.0f;  // Clouds native rate
 const char* const kModeNames[] = {"Granular", "Stretch", "Looping Delay", "Spectral"};
 constexpr int kNumModes = 4;
 
-inline float cubic(float x0, float x1, float x2, float x3, float t) {
-    const float a = -0.5f * x0 + 1.5f * x1 - 1.5f * x2 + 0.5f * x3;
-    const float b = x0 - 2.5f * x1 + 2.0f * x2 - 0.5f * x3;
-    const float c = -0.5f * x0 + 0.5f * x2;
-    return ((a * t + b) * t + c) * t + x1;
-}
-
-// One biquad section, transposed direct form II.
-struct Biquad {
-    float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f;
-    float z1 = 0.0f, z2 = 0.0f;
-
-    void clear() {
-        z1 = z2 = 0.0f;
-    }
-    void setLowpass(double fc, double fs, double q) {
-        const double w0 = 2.0 * juce::MathConstants<double>::pi * fc / fs;
-        const double cw = std::cos(w0);
-        const double alpha = std::sin(w0) / (2.0 * q);
-        const double a0 = 1.0 + alpha;
-        b0 = static_cast<float>((1.0 - cw) * 0.5 / a0);
-        b1 = static_cast<float>((1.0 - cw) / a0);
-        b2 = b0;
-        a1 = static_cast<float>(-2.0 * cw / a0);
-        a2 = static_cast<float>((1.0 - alpha) / a0);
-    }
-    float process(float x) {
-        const float y = (b0 * x) + z1;
-        z1 = (b1 * x) - (a1 * y) + z2;
-        z2 = (b2 * x) - (a2 * y);
-        return y;
-    }
-};
-
-// Pole Qs of an 8th-order Butterworth, 1/(2 cos(pi (2k+1)/16)).
-constexpr double kButterworthQ[4] = {0.50979558, 0.60134489, 0.89997622, 2.56291545};
-constexpr double kBandLimitHz = MutableCloudsPlugin::kBandLimitHz;
-
 // Feedback at or above this never decays, so no finite tail describes it.
 constexpr float kFeedbackSustains = 0.75f;
 
 static_assert(kBlock == 32, "the measured latency assumes a 32-sample grain block");
-
-// The 32 kHz DSP is band-limited to 16 kHz and the cubic interpolators do not
-// enforce it: unfiltered, a 20 kHz tone folds to 12 kHz louder than it left,
-// and a 10 kHz tone's image sits 17 dB down coming back up. One lowpass per
-// crossing, both at host rate.
-struct BandLimit {
-    Biquad l[4], r[4];
-
-    void prepare(double hostRate) {
-        // At every rate, 32 kHz included: bypassing where nothing resamples
-        // puts the declared latency 3 samples out at that rate. Below Nyquist
-        // at every rate too. OfflineMixAnalysis renders at 22.05 kHz with
-        // plugins in, and a 15 kHz corner there is an unstable biquad: it took
-        // the output to 1e37 and then to NaN (#2365 review).
-        const double corner = std::min(kBandLimitHz, 0.45 * hostRate);
-        for (int i = 0; i < 4; ++i) {
-            l[i].setLowpass(corner, hostRate, kButterworthQ[i]);
-            r[i].setLowpass(corner, hostRate, kButterworthQ[i]);
-        }
-        clear();
-    }
-    void clear() {
-        for (int i = 0; i < 4; ++i) {
-            l[i].clear();
-            r[i].clear();
-        }
-    }
-    void process(float& L, float& R) {
-        for (int i = 0; i < 4; ++i) {
-            L = l[i].process(L);
-            R = r[i].process(R);
-        }
-    }
-};
 
 inline short floatToShort(float x) {
     return static_cast<short>(juce::jlimit(-32768, 32767, juce::roundToInt(x * 32767.0f)));
@@ -115,68 +50,6 @@ inline short floatToShort(float x) {
 inline float shortToFloat(short x) {
     return static_cast<float>(x) * (1.0f / 32768.0f);
 }
-
-// Stereo ring buffer (no allocation on the audio thread).
-struct StereoRing {
-    static constexpr int kCap = 4096;
-    static constexpr int kMask = kCap - 1;
-    float l[kCap];
-    float r[kCap];
-    int head = 0;
-    int count = 0;
-
-    void clear() {
-        head = 0;
-        count = 0;
-    }
-    void push(float L, float R) {
-        const int i = (head + count) & kMask;
-        l[i] = L;
-        r[i] = R;
-        if (count < kCap)
-            ++count;
-        else
-            head = (head + 1) & kMask;  // overrun: drop oldest
-    }
-    float L(int i) const {
-        return l[(head + i) & kMask];
-    }
-    float R(int i) const {
-        return r[(head + i) & kMask];
-    }
-    void pop(int n) {
-        head = (head + n) & kMask;
-        count -= n;
-    }
-};
-
-// Cubic pull resampler reading from a StereoRing at rate Fin, producing one
-// output sample at rate Fout per pull (step = Fin/Fout). Phase stays in [1,2)
-// so the 4-point window is always ring indices 0..3.
-struct Resampler {
-    double pos = 1.0;
-    double step = 1.0;
-
-    void reset() {
-        pos = 1.0;
-    }
-    bool pull(StereoRing& ring, float& oL, float& oR) {
-        // The 4-point window plus whatever this call pops: step can exceed 1,
-        // and popping past count leaves it negative, which puts the next push
-        // behind head (#2365 review).
-        if (ring.count < 3 + static_cast<int>(std::ceil(step)))
-            return false;
-        const auto t = static_cast<float>(pos - 1.0);
-        oL = cubic(ring.L(0), ring.L(1), ring.L(2), ring.L(3), t);
-        oR = cubic(ring.R(0), ring.R(1), ring.R(2), ring.R(3), t);
-        pos += step;
-        while (pos >= 2.0) {
-            ring.pop(1);
-            pos -= 1.0;
-        }
-        return true;
-    }
-};
 
 enum class Kind { Normalised, Pitch, Mode, Freeze };
 struct Desc {
@@ -269,8 +142,12 @@ struct MutableCloudsPlugin::Impl {
         // the output one reads 32 kHz.
         inResampler_.step = hostRate / kInternalRate;   // host -> 32k (downsample)
         outResampler_.step = kInternalRate / hostRate;  // 32k -> host (upsample)
-        inLimit_.prepare(hostRate);
-        outLimit_.prepare(hostRate);
+        // Both at host rate, and at every rate, 32 kHz included: bypassing
+        // where nothing resamples puts the declared latency 3 samples out at
+        // that rate.
+        const double corner = bandLimitCorner(kInternalRate, hostRate);
+        inLimit_.prepare(corner, hostRate);
+        outLimit_.prepare(corner, hostRate);
         reset();
     }
 
@@ -369,8 +246,8 @@ struct MutableCloudsPlugin::Impl {
 
     StereoRing hostIn_;  // host-rate input awaiting downsample
     StereoRing wet32k_;  // 32 kHz processed output awaiting upsample
-    Resampler inResampler_;
-    Resampler outResampler_;
+    RingResampler inResampler_;
+    RingResampler outResampler_;
     BandLimit inLimit_;   // before the decimation, against aliasing
     BandLimit outLimit_;  // after the interpolation, against imaging
 
