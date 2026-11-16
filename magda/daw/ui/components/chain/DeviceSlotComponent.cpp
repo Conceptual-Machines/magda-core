@@ -20,6 +20,7 @@
 #include "core/ModInfo.hpp"
 #include "core/ParameterUtils.hpp"
 #include "core/PluginCapabilities.hpp"
+#include "core/PluginPresetScanner.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackAvailability.hpp"
 #include "core/TrackCommands.hpp"
@@ -65,6 +66,7 @@
 #include "slot/DeviceSlotSidechainControls.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "slot/SequencerDeviceControls.hpp"
+#include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/components/common/MidiActivityLed.hpp"
 #include "ui/components/mixer/LevelMeterScale.hpp"
 #include "ui/state/ExpandedFaceplate.hpp"
@@ -1749,6 +1751,62 @@ void DeviceSlotComponent::showPresetMenu() {
                                          isInternalDevice(), std::move(callbacks));
 }
 
+juce::File DeviceSlotComponent::fittingPresetIn(const juce::StringArray& files) const {
+    // The live device, since a VST3 reports its class id only once it has loaded.
+    const auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
+    const auto& device = live != nullptr ? *live : device_;
+    for (const auto& path : files) {
+        const juce::File file(path);
+        if (magda::PluginPresetScanner::presetFitsDevice(file, device))
+            return file;
+    }
+    return {};
+}
+
+bool DeviceSlotComponent::isInterestedInFileDrag(const juce::StringArray& files) {
+    return fittingPresetIn(files) != juce::File();
+}
+
+void DeviceSlotComponent::fileDragEnter(const juce::StringArray&, int, int) {
+    presetDropHover_ = true;
+    repaint();
+}
+
+void DeviceSlotComponent::fileDragExit(const juce::StringArray&) {
+    presetDropHover_ = false;
+    repaint();
+}
+
+void DeviceSlotComponent::filesDropped(const juce::StringArray& files, int, int) {
+    presetDropHover_ = false;
+    repaint();
+    const auto file = fittingPresetIn(files);
+    if (file == juce::File())
+        return;
+
+    juce::Component::SafePointer<DeviceSlotComponent> self(this);
+    magda::daw::ui::loadPluginPresetFile(nodePath_, file, [self]() {
+        if (self != nullptr)
+            self->refreshPresetLabel();
+    });
+}
+
+bool DeviceSlotComponent::isInterestedInDragSource(const SourceDetails& details) {
+    return magda::dnd::acceptsFilesDrag(*this, details);
+}
+
+void DeviceSlotComponent::itemDragEnter(const SourceDetails& details) {
+    magda::dnd::forwardFilesDragEnter(*this, details);
+}
+
+void DeviceSlotComponent::itemDragExit(const SourceDetails& details) {
+    magda::dnd::forwardFilesDragExit(*this, details);
+}
+
+void DeviceSlotComponent::itemDropped(const SourceDetails& details) {
+    magda::dnd::forwardFilesDrop(*this, details);
+}
+
 void DeviceSlotComponent::showSavePresetDialog() {
     juce::Component::SafePointer<DeviceSlotComponent> self(this);
     // A Faust preset holds its patch, so with no preset loaded it starts under the patch's name.
@@ -1924,6 +1982,15 @@ void DeviceSlotComponent::paintOverChildren(juce::Graphics& g) {
     // Base draws controller-indicator dots, bypass dim, and the selection
     // border; we add the gain-staging mark on top.
     NodeComponent::paintOverChildren(g);
+
+    if (presetDropHover_) {
+        const auto bounds = getLocalBounds().toFloat().reduced(1.0f);
+        const auto colour = ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE);
+        g.setColour(colour.withAlpha(0.08f));
+        g.fillRoundedRectangle(bounds, 4.0f);
+        g.setColour(colour);
+        g.drawRoundedRectangle(bounds, 4.0f, 2.0f);
+    }
 
     auto& gsm = magda::GainStagingManager::getInstance();
     const auto* info = gsm.getDeviceInfo(nodePath_);

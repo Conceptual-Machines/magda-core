@@ -75,6 +75,13 @@ class PluginPresetScanner {
     static juce::String getPresetExtension(const DeviceInfo& device);
 
     /**
+     * @brief Whether @p file is a preset @p device's plugin can load (#1329).
+     *
+     * Its format's file, and, where the file names the plugin it was saved from, this one.
+     */
+    static bool presetFitsDevice(const juce::File& file, const DeviceInfo& device);
+
+    /**
      * @brief All directories (user + system) scanned for the device. Useful
      *        for exposing a "Reveal in Finder" action for the user dir.
      */

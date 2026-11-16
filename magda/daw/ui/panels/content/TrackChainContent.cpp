@@ -29,6 +29,7 @@
 #include "core/GestureRouter.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
+#include "core/PresetDrops.hpp"
 #include "core/PresetManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
@@ -614,11 +615,12 @@ class TrackChainContent::ChainContainer : public juce::Component,
         repaint();
     }
 
-    // Phase 1 accepts chain and device presets; rack presets are a follow-up.
+    // Chain, rack and device presets; a plugin's own preset files go to its device slot.
     static bool isDroppablePreset(const juce::String& path) {
+        using Kind = magda::PresetManager::PresetRef::Kind;
         const auto ref = magda::PresetManager::getInstance().classifyPresetFile(juce::File(path));
-        return ref.has_value() && (ref->kind == magda::PresetManager::PresetRef::Kind::Chain ||
-                                   ref->kind == magda::PresetManager::PresetRef::Kind::Device);
+        return ref.has_value() &&
+               (ref->kind == Kind::Chain || ref->kind == Kind::Rack || ref->kind == Kind::Device);
     }
 
     static bool anyDroppablePreset(const juce::StringArray& files) {
@@ -627,8 +629,8 @@ class TrackChainContent::ChainContainer : public juce::Component,
     }
 
     // Load each dropped preset onto the selected track: chain presets replace
-    // the whole chain, device presets insert at the drop position (advancing
-    // the index so a multi-file drop keeps its order).
+    // the whole chain, rack and device presets insert at the drop position
+    // (advancing the index so a multi-file drop keeps its order).
     void applyDroppedPresets(const juce::StringArray& files, int insertIndex,
                              bool shouldScrollToEnd) {
         const auto trackId = owner_.selectedTrackId_;
@@ -654,6 +656,20 @@ class TrackChainContent::ChainContainer : public juce::Component,
                     continue;
                 }
                 owner_.setTrackPresetName(trackId, ref->name);
+            } else if (ref->kind == magda::PresetManager::PresetRef::Kind::Rack) {
+                magda::RackInfo rack;
+                if (!presets.loadRackPreset(ref->name, rack)) {
+                    showChainPresetErrorAsync("Load Rack Preset Failed", presets.getLastError());
+                    continue;
+                }
+                owner_.scrollToEndAfterNextDeviceChange_ = shouldScrollToEnd;
+                owner_.suppressNextImplicitScrollToEnd_ = !shouldScrollToEnd;
+                if (!magda::insertRackPreset(trackId, std::move(rack), insertIndex)) {
+                    showChainPresetErrorAsync("Load Rack Preset Failed",
+                                              "Failed to add the rack to the track.");
+                    continue;
+                }
+                ++insertIndex;
             } else if (ref->kind == magda::PresetManager::PresetRef::Kind::Device) {
                 magda::DeviceInfo device;
                 if (!presets.loadDevicePreset(ref->pluginFolder, ref->name, device)) {

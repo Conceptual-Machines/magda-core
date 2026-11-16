@@ -5,6 +5,10 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <optional>
+#include <utility>
+
+#include "audio/Vst3Preset.hpp"
 
 namespace magda {
 
@@ -12,6 +16,51 @@ namespace {
 
 juce::String sanitiseFolderName(const juce::String& name) {
     return juce::File::createLegalFileName(name.trim());
+}
+
+/// An AU's subtype and manufacturer codes, e.g. {"Smpl", "appl"}.
+using AuIdentity = std::pair<juce::String, juce::String>;
+
+/** @brief A FourCC stored as a plist integer, as its four characters. */
+juce::String fourCC(juce::int64 value) {
+    const auto v = static_cast<juce::uint32>(value);
+    const char chars[] = {static_cast<char>(v >> 24), static_cast<char>(v >> 16),
+                          static_cast<char>(v >> 8), static_cast<char>(v)};
+    return {chars, 4};
+}
+
+/** @brief The plugin an XML .aupreset names; none when it is binary or says nothing. */
+std::optional<AuIdentity> auPresetIdentity(const juce::File& file) {
+    const auto plist = juce::XmlDocument::parse(file);
+    const auto* dict = plist != nullptr ? plist->getChildByName("dict") : nullptr;
+    if (dict == nullptr)
+        return std::nullopt;
+
+    AuIdentity identity;
+    for (const auto* key = dict->getFirstChildElement(); key != nullptr;
+         key = key->getNextElement()) {
+        const auto* value = key->getNextElement();
+        if (!key->hasTagName("key") || value == nullptr || !value->hasTagName("integer"))
+            continue;
+        const auto code = fourCC(value->getAllSubText().getLargeIntValue());
+        if (key->getAllSubText() == "subtype")
+            identity.first = code;
+        else if (key->getAllSubText() == "manufacturer")
+            identity.second = code;
+    }
+    if (identity.first.isEmpty() || identity.second.isEmpty())
+        return std::nullopt;
+    return identity;
+}
+
+/** @brief An AU device's subtype and manufacturer, from JUCE's "AudioUnit:Synths/aumu,Smpl,appl".
+ */
+std::optional<AuIdentity> auDeviceIdentity(const DeviceInfo& device) {
+    const auto codes = juce::StringArray::fromTokens(
+        device.fileOrIdentifier.fromFirstOccurrenceOf("/", false, false), ",", "");
+    if (codes.size() != 3)
+        return std::nullopt;
+    return AuIdentity{codes[1], codes[2]};
 }
 
 juce::String extensionFor(PluginFormat format) {
@@ -151,6 +200,31 @@ juce::String PluginPresetScanner::makeCacheKey(const DeviceInfo& device) {
 
 juce::String PluginPresetScanner::getPresetExtension(const DeviceInfo& device) {
     return extensionFor(device.format);
+}
+
+bool PluginPresetScanner::presetFitsDevice(const juce::File& file, const DeviceInfo& device) {
+    const auto extension = extensionFor(device.format);
+    if (extension.isEmpty() || !file.hasFileExtension(extension) || !file.existsAsFile())
+        return false;
+
+    if (device.format == PluginFormat::VST3) {
+        // Before the device has reported its class, the plugin's own loader checks it.
+        if (device.vst3ClassId.isEmpty())
+            return true;
+        juce::FileInputStream in(file);
+        juce::MemoryBlock header;
+        if (!in.openedOk())
+            return false;
+        in.readIntoMemoryBlock(header,
+                               vst3::kVst3PresetClassIdOffset + vst3::kVst3PresetClassIdLength);
+        return vst3::classIdFromPreset(header).equalsIgnoreCase(device.vst3ClassId);
+    }
+
+    // An AU turns away another plugin's preset without saying so, and the slot would take its
+    // name anyway. A binary plist goes to the plugin unchecked.
+    const auto preset = auPresetIdentity(file);
+    const auto plugin = auDeviceIdentity(device);
+    return !preset.has_value() || !plugin.has_value() || *preset == *plugin;
 }
 
 std::vector<juce::File> PluginPresetScanner::getScanRoots(const DeviceInfo& device) {
