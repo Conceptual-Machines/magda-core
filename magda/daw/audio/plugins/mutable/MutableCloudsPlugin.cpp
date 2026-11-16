@@ -29,11 +29,6 @@ using mutable_resampling::StereoRing;
 
 constexpr int kBlock = static_cast<int>(clouds::kMaxBlockSize);  // 32
 
-// Silence placed in the output ring at reset. A grain block arrives 32 samples
-// at a time while the output is drawn continuously, so the ring swings by a
-// block; the window on top of that is what the interpolator reads. See
-// Impl::reset.
-constexpr int kWetPrimeFrames = kBlock + 4;
 const float kInternalRate = 32000.0f;  // Clouds native rate
 
 const char* const kModeNames[] = {"Granular", "Stretch", "Looping Delay", "Spectral"};
@@ -41,8 +36,6 @@ constexpr int kNumModes = 4;
 
 // Feedback at or above this never decays, so no finite tail describes it.
 constexpr float kFeedbackSustains = 0.75f;
-
-static_assert(kBlock == 32, "the measured latency assumes a 32-sample grain block");
 
 inline short floatToShort(float x) {
     return static_cast<short>(juce::jlimit(-32768, 32767, juce::roundToInt(x * 32767.0f)));
@@ -137,18 +130,26 @@ struct MutableCloudsPlugin::Impl {
     }
 
     void prepare(double hostRate) {
-        // step = Fin/Fout, the rate the ring is read at over the rate it is
-        // pulled at (see Resampler). The input resampler reads host-rate data,
-        // the output one reads 32 kHz.
-        inResampler_.step = hostRate / kInternalRate;   // host -> 32k (downsample)
-        outResampler_.step = kInternalRate / hostRate;  // 32k -> host (upsample)
-        // Both at host rate, and at every rate, 32 kHz included: bypassing
-        // where nothing resamples puts the declared latency 3 samples out at
-        // that rate.
+        inResampler_.prepare(hostRate, kInternalRate);
+        outResampler_.prepare(kInternalRate, hostRate);
+
+        // Silence placed in the output ring at reset (see reset()): a grain block's swing, the
+        // output window, and the input window's lead in 32 kHz samples, plus two guard samples.
+        const auto inputLead = static_cast<int>(
+            std::ceil(inResampler_.priming() * static_cast<double>(kInternalRate) / hostRate));
+        primeFrames_ = kBlock + outResampler_.priming() + inputLead + 2;
+
+        // Both at host rate, and at every rate, 32 kHz included.
         const double corner = bandLimitCorner(kInternalRate, hostRate);
         inLimit_.prepare(corner, hostRate);
         outLimit_.prepare(corner, hostRate);
+        latencySeconds_ = primeFrames_ / static_cast<double>(kInternalRate) +
+                          (inLimit_.delaySamples() + outLimit_.delaySamples()) / hostRate;
         reset();
+    }
+
+    double latencySeconds() const {
+        return latencySeconds_;
     }
 
     void reset() {
@@ -169,7 +170,7 @@ struct MutableCloudsPlugin::Impl {
         // 1-sample callback diverged from a 128-sample one across the whole
         // render (#2365 review). Placed here, the delay is designed rather
         // than discovered, and after startup a starved pull cannot happen.
-        for (int i = 0; i < kWetPrimeFrames; ++i)
+        for (int i = 0; i < primeFrames_; ++i)
             wet32k_.push(0.0f, 0.0f);
     }
 
@@ -253,6 +254,8 @@ struct MutableCloudsPlugin::Impl {
 
     clouds::FloatFrame grainIn_[kBlock];
     int grainFill_ = 0;
+    int primeFrames_ = 0;
+    double latencySeconds_ = 0.0;
 };
 
 //==============================================================================
@@ -358,6 +361,7 @@ float MutableCloudsPlugin::displayValue(int index) const {
 void MutableCloudsPlugin::prepare(const DevicePrepareContext& context) {
     sampleRate_ = context.sampleRate;
     impl_->prepare(sampleRate_);
+    latencySamples_ = juce::roundToInt(impl_->latencySeconds() * sampleRate_);
     envBucketLen_ =
         juce::jmax(1, static_cast<int>(kBufferSeconds * sampleRate_ / kEnvelopeBuckets));
 }
