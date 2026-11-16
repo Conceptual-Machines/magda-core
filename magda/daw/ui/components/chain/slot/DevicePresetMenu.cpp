@@ -128,6 +128,8 @@ void loadMagdaPreset(const juce::String& pluginFolder, const magda::ChainNodePat
     }
 }
 
+}  // namespace
+
 void loadPluginPresetFile(const magda::ChainNodePath& devicePath, const juce::File& file,
                           const std::function<void()>& onLoaded) {
     auto* engine = getAudioEngine();
@@ -144,8 +146,6 @@ void loadPluginPresetFile(const magda::ChainNodePath& devicePath, const juce::Fi
     if (onLoaded)
         onLoaded();
 }
-
-}  // namespace
 
 void showSaveMagdaPresetDialog(const magda::DeviceInfo& device,
                                const magda::ChainNodePath& devicePath,
