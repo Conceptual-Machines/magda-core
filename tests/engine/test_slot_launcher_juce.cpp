@@ -280,6 +280,8 @@ class SlotLauncherTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState(
             [this] { testLaunchSupersedesPendingQuantizedStop(true); });
         magda::test::runWithCleanJuceState([this] { testQueuedLaunchStopWaitsForItsBoundary(); });
+        magda::test::runWithCleanJuceState([this] { testToggleStopWaitsForTheBar(); });
+        magda::test::runWithCleanJuceState([this] { testStopAllWaitsForTheBar(); });
         magda::test::runWithCleanJuceState([this] { testMovedPendingStopDoesNotFollowClip(); });
         magda::test::runWithCleanJuceState([this] { testFollowActionAdoptsNextSlot(); });
         magda::test::runWithCleanJuceState([this] { testExtendedCycleBeforeLaunch(); });
@@ -1067,6 +1069,90 @@ class SlotLauncherTest final : public juce::UnitTest {
         expect(track != nullptr && track->activeSessionClipId == magda::INVALID_CLIP_ID &&
                    track->playbackMode == magda::TrackPlaybackMode::Arrangement,
                "The acknowledged cancellation returns its track to Arrangement");
+    }
+
+    void testToggleStopWaitsForTheBar() {
+        beginTest("Clicking a playing Toggle slot stops it at the bar (#3126)");
+
+        Rig rig(1);
+        const auto trackId = rig.trackIds.front();
+        const auto clipId = rig.slotClip(trackId, 0, magda::LaunchQuantize::OneBar);
+        if (auto* clip = magda::ClipManager::getInstance().getClip(clipId); clip != nullptr)
+            clip->launchMode = magda::LaunchMode::Toggle;
+        expect(rig.publish(), "The project is published");
+        rig.roll();
+        rig.launcher.launch(clipId);
+        rig.render(rig.blocksFor(0.5));
+
+        rig.launcher.launch(clipId);
+        expect(rig.launcher.stopPending(trackId), "The second click queues a stop");
+        expect(rig.renderPeak(rig.blocksFor(1.0)) > 0.0f, "The loop plays on before the bar");
+        rig.launcher.processStateEvents();
+        expect(rig.launcher.playState(clipId) == magda::SessionClipPlayState::Playing);
+
+        rig.render(rig.blocksFor(3.0));
+        rig.launcher.processStateEvents();
+        const auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+        expect(!rig.launcher.stopPending(trackId));
+        expect(rig.launcher.playState(clipId) == magda::SessionClipPlayState::Stopped,
+               "The slot stops at the bar");
+        expect(track != nullptr && track->playbackMode == magda::TrackPlaybackMode::Arrangement);
+    }
+
+    void testStopAllWaitsForTheBar() {
+        beginTest("STOP ALL lets every track finish its bar (#3126)");
+
+        /// Forwards the model's stop requests as EngineHost does.
+        struct Forward final : magda::ClipManagerListener {
+            explicit Forward(host::SlotLauncher& launcher) : launcher_(launcher) {
+                magda::ClipManager::getInstance().addListener(this);
+            }
+            ~Forward() override {
+                magda::ClipManager::getInstance().removeListener(this);
+            }
+            void clipsChanged() override {}
+            void clipPlaybackRequested(magda::ClipId clipId,
+                                       magda::ClipPlaybackRequest request) override {
+                if (request == magda::ClipPlaybackRequest::Stop)
+                    launcher_.stop(clipId);
+            }
+            host::SlotLauncher& launcher_;
+        };
+
+        Rig rig(2);
+        const auto first = rig.slotClip(rig.trackIds[0], 0, magda::LaunchQuantize::OneBar);
+        const auto second = rig.slotClip(rig.trackIds[1], 0, magda::LaunchQuantize::OneBar);
+
+        // Idle siblings, so a track is asked to stop more than once.
+        rig.slotClip(rig.trackIds[0], 1, magda::LaunchQuantize::OneBar);
+        rig.slotClip(rig.trackIds[1], 1, magda::LaunchQuantize::OneBar);
+        expect(rig.publish(), "The project is published");
+        rig.roll();
+        rig.launcher.launchScene(rig.trackIds, 0);
+        rig.render(rig.blocksFor(0.5));
+
+        Forward forward(rig.launcher);
+        magda::ClipManager::getInstance().stopAllClips();
+        for (const auto trackId : rig.trackIds)
+            expect(rig.launcher.stopPending(trackId), "Each track waits for its bar");
+
+        expect(rig.renderPeak(rig.blocksFor(1.0)) > 0.0f, "The loops play on before the bar");
+        rig.launcher.processStateEvents();
+        expect(rig.launcher.playState(first) == magda::SessionClipPlayState::Playing &&
+                   rig.launcher.playState(second) == magda::SessionClipPlayState::Playing,
+               "A second ask on the same track does not cut it");
+
+        rig.render(rig.blocksFor(3.0));
+        rig.launcher.processStateEvents();
+        for (const auto trackId : rig.trackIds) {
+            const auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+            expect(!rig.launcher.stopPending(trackId));
+            expect(track != nullptr &&
+                   track->playbackMode == magda::TrackPlaybackMode::Arrangement);
+        }
+        expect(rig.launcher.playState(first) == magda::SessionClipPlayState::Stopped &&
+                   rig.launcher.playState(second) == magda::SessionClipPlayState::Stopped,
+               "Everything stops at the bar");
     }
 
     void testMovedPendingStopDoesNotFollowClip() {

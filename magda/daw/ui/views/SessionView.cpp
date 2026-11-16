@@ -3738,6 +3738,20 @@ void SessionView::timerCallback() {
                 sb->repaint();
             }
         }
+
+        // STOP ALL reaches tracks the grid may not show, so it asks every track (#3126).
+        if (stopAllButton_ != nullptr) {
+            const bool anyStopPending = std::ranges::any_of(
+                TrackManager::getInstance().getTracks(), [this](const TrackInfo& track) {
+                    return audioEngine_->isSessionTrackStopPending(track.id);
+                });
+            if (stopAllButton_->stopIsQueued != anyStopPending ||
+                (anyStopPending && stopAllButton_->blinkOn != newBlinkOn)) {
+                stopAllButton_->stopIsQueued = anyStopPending;
+                stopAllButton_->blinkOn = newBlinkOn;
+                stopAllButton_->repaint();
+            }
+        }
     }
 }
 
