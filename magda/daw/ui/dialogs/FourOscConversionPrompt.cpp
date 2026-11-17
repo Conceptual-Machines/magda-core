@@ -11,6 +11,7 @@
 #include "core/Config.hpp"
 #include "core/TrackManager.hpp"
 #include "project/ProjectManager.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
 
 namespace magda::daw::ui {
 
@@ -21,7 +22,7 @@ namespace audio = magda::daw::audio;
 /// The alert and the tickbox it carries. AlertWindow does not own a custom
 /// component, so the two are held together and read in the callback.
 struct Prompt {
-    juce::AlertWindow alert;
+    MagdaAlertWindow alert;
 
     // Nameless on purpose. AlertWindow paints a custom component's name as a
     // label above it (juce_AlertWindow.cpp), and a ToggleButton built from a
@@ -64,7 +65,7 @@ void convertAndSave() {
                                          .withMessage(projects.getLastError() +
                                                       "\n\nThe conversion is still in this "
                                                       "session. Save it somewhere with Save As.")
-                                         .withButton("OK"),
+                                         .withButton("OK", 0),
                                      nullptr);
 }
 

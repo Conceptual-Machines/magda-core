@@ -374,9 +374,9 @@ void MainWindow::timerCallback() {
                                      .withIconType(juce::MessageBoxIconType::QuestionIcon)
                                      .withTitle("Remote client permissions")
                                      .withMessage(message)
-                                     .withButton("Allow requested & remember")
-                                     .withButton(keepLabel)
-                                     .withButton("Review permissions")
+                                     .withButton("Allow requested & remember", 1)
+                                     .withButton(keepLabel, 2)
+                                     .withButton("Review permissions", 0)
                                      .withAssociatedComponent(this),
                                  [safeThis, host, request = *request](int result) {
                                      if (safeThis == nullptr)
@@ -1474,7 +1474,7 @@ void MainWindow::MainComponent::warnAboutLoadFailures() {
             .withMessage(tr(single ? "plugin_settings.dialog.load_failed_message"
                                    : "plugin_settings.dialog.load_failed_message_other") +
                          "\n\n" + failures.joinIntoString("\n"))
-            .withButton(tr("dialogs.ok"))
+            .withButton(tr("dialogs.ok"), 0)
             .withAssociatedComponent(this),
         nullptr);
 }

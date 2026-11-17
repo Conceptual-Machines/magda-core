@@ -133,11 +133,12 @@ bool runInsertCapturePass(AudioEngine& engine, double startSec, double endSec,
         return true;
 
     // Built by the look-and-feel so it takes the app's alert style without linking UI code.
-    std::unique_ptr<juce::AlertWindow> alert(
-        juce::LookAndFeel::getDefaultLookAndFeel().createAlertWindow(
-            "Capturing External Hardware",
-            "Playing the bounce range in real time to record the external instrument/FX returns.",
-            {}, {}, {}, juce::MessageBoxIconType::InfoIcon, 0, nullptr));
+    auto alert = juce::LookAndFeel::getDefaultLookAndFeel().createAlertWindowForOptions(
+        juce::MessageBoxOptions()
+            .withIconType(juce::MessageBoxIconType::InfoIcon)
+            .withTitle("Capturing External Hardware")
+            .withMessage("Playing the bounce range in real time to record the external "
+                         "instrument/FX returns."));
     auto& window = *alert;
     double progress = 0.0;
     window.addProgressBarComponent(progress);

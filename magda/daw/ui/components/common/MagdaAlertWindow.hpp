@@ -75,11 +75,13 @@ juce::Font alertFieldLabelFont();
 /// What JUCE sets an alert's fields and text blocks in; their getAlertWindowMessageFont.
 juce::Font alertTextFont();
 
-/// Builds the alert JUCE's message boxes show; the look-and-feels' createAlertWindow call this.
-juce::AlertWindow* createMagdaAlertWindow(const juce::String& title, const juce::String& message,
-                                          const juce::String& button1, const juce::String& button2,
-                                          const juce::String& button3,
-                                          juce::MessageBoxIconType iconType, int numButtons,
-                                          juce::Component* associatedComponent);
+/**
+ * @brief Builds the alert JUCE's message boxes show; the look-and-feels'
+ * createAlertWindowForOptions call this.
+ *
+ * Return goes to the preferred button, else the first; Escape to the cancel-role button, else
+ * the last of two or more.
+ */
+std::unique_ptr<juce::AlertWindow> createMagdaAlertWindow(const juce::MessageBoxOptions& options);
 
 }  // namespace magda

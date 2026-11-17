@@ -275,13 +275,9 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
         return instance;
     }
 
-    juce::AlertWindow* createAlertWindow(const juce::String& title, const juce::String& message,
-                                         const juce::String& button1, const juce::String& button2,
-                                         const juce::String& button3,
-                                         juce::MessageBoxIconType iconType, int numButtons,
-                                         juce::Component* associatedComponent) override {
-        return createMagdaAlertWindow(title, message, button1, button2, button3, iconType,
-                                      numButtons, associatedComponent);
+    std::unique_ptr<juce::AlertWindow> createAlertWindowForOptions(
+        const juce::MessageBoxOptions& options) override {
+        return createMagdaAlertWindow(options);
     }
 
     juce::Font getAlertWindowFont() override {

@@ -2572,9 +2572,9 @@ class PathsPage : public juce::Component {
                         .replace("{0}", oldPath)
                         .replace("{1}", newPath)
                         .replace("{2}", magda::technicalText(magda::TechnicalTextToken::Magda)))
-                .withButton(tr("preferences.paths.migration.button.copy"))
-                .withButton(tr("preferences.paths.migration.button.dont_copy"))
-                .withButton(tr("preferences.paths.migration.button.cancel")),
+                .withButton(tr("preferences.paths.migration.button.copy"), 1)
+                .withButton(tr("preferences.paths.migration.button.dont_copy"), 2)
+                .withButton(tr("preferences.paths.migration.button.cancel"), 0),
             [self, kind, newPathStr](int result) {
                 auto* page = self.getComponent();
                 if (page == nullptr)
@@ -2770,8 +2770,8 @@ class PathsPage : public juce::Component {
                 .withTitle("Wipe media database")
                 .withMessage("This deletes every indexed file, embedding, and tag from the media "
                              "database.\nYour audio files on disk are untouched.\n\nContinue?")
-                .withButton("Wipe")
-                .withButton("Cancel"),
+                .withButton("Wipe", 1)
+                .withButton("Cancel", 0),
             [self](int result) {
                 if (auto* page = self.getComponent(); page != nullptr && result == 1) {
                     magda::media::MediaDbContext::getInstance().wipeAll();
@@ -4151,7 +4151,7 @@ void showMigrationFailureAsync(const juce::File& from, const juce::File& to) {
                                      .withMessage(tr("preferences.paths.migration.fail_message")
                                                       .replace("{0}", from.getFullPathName())
                                                       .replace("{1}", to.getFullPathName()))
-                                     .withButton(tr("dialogs.ok")),
+                                     .withButton(tr("dialogs.ok"), 0),
                                  nullptr);
 }
 

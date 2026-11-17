@@ -2131,8 +2131,8 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
                         .withMessage("Remove every indexed entry under \"" + folderName +
                                      "\" from the media library?\n"
                                      "Your audio files on disk are untouched.")
-                        .withButton("Remove")
-                        .withButton("Cancel"),
+                        .withButton("Remove", 1)
+                        .withButton("Cancel", 0),
                     [self, fsPath](int choice) {
                         if (self == nullptr || choice != 1) {
                             return;
@@ -2175,7 +2175,7 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
                                     .withIconType(juce::MessageBoxIconType::WarningIcon)
                                     .withTitle("Move folder")
                                     .withMessage(msg)
-                                    .withButton("OK"),
+                                    .withButton("OK", 0),
                                 nullptr);
                         };
 

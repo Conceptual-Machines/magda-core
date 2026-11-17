@@ -2642,8 +2642,8 @@ void SessionView::removeScene() {
                            .withTitle("Delete Scene")
                            .withMessage("Scene " + juce::String(lastScene + 1) +
                                         " contains clips. Are you sure you want to delete it?")
-                           .withButton("Delete")
-                           .withButton("Cancel");
+                           .withButton("Delete", 1)
+                           .withButton("Cancel", 0);
 
         auto safeThis = juce::Component::SafePointer<SessionView>(this);
         juce::AlertWindow::showAsync(options, [safeThis](int result) {

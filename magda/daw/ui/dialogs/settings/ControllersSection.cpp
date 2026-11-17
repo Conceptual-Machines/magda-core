@@ -849,7 +849,7 @@ class LuaScriptsPage : public juce::Component {
                         tr("controllers.tab.scripts")
                             .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Lua)))
                     .withMessage(tr("controllers.scripts.reload_failed"))
-                    .withButton(tr("dialogs.ok")),
+                    .withButton(tr("dialogs.ok"), 0),
                 nullptr);
         }
         rebuildScripts();

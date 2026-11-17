@@ -1402,7 +1402,7 @@ void MediaDbBrowserContent::findSimilarTo(std::int64_t seedFileId, const juce::S
                                  "This usually means the file was indexed before the Sample "
                                  "Analyzer bundle was installed. Right-click the row and choose "
                                  "\"Analyze selected rows\".")
-                    .withButton("OK"),
+                    .withButton("OK", 0),
                 nullptr);
             return;
         }
@@ -1475,7 +1475,7 @@ void MediaDbBrowserContent::showEditRowDialog(std::int64_t fileId) {
                         .withTitle("Edit Media Row")
                         .withMessage("Family, shape, BPM, or duration contains an "
                                      "unsupported value.")
-                        .withButton("OK"),
+                        .withButton("OK", 0),
                     nullptr);
                 return;
             }
@@ -1500,7 +1500,7 @@ void MediaDbBrowserContent::showEditRowDialog(std::int64_t fileId) {
                         .withIconType(juce::MessageBoxIconType::WarningIcon)
                         .withTitle("Edit Media Row")
                         .withMessage("Could not save the database row.")
-                        .withButton("OK"),
+                        .withButton("OK", 0),
                     nullptr);
                 return;
             }
@@ -1573,7 +1573,7 @@ void MediaDbBrowserContent::showBulkEditRowsDialog(std::vector<std::int64_t> fil
                         .withTitle("Edit Selected Rows")
                         .withMessage("Family, shape, BPM, or duration contains an unsupported "
                                      "value.")
-                        .withButton("OK"),
+                        .withButton("OK", 0),
                     nullptr);
                 return;
             }
@@ -1588,7 +1588,7 @@ void MediaDbBrowserContent::showBulkEditRowsDialog(std::vector<std::int64_t> fil
                         .withIconType(juce::MessageBoxIconType::WarningIcon)
                         .withTitle("Edit Selected Rows")
                         .withMessage("No rows were updated.")
-                        .withButton("OK"),
+                        .withButton("OK", 0),
                     nullptr);
                 return;
             }
@@ -1609,7 +1609,7 @@ void MediaDbBrowserContent::resetRowsToDetected(const std::vector<std::int64_t>&
                                          .withIconType(juce::MessageBoxIconType::WarningIcon)
                                          .withTitle("Reset to detected")
                                          .withMessage("No media rows were reset.")
-                                         .withButton("OK"),
+                                         .withButton("OK", 0),
                                      nullptr);
         return;
     }
@@ -1656,7 +1656,7 @@ void MediaDbBrowserContent::saveMatchingClipValuesToLibrary(std::int64_t fileId)
                                          .withIconType(juce::MessageBoxIconType::InfoIcon)
                                          .withTitle("Save current clip values")
                                          .withMessage("No open clip is using this media file.")
-                                         .withButton("OK"),
+                                         .withButton("OK", 0),
                                      nullptr);
         return;
     }
@@ -1669,7 +1669,7 @@ void MediaDbBrowserContent::saveMatchingClipValuesToLibrary(std::int64_t fileId)
                 .withIconType(juce::MessageBoxIconType::WarningIcon)
                 .withTitle("Save current clip values")
                 .withMessage("Could not save the matching clip values to the media library.")
-                .withButton("OK"),
+                .withButton("OK", 0),
             nullptr);
         return;
     }
@@ -1691,7 +1691,7 @@ void MediaDbBrowserContent::recoverMissingFile(std::int64_t fileId) {
                                          .withIconType(juce::MessageBoxIconType::InfoIcon)
                                          .withTitle("Recover Missing File")
                                          .withMessage("No indexed substitute files were found.")
-                                         .withButton("OK"),
+                                         .withButton("OK", 0),
                                      nullptr);
         return;
     }
@@ -1724,7 +1724,7 @@ void MediaDbBrowserContent::recoverMissingFile(std::int64_t fileId) {
                         .withIconType(juce::MessageBoxIconType::WarningIcon)
                         .withTitle("Recover Missing File")
                         .withMessage("Could not update the media database path.")
-                        .withButton("OK"),
+                        .withButton("OK", 0),
                     nullptr);
                 return;
             }
@@ -1777,7 +1777,7 @@ void MediaDbBrowserContent::showFamilyMenuForRow(std::vector<std::int64_t> fileI
                                        .withIconType(juce::MessageBoxIconType::WarningIcon)
                                        .withTitle("Family")
                                        .withMessage("Could not update the media row(s).")
-                                       .withButton("OK"),
+                                       .withButton("OK", 0),
                                    nullptr);
                                return;
                            }
@@ -1829,7 +1829,7 @@ void MediaDbBrowserContent::showShapeMenuForRow(std::vector<std::int64_t> fileId
                                        .withIconType(juce::MessageBoxIconType::WarningIcon)
                                        .withTitle("Shape")
                                        .withMessage("Could not update the media row(s).")
-                                       .withButton("OK"),
+                                       .withButton("OK", 0),
                                    nullptr);
                                return;
                            }
@@ -1851,8 +1851,8 @@ void MediaDbBrowserContent::deleteFileIdsWithConfirmation(std::vector<std::int64
             .withIconType(juce::MessageBoxIconType::WarningIcon)
             .withTitle("Delete Media Rows")
             .withMessage(message + "\n\nFiles on disk will not be deleted.")
-            .withButton("Delete")
-            .withButton("Cancel"),
+            .withButton("Delete", 1)
+            .withButton("Cancel", 0),
         [self, ids = std::move(fileIds)](int result) mutable {
             if (result != 1 || self == nullptr) {
                 return;
@@ -1866,7 +1866,7 @@ void MediaDbBrowserContent::deleteFileIdsWithConfirmation(std::vector<std::int64
                         .withIconType(juce::MessageBoxIconType::WarningIcon)
                         .withTitle("Delete Media Rows")
                         .withMessage("No rows were removed.")
-                        .withButton("OK"),
+                        .withButton("OK", 0),
                     nullptr);
                 return;
             }
@@ -1888,8 +1888,8 @@ void MediaDbBrowserContent::removeDuplicateFilePathsWithConfirmation() {
                 "Remove database rows that point to the same physical file?\n\n"
                 "MAGDA keeps the row with user edits first, then analyzed rows, then the newest "
                 "indexed row. Files on disk will not be deleted.")
-            .withButton("Remove")
-            .withButton("Cancel"),
+            .withButton("Remove", 1)
+            .withButton("Cancel", 0),
         [self](int result) {
             if (result != 1 || self == nullptr) {
                 return;
@@ -2454,8 +2454,8 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
                         "do filename / tag / family / BPM filtering - no semantic text search.\n\n"
                         "Install it any time from Settings > AI > Local models, under Sample "
                         "analysis.")
-                    .withButton("Continue indexing")
-                    .withButton("Cancel"),
+                    .withButton("Continue indexing", 1)
+                    .withButton("Cancel", 0),
                 [self, presentTagOptionsDialog = std::move(presentTagOptionsDialog)](int result) {
                     if (auto* page = self.getComponent(); page != nullptr && result == 1) {
                         presentTagOptionsDialog();
