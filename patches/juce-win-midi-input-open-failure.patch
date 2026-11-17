@@ -1,0 +1,14 @@
+diff --git a/modules/juce_audio_devices/native/juce_Midi_windows.cpp b/modules/juce_audio_devices/native/juce_Midi_windows.cpp
+index 021af46c16..aa79437cf6 100644
+--- a/modules/juce_audio_devices/native/juce_Midi_windows.cpp
++++ b/modules/juce_audio_devices/native/juce_Midi_windows.cpp
+@@ -2637,7 +2637,8 @@ struct WindowsMidiHelpers
+                 inDestructor = true;
+                 SetEvent (event.get());
+ 
+-                blockQueueThread.join();
++                if (blockQueueThread.joinable())
++                    blockQueueThread.join();
+ 
+                 allInputs().remove (*this);
+ 

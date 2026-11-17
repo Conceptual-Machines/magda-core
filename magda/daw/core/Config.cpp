@@ -232,8 +232,6 @@ juce::var Config::toVar() const {
     root->setProperty("showTooltips", showTooltips);
     root->setProperty("showInfoLine", showInfoLine);
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
-    root->setProperty("renderAheadEnabled", renderAheadEnabled);
-    root->setProperty("renderAheadMs", renderAheadMs);
     root->setProperty("captureBuffer", captureEnabled);
     root->setProperty("captureSeconds", captureSeconds);
     root->setProperty("captureBars", captureBars);
@@ -710,8 +708,6 @@ void Config::fromVar(const juce::var& parsed) {
     showTooltips = getBool("showTooltips", showTooltips);
     showInfoLine = getBool("showInfoLine", showInfoLine);
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
-    renderAheadEnabled = getBool("renderAheadEnabled", renderAheadEnabled);
-    setRenderAheadMs(getInt("renderAheadMs", renderAheadMs));
     setCaptureEnabled(getBool("captureBuffer", captureEnabled));
     setCaptureSeconds(getInt("captureSeconds", captureSeconds));
     setCaptureBars(getInt("captureBars", captureBars));

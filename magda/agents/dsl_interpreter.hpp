@@ -265,4 +265,8 @@ class Interpreter {
     InterpreterContext ctx_;
 };
 
+/** @brief True if @p text contains at least one DSL statement head (track( / filter( /
+    groove. / project.), so a model's prose reply is not parsed as commands (#3312). */
+bool containsStatement(const std::string& text);
+
 }  // namespace magda::dsl

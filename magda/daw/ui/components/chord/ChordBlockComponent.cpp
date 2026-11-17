@@ -79,37 +79,39 @@ void ChordBlockComponent::mouseDrag(const juce::MouseEvent& e) {
         // Stop preview when drag starts
         if (onReleased)
             onReleased();
-
-        // Convert chord notes to MidiNotes (1 bar = 4 beats)
-        constexpr double chordLength = 4.0;
-        std::vector<magda::MidiNote> midiNotes;
-        for (const auto& cn : chord_.notes) {
-            magda::MidiNote note;
-            note.noteNumber = std::clamp(cn.noteNumber, 0, 127);
-            note.velocity = std::clamp(cn.velocity, 1, 127);
-            note.startBeat = 0.0;
-            note.lengthBeats = chordLength;
-            midiNotes.push_back(note);
-        }
-
-        if (midiNotes.empty())
-            return;
-
-        double tempo = magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-        if (tempo <= 0.0)
-            tempo = 120.0;
-
-        std::vector<daw::ChordMarker> markers;
-        markers.push_back({0.0, chordLength, chord_.getDisplayName()});
-
-        auto tempFile = daw::MidiFileWriter::writeToTempFile(midiNotes, tempo,
-                                                             chord_.getDisplayName(), markers);
-        if (tempFile.existsAsFile()) {
-            setAlpha(0.4f);
-            magda::dnd::startFilesDrag(this, juce::StringArray{tempFile.getFullPathName()});
-            setAlpha(1.0f);
-        }
+        setAlpha(0.4f);
+        startChordDrag(*this, chord_);
+        setAlpha(1.0f);
     }
+}
+
+void startChordDrag(juce::Component& source, const magda::music::Chord& chord) {
+    // Convert chord notes to MidiNotes (1 bar = 4 beats)
+    constexpr double chordLength = 4.0;
+    std::vector<magda::MidiNote> midiNotes;
+    for (const auto& cn : chord.notes) {
+        magda::MidiNote note;
+        note.noteNumber = std::clamp(cn.noteNumber, 0, 127);
+        note.velocity = std::clamp(cn.velocity, 1, 127);
+        note.startBeat = 0.0;
+        note.lengthBeats = chordLength;
+        midiNotes.push_back(note);
+    }
+
+    if (midiNotes.empty())
+        return;
+
+    double tempo = magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    if (tempo <= 0.0)
+        tempo = 120.0;
+
+    std::vector<daw::ChordMarker> markers;
+    markers.push_back({0.0, chordLength, chord.getDisplayName()});
+
+    auto tempFile =
+        daw::MidiFileWriter::writeToTempFile(midiNotes, tempo, chord.getDisplayName(), markers);
+    if (tempFile.existsAsFile())
+        magda::dnd::startFilesDrag(&source, juce::StringArray{tempFile.getFullPathName()});
 }
 
 }  // namespace magda::daw::ui

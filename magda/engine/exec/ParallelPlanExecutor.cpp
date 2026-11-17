@@ -73,6 +73,7 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
     letGoOfPool();
 
     plan_ = nullptr;
+    core_.setCallbackRenderer(nullptr);
     outputOps_.clear();
     modSourceOps_.clear();
     insertSendOps_.clear();
@@ -116,6 +117,7 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
 
     parallelism_ = widthOf(plan);
     plan_ = &plan;
+    core_.setCallbackRenderer(this);
     return messages;
 }
 
@@ -224,7 +226,7 @@ bool ParallelPlanExecutor::rendersInDrain(OpId op) const {
     // because nothing consumes either.
     const auto kind = plan_->ops[static_cast<std::size_t>(op)].kind;
     return kind != OpKind::Output && kind != OpKind::ModSource && kind != OpKind::InsertSend &&
-           !core_.inMidiPrefix(op);
+           !core_.inMidiPrefix(op) && (side_ < 0 || core_.sideOf(op) == side_);
 }
 
 void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,
@@ -268,7 +270,31 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
     values_ = &values;
     applyValues_ = start.applyValues;
     output_ = &output;
+    renderScheduled();
+}
 
+void ParallelPlanExecutor::renderWhole(const PlanValues& values, const BlockInfo& block,
+                                       juce::AudioBuffer<float>& output) {
+    process(values, block, output);
+}
+
+void ParallelPlanExecutor::renderCallbackSide(const PlanValues& values, const BlockInfo& block,
+                                              juce::AudioBuffer<float>& output, bool applyValues) {
+    block_ = block;
+    values_ = &values;
+    applyValues_ = applyValues;
+    output_ = &output;
+    side_ = 1;
+    renderScheduled();
+    side_ = -1;
+}
+
+void ParallelPlanExecutor::renderTail(OpId op) {
+    if (side_ < 0 || core_.sideOf(op) == side_)
+        core_.renderOp(op, valueOf(op), block_, *output_);
+}
+
+void ParallelPlanExecutor::renderScheduled() {
     {
         const ProfileScope timed(
             [](auto elapsed) { BlockProfile::addPhase(BlockProfile::Drain, elapsed); });
@@ -287,13 +313,13 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
     // do. In plan order: the taps detect one at a time, and the sum reaching
     // the hardware is compiled like every other sum in the plan.
     for (const auto op : modSourceOps_)
-        core_.renderOp(op, valueOf(op), block_, output);
+        renderTail(op);
 
     for (const auto op : insertSendOps_)
-        core_.renderOp(op, valueOf(op), block_, output);
+        renderTail(op);
 
     for (const auto op : outputOps_)
-        core_.renderOp(op, valueOf(op), block_, output);
+        renderTail(op);
 }
 
 }  // namespace magda::engine

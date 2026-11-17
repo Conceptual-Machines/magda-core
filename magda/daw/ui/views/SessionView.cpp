@@ -1354,8 +1354,6 @@ SessionView::SessionView() {
     numScenes_ = std::max(
         1, static_cast<int>(ProjectManager::getInstance().getCurrentProjectInfo().scenes.size()));
 
-    // Get current view mode
-    currentViewMode_ = ViewModeController::getInstance().getViewMode();
     syncMixerVisibilityFromConfig();
 
     toggleRail_ = std::make_unique<SessionToggleRail>();
@@ -1511,8 +1509,6 @@ SessionView::SessionView() {
     // Register as SelectionManager listener so multi-selected headers light up
     SelectionManager::getInstance().addListener(this);
 
-    // Register as ViewModeController listener
-    ViewModeController::getInstance().addListener(this);
     Config::getInstance().addListener(this);
 
     // Build tracks from TrackManager
@@ -1530,7 +1526,6 @@ SessionView::~SessionView() {
     ClipManager::getInstance().removeListener(this);
     ProjectManager::getInstance().removeListener(this);
     SelectionManager::getInstance().removeListener(this);
-    ViewModeController::getInstance().removeListener(this);
     Config::getInstance().removeListener(this);
 }
 
@@ -1609,11 +1604,6 @@ void SessionView::trackPropertyChanged(int trackId) {
 void SessionView::trackDevicesChanged(TrackId trackId) {
     // Sends are notified via trackDevicesChanged — forward to trackPropertyChanged
     trackPropertyChanged(trackId);
-}
-
-void SessionView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profile*/) {
-    currentViewMode_ = mode;
-    rebuildTracks();
 }
 
 void SessionView::masterChannelChanged() {
@@ -2053,6 +2043,7 @@ void SessionView::rebuildTracks() {
 
     // Populate all clip slots with their current clip data
     updateAllClipSlots();
+    namesAtBuild_.take();
 
     DBG("SessionView::rebuildTracks end visibleTracks="
         << formatTrackIds(visibleTrackIds_) << " gridChildren="
@@ -3641,6 +3632,11 @@ void SessionView::setAudioEngine(AudioEngine* engine) {
     }
 }
 
+void SessionView::visibilityChanged() {
+    if (isVisible() && namesAtBuild_.isStale())
+        rebuildTracks();
+}
+
 void SessionView::hardwareChannelsChanged() {
     tracksChanged();
 }
@@ -3740,6 +3736,20 @@ void SessionView::timerCallback() {
             } else if (anyTrackStopPending) {
                 sb->blinkOn = newBlinkOn;
                 sb->repaint();
+            }
+        }
+
+        // STOP ALL reaches tracks the grid may not show, so it asks every track (#3126).
+        if (stopAllButton_ != nullptr) {
+            const bool anyStopPending = std::ranges::any_of(
+                TrackManager::getInstance().getTracks(), [this](const TrackInfo& track) {
+                    return audioEngine_->isSessionTrackStopPending(track.id);
+                });
+            if (stopAllButton_->stopIsQueued != anyStopPending ||
+                (anyStopPending && stopAllButton_->blinkOn != newBlinkOn)) {
+                stopAllButton_->stopIsQueued = anyStopPending;
+                stopAllButton_->blinkOn = newBlinkOn;
+                stopAllButton_->repaint();
             }
         }
     }

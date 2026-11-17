@@ -207,6 +207,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<SvgButton> clipEnabledButton_;   // enable/disable the edited clip (#1736)
     std::unique_ptr<SvgButton> gainEnvelopeButton_;  // shows the audio clip's gain envelope (#3064)
     std::unique_ptr<SvgButton> bendButton_;
+    std::unique_ptr<SvgButton> chordWheelButton_;  // chord editor: opens the circle-of-fifths wheel
 
     // Header control state
     bool relativeTimeMode_ = false;

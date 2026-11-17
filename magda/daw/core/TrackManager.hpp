@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <vector>
 
 #include "ChainIdRemap.hpp"
@@ -370,6 +371,13 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // sourceTrackId through a track input or a MIDI Out to a track.
     bool wouldCreateInputRoutingCycle(TrackId destTrackId, TrackId sourceTrackId) const;
 
+    /// @p trackId and every track it reaches through track inputs and MIDI Outs: none of them
+    /// can feed it without a cycle. One walk, for a menu that would otherwise ask per track.
+    std::set<TrackId> tracksFedBy(TrackId trackId) const;
+
+    /// @p trackId and every track that reaches it: it can feed none of them without a cycle.
+    std::set<TrackId> tracksFeeding(TrackId trackId) const;
+
     /**
      * @brief Preview a MIDI note on a track (for keyboard audition)
      * @param trackId Track to send note to
@@ -496,9 +504,6 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // 1-16, or 0: any channel in, the channel as it was out (#2209).
     void setTrackMidiInputChannel(TrackId trackId, int channel);
     void setTrackMidiOutputChannel(TrackId trackId, int channel);
-    // Clear midiInputDevice on every track listening to sourceTrackId
-    // (optionally keeping excludeTrackId's routing intact).
-    void clearMidiTrackListeners(TrackId sourceTrackId, TrackId excludeTrackId = INVALID_TRACK_ID);
     void setTrackAudioInput(TrackId trackId, const juce::String& deviceId);
     void setTrackAudioOutput(TrackId trackId, const juce::String& routing);
 
@@ -1197,6 +1202,8 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
      */
     void triggerMidiNoteOn(TrackId trackId);
     void triggerMidiNoteOff(TrackId trackId);
+    /** @brief Signal that every note the engine played on a track has ended (#3305). */
+    void triggerMidiNotesEnded(TrackId trackId);
 
     /** Look up a ModInfo by its id across all devices and racks on a track. */
     const ModInfo* getModById(TrackId trackId, ModId modId) const;
@@ -1376,6 +1383,9 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     TrackManager();
     ~TrackManager() override = default;
 
+    /// @p trackId and every track reachable from it along routing edges, one way or the other.
+    std::set<TrackId> reachableByRouting(TrackId trackId, bool upstream) const;
+
     // Register a track with MidiBridge for input monitoring. No-op when no audio
     // engine is attached or the track takes no external input (Aux, Group).
     // Single place for the create/restore/duplicate/engine-attach wiring.
@@ -1462,6 +1472,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // Written from MIDI thread, read from timer thread
     std::map<TrackId, int> pendingMidiNoteOns_;   // per-track note-on count (consumed each tick)
     std::map<TrackId, int> pendingMidiNoteOffs_;  // per-track note-off count (consumed each tick)
+    std::set<TrackId> pendingMidiNotesEnded_;     // tracks whose engine notes all ended
     std::mutex midiTriggerMutex_;
 
     // Per-track held note count (persists across ticks, updated in updateAllMods)

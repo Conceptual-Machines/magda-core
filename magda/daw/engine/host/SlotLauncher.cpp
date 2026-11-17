@@ -152,6 +152,14 @@ void SlotLauncher::launch(ClipId clipId) {
 }
 
 void SlotLauncher::stop(ClipId clipId) {
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr || clip->view != ClipView::Session)
+        return;
+
+    stopTrack(clip->trackId);
+}
+
+void SlotLauncher::stopNow(ClipId clipId) {
     auto& clips = ClipManager::getInstance();
     auto& tracks = TrackManager::getInstance();
 
@@ -290,6 +298,11 @@ void SlotLauncher::stopTrack(TrackId trackId) {
     if (track == nullptr)
         return;
 
+    // A stop already waiting for its boundary keeps waiting: STOP ALL asks once
+    // per clip, and a second ask would otherwise cut the track now (#3126).
+    if (stopPending(trackId))
+        return;
+
     refreshRecordTargets();
 
     if (track->activeSessionClipId == INVALID_CLIP_ID) {
@@ -311,7 +324,7 @@ void SlotLauncher::stopTrack(TrackId trackId) {
     // There is no run to wait out while transport is stopped, and therefore
     // no later tap acknowledgement that could return this track to Arrangement.
     if (!host_.launchTransportPlaying()) {
-        stop(clipId);
+        stopNow(clipId);
         return;
     }
 

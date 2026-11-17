@@ -253,6 +253,8 @@ void MidiBridge::enableMidiInput(const juce::String& deviceId) {
                 midiInput->start();
                 activeMidiInputs_[deviceId] = std::move(midiInput);
                 DBG("Started MIDI activity monitoring for: " << deviceInfo.name);
+            } else {
+                juce::Logger::writeToLog("[midi-io] could not open \"" + deviceInfo.name + "\"");
             }
             break;
         }

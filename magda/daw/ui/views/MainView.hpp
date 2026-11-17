@@ -47,6 +47,7 @@ class MainView : public juce::Component,
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void visibilityChanged() override;
 
     // Zoom and scroll controls
     void setHorizontalZoom(double zoomFactor);

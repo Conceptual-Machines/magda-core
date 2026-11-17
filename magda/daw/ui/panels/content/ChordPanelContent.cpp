@@ -3,6 +3,7 @@
 
 #include "ChordPanelContent.hpp"
 
+#include <algorithm>
 #include <array>
 #include <utility>
 
@@ -496,6 +497,7 @@ void ChordPanelContent::setChordEngine(magda::daw::audio::MidiChordEnginePlugin*
     detectedScales_.clear();
     selectedScaleNames_.clear();
     suggestionBlocks_.clear();
+    diatonicCount_ = 0;  // a stale count makes resized() index the now-empty tiles
     historyBlocks_.clear();
     scaleBlocks_.clear();
 
@@ -518,6 +520,15 @@ void ChordPanelContent::setInEditorSidebar(bool inSidebar) {
     inEditorSidebar_ = inSidebar;
     resized();
     repaint();
+}
+
+void ChordPanelContent::setFifthsSource(std::optional<FifthsSource> selected) {
+    selectedSource_ = std::move(selected);
+    updateFifthsSource();
+}
+
+void ChordPanelContent::updateFifthsSource() {
+    fifthsView_.setSource(selectedSource_.has_value() ? selectedSource_ : playedSource_);
 }
 
 void ChordPanelContent::seedEngineFromProgression() {
@@ -592,6 +603,10 @@ void ChordPanelContent::updateFromPlugin() {
         key_ = keyMode.has_value() ? chord_function::parseKey(keyMode->first, keyMode->second)
                                    : std::nullopt;
         recentChords_.clear();  // rebuilds the history below with degrees in the new key
+        if (playedSource_.has_value()) {
+            playedSource_->key = key_;
+            updateFifthsSource();
+        }
         needsRepaint = true;
     }
 
@@ -615,6 +630,15 @@ void ChordPanelContent::updateFromPlugin() {
             stopTimer();
             currentChord_ = chord;
             currentChordInfo_ = chordPlugin_->getCurrentChord();
+            // Kept after the display clears, so the fifths tab stays on the last chord played.
+            const auto& notes = currentChordInfo_.notes;
+            const auto lowest =
+                std::ranges::min_element(notes, {}, &magda::music::ChordNote::noteNumber);
+            playedSource_ =
+                FifthsSource{currentChordInfo_.root, currentChordInfo_.quality,
+                             magda::music::NotationSettings::getInstance().format(currentChord_),
+                             key_, lowest == notes.end() ? 4 : lowest->noteNumber / 12 - 1};
+            updateFifthsSource();
             for (auto& block : suggestionBlocks_)
                 block->setHighlighted(block->getChord().getDisplayName() == currentChord_);
             needsRepaint = true;
@@ -798,6 +822,8 @@ void ChordPanelContent::enterBrowseMode() {
     // Hide tabs and all tab content — browse replaces the entire suggestions column
     ksTabBtn_->setVisible(false);
     aiTabBtn_->setVisible(false);
+    fifthsTabBtn_->setVisible(false);
+    fifthsView_.setVisible(false);
     for (auto& block : suggestionBlocks_)
         block->setVisible(false);
     if (aiViewport_)
@@ -884,6 +910,7 @@ void ChordPanelContent::exitBrowseMode() {
     // Restore tabs and current tab's content
     ksTabBtn_->setVisible(true);
     aiTabBtn_->setVisible(true);
+    fifthsTabBtn_->setVisible(true);
     switchToTab(suggestionTab_);  // restores correct tab content + footer
 
     browseBtn_->setVisible(true);
@@ -983,7 +1010,9 @@ void ChordPanelContent::requestAISuggestions() {
 void ChordPanelContent::switchToTab(SuggestionTab tab) {
     suggestionTab_ = tab;
 
-    bool isKS = (tab == SuggestionTab::KS);
+    const bool isKS = (tab == SuggestionTab::KS);
+    const bool isAI = (tab == SuggestionTab::AI);
+    const bool isFifths = (tab == SuggestionTab::Fifths);
 
     // Toggle K&S content visibility
     for (auto& block : suggestionBlocks_)
@@ -991,14 +1020,15 @@ void ChordPanelContent::switchToTab(SuggestionTab tab) {
 
     // Toggle AI content visibility
     if (aiViewport_)
-        aiViewport_->setVisible(!isKS);
+        aiViewport_->setVisible(isAI);
     if (aiInputBox_)
-        aiInputBox_->setVisible(!isKS);
+        aiInputBox_->setVisible(isAI);
     if (aiSendBtn_)
-        aiSendBtn_->setVisible(!isKS);
-    aiModelLabel_.setVisible(!isKS);
+        aiSendBtn_->setVisible(isAI);
+    aiModelLabel_.setVisible(isAI);
+    fifthsView_.setVisible(isFifths);
 
-    if (!isKS) {
+    if (isAI) {
         auto cfg = Config::getInstance().getAgentLLMConfig(magda::role::CHORD);
         auto model = cfg.model.empty() ? cfg.provider : cfg.model;
         aiModelLabel_.setText(juce::String(model), juce::dontSendNotification);
@@ -1010,9 +1040,11 @@ void ChordPanelContent::switchToTab(SuggestionTab tab) {
     scaleFilterBtn_->setVisible(isKS);
 
     ksTabBtn_->setToggleState(isKS, juce::dontSendNotification);
-    aiTabBtn_->setToggleState(!isKS, juce::dontSendNotification);
+    aiTabBtn_->setToggleState(isAI, juce::dontSendNotification);
+    fifthsTabBtn_->setToggleState(isFifths, juce::dontSendNotification);
     ksTabBtn_->setActive(isKS);
-    aiTabBtn_->setActive(!isKS);
+    aiTabBtn_->setActive(isAI);
+    fifthsTabBtn_->setActive(isFifths);
 
     resized();
     repaint();
@@ -1820,6 +1852,32 @@ void ChordPanelContent::setupFooterControls() {
     aiTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::AI); };
     addAndMakeVisible(aiTabBtn_.get());
 
+    fifthsTabBtn_ = std::make_unique<magda::SvgButton>("FifthsTab", BinaryData::mechordwheel_svg,
+                                                       BinaryData::mechordwheel_svgSize);
+    applyDeviceIconStyle(*fifthsTabBtn_, DeviceIcon::Toggle, glyphKey, ActiveTheme::MIDI_KEY_ON);
+    fifthsTabBtn_->setRadioGroupId(1001);
+    fifthsTabBtn_->setTooltip("Circle of fifths from the selected chord");
+    fifthsTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::Fifths); };
+    addAndMakeVisible(fifthsTabBtn_.get());
+
+    const auto fifthsChord = [this](magda::music::ChordRoot root,
+                                    magda::music::ChordQuality quality) {
+        const int octave =
+            fifthsView_.getSource().has_value() ? fifthsView_.getSource()->octave : 4;
+        return magda::music::ChordEngine::buildChordInRootPosition(root, quality, octave);
+    };
+    fifthsView_.onAuditionStart = [this, fifthsChord](magda::music::ChordRoot root,
+                                                      magda::music::ChordQuality quality) {
+        previewChord(fifthsChord(root, quality));
+    };
+    fifthsView_.onAuditionStop = [this] { stopPreview(); };
+    fifthsView_.onDragOut = [this, fifthsChord](magda::music::ChordRoot root,
+                                                magda::music::ChordQuality quality) {
+        stopPreview();
+        startChordDrag(fifthsView_, fifthsChord(root, quality));
+    };
+    addChildComponent(fifthsView_);
+
     aiModelLabel_.setFont(FontManager::getInstance().getMonoFont(10.5f));
     aiModelLabel_.setColour(juce::Label::textColourId,
                             ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
@@ -2086,7 +2144,8 @@ void ChordPanelContent::paint(juce::Graphics& g) {
                        suggestionsCol_.reduced(PADDING).withTrimmedTop(44).withHeight(20),
                        juce::Justification::centredLeft, true);
         }
-    } else if (!aiLoading_ && chordPlugin_->getAIProgressions().empty()) {
+    } else if (suggestionTab_ == SuggestionTab::AI && !aiLoading_ &&
+               chordPlugin_->getAIProgressions().empty()) {
         g.setColour(dim2);
         g.setFont(fonts.getMonoFont(11.0f));
         g.drawText("Describe a progression below and press send",
@@ -2223,6 +2282,8 @@ void ChordPanelContent::resized() {
         ksTabBtn_->setBounds(tabRow.removeFromLeft(30).withSizeKeepingCentre(30, 26));
         tabRow.removeFromLeft(4);
         aiTabBtn_->setBounds(tabRow.removeFromLeft(30).withSizeKeepingCentre(30, 26));
+        tabRow.removeFromLeft(4);
+        fifthsTabBtn_->setBounds(tabRow.removeFromLeft(30).withSizeKeepingCentre(30, 26));
         tabRow.removeFromLeft(12);
         aiModelLabel_.setBounds(tabRow);
         if (!browseMode_ && suggestionTab_ == SuggestionTab::KS) {
@@ -2285,6 +2346,8 @@ void ChordPanelContent::resized() {
             };
             placeGroup(0, diatonicCount_, diatonicHeader_);
             placeGroup(diatonicCount_, suggestionBlocks_.size(), beyondHeader_);
+        } else if (suggestionTab_ == SuggestionTab::Fifths) {
+            fifthsView_.setBounds(area);
         } else if (aiViewport_) {
             aiViewport_->setBounds(area);
             layoutAIProgressionRows();
@@ -2333,7 +2396,7 @@ void ChordPanelContent::resized() {
         auto footer = footer_.withTrimmedTop(1).reduced(PADDING, 0);
         if (inEditorSidebar_)
             footer.removeFromLeft(26);
-        if (browseMode_)
+        if (browseMode_ || suggestionTab_ == SuggestionTab::Fifths)
             return;
         if (suggestionTab_ == SuggestionTab::AI) {
             aiSendBtn_->setBounds(footer.removeFromRight(30).withSizeKeepingCentre(30, 26));

@@ -721,6 +721,11 @@ void TrackManager::triggerMidiNoteOff(TrackId trackId) {
     pendingMidiNoteOffs_[trackId]++;
 }
 
+void TrackManager::triggerMidiNotesEnded(TrackId trackId) {
+    std::scoped_lock lock(midiTriggerMutex_);
+    pendingMidiNotesEnded_.insert(trackId);
+}
+
 TrackManager::TransportSnapshot TrackManager::consumeTransportState() {
     return {transportBpm_.load(std::memory_order_acquire),
             transportPlaying_.load(std::memory_order_acquire),
@@ -751,10 +756,12 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
     // Snapshot MIDI trigger counts (thread-safe)
     std::map<TrackId, int> noteOnsThisTick;
     std::map<TrackId, int> noteOffsThisTick;
+    std::set<TrackId> notesEndedThisTick;
     {
         std::scoped_lock lock(midiTriggerMutex_);
         noteOnsThisTick.swap(pendingMidiNoteOns_);
         noteOffsThisTick.swap(pendingMidiNoteOffs_);
+        notesEndedThisTick.swap(pendingMidiNotesEnded_);
     }
 
     // Read audio-thread sidechain triggers from the lock-free bus.
@@ -823,6 +830,9 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         // Intentionally ignore bus note-offs. Cross-track MIDI sidechain is
         // note-on-only retriggering, so stopping on sidechain note-off creates
         // ambiguous edge cases when off/on land in the same mod-timer tick.
+
+        // The engine's notes ending, clip and Step Sequencer ones included (#3305).
+        midiAllNotesOffTracks.insert(notesEndedThisTick.begin(), notesEndedThisTick.end());
     }
 
     // Lambda to update a single mod's phase and value.

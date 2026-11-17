@@ -56,6 +56,8 @@ class FaustUI;
  *   [Params: 4 or 8 columns × 4 rows (dynamic based on param count)]
  */
 class DeviceSlotComponent : public NodeComponent,
+                            public juce::FileDragAndDropTarget,
+                            public juce::DragAndDropTarget,
                             public juce::Timer,
                             public magda::TrackManagerListener,
                             public magda::AutomationManagerListener,
@@ -90,6 +92,17 @@ class DeviceSlotComponent : public NodeComponent,
 
     // Update device data
     void updateFromDevice(const magda::DeviceInfo& device);
+
+    // A plugin's own preset file dropped on its slot loads into it (#1329). Anything else
+    // passes to the chain, which inserts MAGDA presets beside it.
+    bool isInterestedInFileDrag(const juce::StringArray& files) override;
+    void fileDragEnter(const juce::StringArray& files, int x, int y) override;
+    void fileDragExit(const juce::StringArray& files) override;
+    void filesDropped(const juce::StringArray& files, int x, int y) override;
+    bool isInterestedInDragSource(const SourceDetails& details) override;
+    void itemDragEnter(const SourceDetails& details) override;
+    void itemDragExit(const SourceDetails& details) override;
+    void itemDropped(const SourceDetails& details) override;
 
     // Custom UI tab index (for saving/restoring across rebuilds)
 
@@ -255,6 +268,10 @@ class DeviceSlotComponent : public NodeComponent,
     /// Take the parameter list from whatever holds it: a hosted plugin's own
     /// instance, or the model (#2634).
     void adoptParameterList();
+
+    /// The first of @p files this device's plugin can load as a preset; none if no file fits.
+    juce::File fittingPresetIn(const juce::StringArray& files) const;
+    bool presetDropHover_ = false;
 
     magda::DeviceInfo device_;
     DeviceSlotTraits traits_;

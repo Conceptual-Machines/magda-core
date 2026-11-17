@@ -39,10 +39,16 @@ FoldChevronButton::FoldChevronButton(Direction direction)
     : juce::Button("Fold"), direction_(direction) {}
 
 void FoldChevronButton::paintButton(juce::Graphics& g, bool highlighted, bool /*down*/) {
-    // Full bar puts it on the track colour, where the name is white too.
-    const auto colour = Config::getInstance().getTrackColourStyle() == "full"
-                            ? juce::Colours::white
-                            : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
+    // Full bar puts it on the head's fade, white in a dark socket so it reads on any colour.
+    const bool fullBar = Config::getInstance().getTrackColourStyle() == "full";
+    if (fullBar) {
+        const auto bounds = getLocalBounds().toFloat();
+        const float size = juce::jmin(bounds.getWidth(), bounds.getHeight()) - 2.0f;
+        g.setColour(headMarkSocket());
+        g.fillEllipse(bounds.withSizeKeepingCentre(size, size));
+    }
+    const auto colour =
+        fullBar ? juce::Colours::white : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
     g.setColour(highlighted ? colour : colour.withAlpha(0.7f));
     strokeChevron(g, getLocalBounds().toFloat().getCentre(), direction_);
 }

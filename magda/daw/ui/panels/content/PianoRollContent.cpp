@@ -887,6 +887,7 @@ void PianoRollContent::setGridPixelsPerBeat(double ppb) {
         takeLanes_->setPixelsPerBeat(ppb);
     if (showChordRow_)
         repaint();
+    onChordLaneMoved();
 }
 
 void PianoRollContent::setGridPlayheadBeat(double timelineBeat) {
@@ -915,6 +916,7 @@ void PianoRollContent::onScrollPositionChanged(int scrollX, int scrollY) {
     }
     if (takeLanes_)
         takeLanes_->setScrollOffset(scrollX);
+    onChordLaneMoved();
 }
 
 void PianoRollContent::onGridResolutionChanged() {
@@ -1176,6 +1178,15 @@ double PianoRollContent::chordRowBeatForX(int x) const {
     return juce::jmax(0.0, absBeat - clipStartBeats);
 }
 
+std::optional<chord_function::Key> PianoRollContent::progressionKey(const magda::ClipInfo& clip) {
+    std::vector<std::pair<magda::music::ChordRoot, magda::music::ChordQuality>> spelled;
+    for (const auto& annotation : clip.chordAnnotations) {
+        const auto spec = magda::music::ChordEngine::parseChordName(annotation.chordName);
+        spelled.emplace_back(spec.root, spec.quality);
+    }
+    return chord_function::estimateKey(spelled);
+}
+
 int PianoRollContent::chordRowXForBeat(double clipRelativeBeat) const {
     const int leftPanelWidth =
         sidebarWidth() + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
@@ -1194,6 +1205,11 @@ int PianoRollContent::chordRowXForBeat(double clipRelativeBeat) const {
 
 void PianoRollContent::redetectChords() {
     detectChordsFromNotes();
+}
+
+void PianoRollContent::showNoteAt(size_t noteIndex, double beat, double length) {
+    if (gridComponent_)
+        gridComponent_->showNoteAt(getEditingClipId(), noteIndex, beat, length);
 }
 
 void PianoRollContent::setGridToggleActive(bool on) {
@@ -1929,15 +1945,7 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
     // The chord editor draws its own chords large, with a spine, their degree and a dot per note;
     // the degree reads against the key the progression itself suggests.
     const bool spineBlocks = chordFocusMode() && isChordTrackLane;
-    std::optional<chord_function::Key> laneKey;
-    if (spineBlocks) {
-        std::vector<std::pair<magda::music::ChordRoot, magda::music::ChordQuality>> spelled;
-        for (const auto& annotation : clip->chordAnnotations) {
-            const auto spec = magda::music::ChordEngine::parseChordName(annotation.chordName);
-            spelled.emplace_back(spec.root, spec.quality);
-        }
-        laneKey = chord_function::estimateKey(spelled);
-    }
+    const auto laneKey = spineBlocks ? progressionKey(*clip) : std::nullopt;
 
     for (const auto& annotation : clip->chordAnnotations) {
         double absBeat = annotation.beatPosition + clipStartBeats;

@@ -26,6 +26,24 @@ struct ChordMarker {
 };
 
 struct MidiFileWriter {
+    /// Resolution of every .mid file MAGDA writes.
+    static constexpr int ticksPerQuarter = 960;
+
+    /**
+     * @brief Adds one clip's notes, CC and pitch bend to @p seq, cut to an export range.
+     *
+     * @p clipStartBeats is the clip's start relative to the range start and may be negative.
+     * Ticks run from the range start. A note crossing either edge is shortened to it, and one
+     * wholly outside is dropped, so no note-off lands before its note-on (#3279). CC and pitch
+     * bend from before the range land on its first tick.
+     * @return The latest tick added, or 0 when nothing fell inside the range.
+     */
+    static double appendClipInRange(juce::MidiMessageSequence& seq,
+                                    const std::vector<MidiNote>& notes,
+                                    const std::vector<MidiCCData>& ccData,
+                                    const std::vector<MidiPitchBendData>& pitchBendData,
+                                    double clipStartBeats, double rangeLengthBeats, int channel);
+
     /**
      * Write clip MIDI data to a specific .mid file (Type 0, single track).
      */

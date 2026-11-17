@@ -34,8 +34,6 @@ See [File Formats](reference/file-formats.md#audio-formats) for what each format
 | **Time Selection** | The arrangement's [time selection](arrangement-view.md#selection). Available when there is one; a selection made only on automation lanes doesn't count. A selection over some of the tracks still exports the whole mix over that time |
 | **Loop Region** | The loop region. Available while looping is on |
 
-The file stops at the end of the range: nothing is rendered after it. To let a reverb or delay ring out past the last clip, export a time selection or loop region that runs on past it.
-
 ### What goes into the file
 
 The export is the whole mix as it reaches the master, through every track's chain and the master's own effects. A powered-off device stays off in the file (see [Device Power](fx-chain.md#device-power)), and a [disabled track](tracks.md#disabling-a-track) renders nothing. The [chord track](chord-track.md) is left out.

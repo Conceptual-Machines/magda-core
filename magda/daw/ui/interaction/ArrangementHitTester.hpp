@@ -147,6 +147,10 @@ PanelZone panelZone(int x, int y, const PanelSnapshot& s);
  *  on every Shift press. */
 CursorKind panelCursor(PanelZone zone);
 
+/** @brief panelCursor(hit.zone), except Option alone inside the selection shows the copy cursor,
+ *         since Option+drag there copies the selected slice from either half (#3308). */
+CursorKind panelCursor(const PanelHit& hit, const ModifierSnapshot& mods);
+
 // ============================================================================
 // Clip surface (ClipComponent-local space)
 // ============================================================================

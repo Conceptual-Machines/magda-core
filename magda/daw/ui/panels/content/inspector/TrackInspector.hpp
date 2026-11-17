@@ -194,6 +194,7 @@ class TrackInspector : public BaseInspector,
     NamePopupListener namePopupListener_;
     bool nameFilled_ = false;              // Full bar: the name field carries the track colour
     juce::Colour nameFill_, nameOutline_;  // the rounded name field, painted behind the label
+    juce::Colour nameTrackColour_;         // Full bar: the colour the name field fades into
     void configChanged() override;
     void rebuildRoutingIcons();
     /// The channel menu behind the input (@p input) or output icon (#2209).

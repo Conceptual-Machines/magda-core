@@ -143,6 +143,20 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     }
 
   private:
+    Direction openDirection(bool inputs) const;
+
+    /// What the open interface calls its channels. Asking it is a round trip per channel and every
+    /// routing menu asks, so the answer is kept until the device changes. Message thread.
+    juce::StringArray reportedChannelNames(juce::AudioIODevice& device, bool inputs) const;
+
+    struct ReportedNames {
+        const juce::AudioIODevice* device = nullptr;
+        juce::String identity;
+        juce::StringArray names;
+    };
+    mutable ReportedNames reportedInputNames_;
+    mutable ReportedNames reportedOutputNames_;
+
     /** @brief Which of @p open the saved choice ticked singly, when it is for @p interfaceName. */
     juce::BigInteger monoChannels(const juce::String& interfaceName, const juce::BigInteger& open,
                                   bool inputs) const;

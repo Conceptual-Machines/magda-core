@@ -200,10 +200,6 @@ class GeneralPage : public juce::Component {
                         magda::TechnicalTextToken::ShortSeconds, 0, true);
 
         setupSectionHeader(*this, engineHeader, tr("preferences.section.engine"));
-        setupToggle(*this, renderAheadToggle, tr("preferences.toggle.render_ahead"));
-        setupTextSlider(*this, renderAheadTimeSlider, renderAheadTimeLabel,
-                        tr("preferences.slider.render_ahead_time"), 5.0, 200.0, 5.0,
-                        magda::TechnicalTextToken::Milliseconds, 0, true);
         setupToggle(*this, captureToggle, tr("preferences.toggle.capture"));
         setupTextSlider(*this, captureSecondsSlider, captureSecondsLabel,
                         tr("preferences.slider.capture_buffer"), 10.0,
@@ -349,9 +345,6 @@ class GeneralPage : public juce::Component {
         autoSaveToggle.setToggleState(config.getAutoSaveEnabled(), juce::dontSendNotification);
         autoSaveIntervalSlider.setValue(config.getAutoSaveIntervalSeconds(),
                                         juce::dontSendNotification);
-        renderAheadToggle.setToggleState(config.getRenderAheadEnabled(),
-                                         juce::dontSendNotification);
-        renderAheadTimeSlider.setValue(config.getRenderAheadMs(), juce::dontSendNotification);
         captureToggle.setToggleState(config.getCaptureEnabled(), juce::dontSendNotification);
         unloadOnFreezeToggle.setToggleState(config.getUnloadPluginsOnFreeze(),
                                             juce::dontSendNotification);
@@ -429,8 +422,6 @@ class GeneralPage : public juce::Component {
         config.setFollowPlayhead(followPlayheadToggle.getToggleState());
         config.setAutoSaveEnabled(autoSaveToggle.getToggleState());
         config.setAutoSaveIntervalSeconds(static_cast<int>(autoSaveIntervalSlider.getValue()));
-        config.setRenderAheadEnabled(renderAheadToggle.getToggleState());
-        config.setRenderAheadMs(static_cast<int>(renderAheadTimeSlider.getValue()));
         config.setCaptureEnabled(captureToggle.getToggleState());
         config.setUnloadPluginsOnFreeze(unloadOnFreezeToggle.getToggleState());
         config.setCaptureSeconds(static_cast<int>(captureSecondsSlider.getValue()));
@@ -489,8 +480,8 @@ class GeneralPage : public juce::Component {
         // The Behaviour block is 11 toggles with a 4px gap between them.
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
-               headerH + 4 + rowH + 4 + rowH + secGap + headerH + 4 + rowH + secGap + headerH + 4 +
-               (rowH * 12) + 44 + secGap + headerH + 4 + rowH + 18 + 4 + rowH + padding +
+               headerH + secGap + headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 12) + 44 +
+               secGap + headerH + 4 + rowH + 18 + 4 + rowH + padding +
                6 * (4 + rowH)     // Layout's track-height and track-width rows
                + 4 * (4 + rowH);  // Engine's capture and unload-on-freeze rows
     }
@@ -505,7 +496,7 @@ class GeneralPage : public juce::Component {
                + secGap + headerH + 4 + rowH                  // Timeline
                + secGap + headerH + 4 + rowH + 4 + rowH       // Transport
                + secGap + headerH + 4 + rowH + 4 + rowH       // Auto-Save
-               + secGap + headerH + 4 + rowH + 4 + rowH       // Engine
+               + secGap + headerH                             // Engine
                + 4 * (4 + rowH)                               // Engine: capture, unload on freeze
                + secGap + headerH + 4 + rowH + 18 + 4 + rowH  // Language + Localized Font Size
                + padding;
@@ -559,10 +550,6 @@ class GeneralPage : public juce::Component {
 
         // Engine
         engineHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        renderAheadToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
-        bounds.removeFromTop(4);
-        layoutTextSliderRow(bounds, renderAheadTimeLabel, renderAheadTimeSlider, rowH, sliderH);
         bounds.removeFromTop(4);
         captureToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
@@ -676,10 +663,6 @@ class GeneralPage : public juce::Component {
         // Engine
         engineHeader.setBounds(left.removeFromTop(headerH));
         left.removeFromTop(4);
-        renderAheadToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
-        left.removeFromTop(4);
-        layoutTextSliderRow(left, renderAheadTimeLabel, renderAheadTimeSlider, rowH, sliderH);
-        left.removeFromTop(4);
         captureToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
         left.removeFromTop(4);
         layoutTextSliderRow(left, captureSecondsLabel, captureSecondsSlider, rowH, sliderH);
@@ -758,11 +741,10 @@ class GeneralPage : public juce::Component {
     magda::daw::ui::TextSlider autoSaveIntervalSlider;
     juce::Label autoSaveIntervalLabel;
     juce::Label layoutHeader, behaviorHeader, languageHeader;
-    juce::Label engineHeader, renderAheadTimeLabel, captureSecondsLabel, captureBarsLabel;
-    juce::ToggleButton renderAheadToggle;
+    juce::Label engineHeader, captureSecondsLabel, captureBarsLabel;
     juce::ToggleButton captureToggle;
     juce::ToggleButton unloadOnFreezeToggle;
-    magda::daw::ui::TextSlider renderAheadTimeSlider, captureSecondsSlider, captureBarsSlider;
+    magda::daw::ui::TextSlider captureSecondsSlider, captureBarsSlider;
     juce::ToggleButton headersOnRightToggle;
     juce::ToggleButton autoHideScrollbarsToggle;
     juce::Label compactTrackHeightLabel, mediumTrackHeightLabel, largeTrackHeightLabel;

@@ -22,6 +22,7 @@ set(TEST_SOURCES
     project/test_command.cpp
     agents/test_command_model.cpp
     agents/test_command_model_downloader.cpp
+    agents/test_ranged_download.cpp
     agents/test_unigram_tokenizer.cpp
     agents/test_command_model_onnx.cpp
     utilities/test_interfaces.cpp
@@ -32,6 +33,7 @@ set(TEST_SOURCES
     midi/test_midi_split_glue.cpp
     midi/test_midi_key_scale.cpp
     midi/test_midi_offset.cpp
+    midi/test_midi_export_range.cpp
     clips/test_pianoroll_note_position.cpp
     clips/test_pianoroll_shown_content.cpp
     devices/test_nested_racks.cpp
@@ -72,6 +74,8 @@ set(TEST_SOURCES
     devices/test_device_manifests.cpp
     # Device presets in the SDK's portable envelope (#2939)
     devices/test_device_preset_envelope.cpp
+    # Rack and plugin-native presets dropped on a chain or a device slot (#1329)
+    devices/test_preset_drops.cpp
     devices/test_device_state_hydration.cpp
     devices/test_internal_plugin_registry.cpp
     # Engine-neutral internal device state schema v2 (issue #1887)
@@ -104,6 +108,8 @@ set(TEST_SOURCES
     devices/test_known_plugin_list_duplicates.cpp
     devices/test_device_parameter_pagination.cpp
     devices/test_mutable_clouds.cpp
+    devices/test_mutable_resampler.cpp
+    devices/test_mutable_tails.cpp
     devices/test_mutable_rings_chord.cpp
     devices/test_arpeggiator_event_time.cpp
     devices/test_arpeggiator_input.cpp
@@ -184,10 +190,12 @@ set(TEST_SOURCES
     devices/test_soundfont_import.cpp
     devices/test_sampler_parts.cpp
     ui/test_velocity_lane_utils.cpp
+    ui/test_circle_of_fifths.cpp
     utilities/test_grid_constants.cpp
     utilities/test_ui_scale.cpp
     media/test_media_explorer_preview_state.cpp
     ui/test_timeline_loop_activation.cpp
+    ui/test_timeline_marker_navigation.cpp
     routing/test_multi_out_tracks.cpp
     audio/test_freeze_track.cpp
     agents/test_dsl_add_chord.cpp
@@ -199,6 +207,7 @@ set(TEST_SOURCES
     # The prompts' worked examples must satisfy the validator (Faust instrument
     # [idx:N] report)
     dsp/test_faust_prompt_examples.cpp
+    agents/test_dsl_contains_statement.cpp
     agents/test_dsl_project_commands.cpp
     agents/test_dsl_rack_commands.cpp
     agents/test_scale_detection.cpp
@@ -461,6 +470,7 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES engine/test_plan_feedback_carry.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_handoff.cpp)
     list(APPEND TEST_SOURCES engine/test_render_ahead.cpp)
+    list(APPEND TEST_SOURCES engine/test_tracks_being_played.cpp)
     list(APPEND TEST_SOURCES engine/test_modulation_liveness.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_pad_rack.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_insert.cpp)
@@ -550,6 +560,7 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES engine/test_lame_encoder.cpp)
     list(APPEND TEST_SOURCES engine/test_offline_render_model.cpp)
     list(APPEND TEST_SOURCES engine/test_track_freeze.cpp)
+    list(APPEND TEST_SOURCES engine/test_stem_render.cpp)
     list(APPEND TEST_SOURCES engine/test_master_input_source.cpp)
     list(APPEND TEST_SOURCES engine/test_insert_capture_session.cpp)
     list(APPEND TEST_SOURCES engine/test_live_insert.cpp)
@@ -886,6 +897,8 @@ target_sources(magda_juce_tests PRIVATE
     # Hardware output selections must reach the TE wave output devices (#2264)
     ../magda/daw/ui/components/mixer/RoutingSelector.cpp
     ../magda/daw/ui/components/mixer/HardwareInputLevels.cpp
+    # A track's MIDI Out selector shows its own route only (#2209)
+    ui/test_midi_out_selector_juce.cpp
     # OSC control surfaces (issue #1757): a live receive thread and real packets
     controllers/test_osc_service_juce.cpp
     # pluginState v1 -> v2 over the legacy corpus (#2079). Here rather than in
@@ -908,6 +921,7 @@ target_sources(magda_juce_tests PRIVATE
     clips/test_clip_paint_juce.cpp
     clips/test_clip_nudge_juce.cpp
     clips/test_clip_drag_targets_juce.cpp
+    clips/test_clip_drop_stack_order_juce.cpp
     # A .mid dropped on the chord track arrives as chords
     ui/test_chord_track_file_drop_juce.cpp
     # Mods and macros panels and folded inspector sections start hidden
@@ -952,6 +966,7 @@ target_sources(magda_juce_tests PRIVATE
     automation/test_automation_grid_ticks_juce.cpp
     ../magda/daw/ui/components/automation/AutomationLaneHeader.cpp
     ui/test_runtime_theme_juce.cpp
+    ui/test_track_swatch_juce.cpp
     ui/test_user_theme_juce.cpp
     ui/test_syntax_highlighting_juce.cpp
     ../magda/daw/ui/code/SyntaxTheme.cpp
@@ -1009,6 +1024,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/themes/FontManager.cpp
     ../magda/daw/ui/components/common/MagdaAlertWindow.cpp
     ui/test_arrangement_row_alignment_juce.cpp
+    ui/test_view_mode_rebuild_juce.cpp
     ui/test_gain_envelope_editor_juce.cpp
     ../magda/daw/ui/components/waveform/WaveformGridComponent.cpp
     ../magda/daw/ui/components/waveform/WaveformGridLabels.cpp

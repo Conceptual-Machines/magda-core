@@ -269,7 +269,7 @@ acceptable to create a new track as needed.
 For note operations on the selected clip, target "selected_clip_track_id"
 instead of "selected_track_id".
 
-**CRITICAL: Always generate DSL code. Never generate plain text responses.**
+**CRITICAL: Respond with DSL code only, never plain text. If the request is not something this DSL can do (a question, a chat message), respond with nothing.**
 )DESC";
 }
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <catch2/catch_test_macros.hpp>
+#include <set>
 
 #include "magda/daw/core/TrackManager.hpp"
 
@@ -277,6 +278,30 @@ TEST_CASE("A MIDI Out to a track is an edge the cycle check sees", "[routing][cy
     CHECK(fixture.tm().getTrack(trackA)->midiInputDevice != fixture.trackInput(trackC));
 }
 
+TEST_CASE("One walk answers what the cycle check answers pair by pair", "[routing][cycle]") {
+    InternalRoutingFixture fixture;
+
+    auto trackA = fixture.createTrack("A");
+    auto trackB = fixture.createTrack("B");
+    auto trackC = fixture.createTrack("C");
+    auto trackD = fixture.createTrack("D");
+
+    // A -> B by A's MIDI Out, B -> C by C's audio input; D stands apart.
+    fixture.tm().routeMidiOutputToTrack(trackA, trackB);
+    fixture.tm().setTrackAudioInput(trackC, fixture.trackInput(trackB));
+
+    CHECK(fixture.tm().tracksFedBy(trackA) == std::set<magda::TrackId>{trackA, trackB, trackC});
+    CHECK(fixture.tm().tracksFeeding(trackC) == std::set<magda::TrackId>{trackA, trackB, trackC});
+    CHECK(fixture.tm().tracksFedBy(trackD) == std::set<magda::TrackId>{trackD});
+
+    for (const auto dest : {trackA, trackB, trackC, trackD})
+        for (const auto source : {trackA, trackB, trackC, trackD}) {
+            const bool cycle = fixture.tm().wouldCreateInputRoutingCycle(dest, source);
+            CHECK(fixture.tm().tracksFedBy(dest).contains(source) == cycle);
+            CHECK(fixture.tm().tracksFeeding(source).contains(dest) == cycle);
+        }
+}
+
 TEST_CASE("A track's MIDI channels are clamped and saved with its routing",
           "[routing][midi-channel][2209]") {
     InternalRoutingFixture fixture;
@@ -291,13 +316,13 @@ TEST_CASE("A track's MIDI channels are clamped and saved with its routing",
     CHECK(info->routingState().midiOutputChannel == 16);
 }
 
-TEST_CASE("Selecting a hardware MIDI output clears the source's track listeners",
-          "[routing][midi-out]") {
+TEST_CASE("A track's MIDI Out leaves the tracks taking it as input alone", "[routing][midi-out]") {
     InternalRoutingFixture fixture;
 
     auto trackA = fixture.createTrack("A");
     auto trackB = fixture.createTrack("B");
     auto trackC = fixture.createTrack("C");
+    auto trackD = fixture.createTrack("D");
 
     // Fan-out created from the destination side: B and C both listen to A
     fixture.tm().setTrackMidiInput(trackB, fixture.trackInput(trackA));
@@ -305,19 +330,21 @@ TEST_CASE("Selecting a hardware MIDI output clears the source's track listeners"
 
     SECTION("hardware device") {
         fixture.tm().setTrackMidiOutput(trackA, "hw-midi-out");
-
         REQUIRE(fixture.tm().getTrack(trackA)->midiOutputDevice == "hw-midi-out");
-        REQUIRE(fixture.tm().getTrack(trackB)->midiInputDevice.isEmpty());
-        REQUIRE(fixture.tm().getTrack(trackC)->midiInputDevice.isEmpty());
+    }
+
+    SECTION("another track") {
+        fixture.tm().routeMidiOutputToTrack(trackA, trackD);
+        REQUIRE(fixture.tm().getTrack(trackA)->midiOutputDevice == fixture.trackInput(trackD));
     }
 
     SECTION("none") {
         fixture.tm().setTrackMidiOutput(trackA, "");
-
         REQUIRE(fixture.tm().getTrack(trackA)->midiOutputDevice.isEmpty());
-        REQUIRE(fixture.tm().getTrack(trackB)->midiInputDevice.isEmpty());
-        REQUIRE(fixture.tm().getTrack(trackC)->midiInputDevice.isEmpty());
     }
+
+    CHECK(fixture.tm().getTrack(trackB)->midiInputDevice == fixture.trackInput(trackA));
+    CHECK(fixture.tm().getTrack(trackC)->midiInputDevice == fixture.trackInput(trackA));
 }
 
 TEST_CASE("Rejected routeMidiOutputToTrack changes nothing", "[routing][midi-out][cycle]") {

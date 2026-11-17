@@ -3,7 +3,56 @@
 
 #include "MidiFileWriter.hpp"
 
+#include <algorithm>
+
 namespace magda::daw {
+
+double MidiFileWriter::appendClipInRange(juce::MidiMessageSequence& seq,
+                                         const std::vector<MidiNote>& notes,
+                                         const std::vector<MidiCCData>& ccData,
+                                         const std::vector<MidiPitchBendData>& pitchBendData,
+                                         double clipStartBeats, double rangeLengthBeats,
+                                         int channel) {
+    const double rangeEndTick = rangeLengthBeats * ticksPerQuarter;
+    auto toTick = [&](double clipBeats) { return (clipStartBeats + clipBeats) * ticksPerQuarter; };
+    double maxTick = 0.0;
+
+    for (const auto& note : notes) {
+        const double startTick = toTick(note.startBeat);
+        const double endTick = toTick(note.startBeat + note.lengthBeats);
+        if (startTick >= rangeEndTick || endTick <= 0.0)
+            continue;
+
+        auto noteOn = juce::MidiMessage::noteOn(channel, note.noteNumber,
+                                                static_cast<juce::uint8>(note.velocity));
+        noteOn.setTimeStamp(std::max(startTick, 0.0));
+        seq.addEvent(noteOn);
+
+        auto noteOff = juce::MidiMessage::noteOff(channel, note.noteNumber);
+        noteOff.setTimeStamp(std::min(endTick, rangeEndTick));
+        seq.addEvent(noteOff);
+
+        maxTick = std::max(maxTick, noteOff.getTimeStamp());
+    }
+
+    auto addPointEvent = [&](juce::MidiMessage msg, double clipBeats) {
+        const double tick = std::max(toTick(clipBeats), 0.0);
+        if (tick >= rangeEndTick)
+            return;
+        msg.setTimeStamp(tick);
+        seq.addEvent(msg);
+        maxTick = std::max(maxTick, tick);
+    };
+
+    for (const auto& cc : ccData)
+        addPointEvent(juce::MidiMessage::controllerEvent(channel, cc.controller, cc.value),
+                      cc.beatPosition);
+
+    for (const auto& pb : pitchBendData)
+        addPointEvent(juce::MidiMessage::pitchWheel(channel, pb.value), pb.beatPosition);
+
+    return maxTick;
+}
 
 bool MidiFileWriter::writeToFile(const juce::File& outFile, const std::vector<MidiNote>& notes,
                                  const std::vector<MidiCCData>& ccData,
@@ -15,7 +64,6 @@ bool MidiFileWriter::writeToFile(const juce::File& outFile, const std::vector<Mi
         return false;
     }
 
-    constexpr int ticksPerQuarter = 960;
     auto beatsToTicks = [](double beats) -> double { return beats * ticksPerQuarter; };
 
     juce::MidiMessageSequence seq;

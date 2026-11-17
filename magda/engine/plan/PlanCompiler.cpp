@@ -165,15 +165,24 @@ class Compiler {
     RenderPlan run();
 
   private:
-    /// @p op, live when @p track plays session clips or an instrument (CompileOptions).
+    /// @p op, live when @p track plays session clips, sends MIDI to hardware or is an
+    /// instrument being played (CompileOptions).
     OpId playedLive(const TrackInfo& track, OpId op) {
         if (options_.sessionTracks.contains(track.id) ||
-            (options_.aheadAudioOnly && (chainConsumesMidi(track) || sendsMidiOut(track)))) {
+            (options_.playedInstruments &&
+             (sendsMidiOut(track) ||
+              (chainConsumesMidi(track) && options_.playedInstruments->contains(track.id))))) {
             auto& planOp = plan_.ops[static_cast<std::size_t>(op)];
             planOp.liveness = LivenessDomain::Live;
             planOp.liveByPlayback = true;
         }
         return op;
+    }
+
+    /// Whether @p track, reading MIDI or not, gets a live MIDI input (CompileOptions).
+    bool hearsLiveMidi(const TrackInfo& track, bool readsMidi) const {
+        return !options_.playedInstruments || !readsMidi || sendsMidiOut(track) ||
+               options_.playedInstruments->contains(track.id);
     }
 
     OpId addOp(OpKind kind, const OpKey& key, std::vector<PortRef> inputs,
@@ -220,6 +229,8 @@ class Compiler {
     TrackRoute midiInputRoute(const TrackInfo& track) const;
     /// The track @p track's MIDI Out sends to, if it names one (#2209).
     TrackRoute midiOutputRoute(const TrackInfo& track) const;
+    /// Whether @p sender's MIDI Out reaches @p receiver, not refused as a loop.
+    bool sendsMidiOutTo(TrackId sender, TrackId receiver) const;
 
     /**
      * @brief The op the live audio input reaches @p trackId's chain through.
@@ -363,6 +374,10 @@ class Compiler {
     /// routes read it, which is the source track's incoming MIDI rather than
     /// whatever its own chain made of it.
     std::map<TrackId, PortRef> trackMidiInput_;
+    /// The MIDI a note-triggered modifier hears (#3305): what reaches the track's
+    /// instrument, after any MIDI device in front of it, or what the chain ends
+    /// with when it has none.
+    std::map<TrackId, PortRef> trackNoteTap_;
     /// Signals waiting to be summed into a track that has not been emitted yet:
     /// child track outputs, incoming send taps and multi-out pairs.
     std::map<TrackId, std::vector<PortRef>> pendingInputs_;
@@ -495,6 +510,12 @@ TrackRoute Compiler::midiOutputRoute(const TrackInfo& track) const {
     if (!carriesClips(track) || !track.midiOutputDevice.startsWith("track:"))
         return {RouteKind::None, INVALID_TRACK_ID};
     return parseTrackRoute(track.midiOutputDevice);
+}
+
+bool Compiler::sendsMidiOutTo(TrackId sender, TrackId receiver) const {
+    const auto senders = midiOutSenders_.find(receiver);
+    return senders != midiOutSenders_.end() && std::ranges::contains(senders->second, sender) &&
+           !refusedMidiOutRoutes_.contains({receiver, sender});
 }
 
 TrackId Compiler::resolveAudioDestination(const TrackInfo& track) {
@@ -1713,16 +1734,24 @@ ChainSignal Compiler::emitElements(const std::vector<ChainElement>& elements, co
 
     for (const auto& element : elements) {
         bool endsTheSearch = false;
-
         if (isDevice(element)) {
             const auto& device = getDevice(element);
             endsTheSearch = !device.bypassed && device.isInstrument;
+        } else if (isRack(element)) {
+            endsTheSearch =
+                !getRack(element).bypassed && rackHasInstrument(getRack(element), nesting_);
+        }
+
+        // The notes the instrument is about to play.
+        if (watchingForInstrument && endsTheSearch && !triggerTapFound_)
+            trackNoteTap_[site.trackId] = signal.midi;
+
+        if (isDevice(element)) {
+            const auto& device = getDevice(element);
             signal =
                 device.pads ? emitPadRack(device, site, signal) : emitDevice(device, site, signal);
         } else if (isRack(element)) {
-            const auto& rack = getRack(element);
-            endsTheSearch = !rack.bypassed && rackHasInstrument(rack, nesting_);
-            signal = emitRack(rack, site, signal);
+            signal = emitRack(getRack(element), site, signal);
         }
 
         // Immediately after whatever makes the sound on a track that has an
@@ -1855,7 +1884,8 @@ void Compiler::emitTrack(const TrackInfo& track) {
     // whether or not the track monitors it; the live routing snapshot decides
     // what it reads (#2612).
     const auto route = midiInputRoute(track);
-    if (route.kind == RouteKind::External || (options_.auditionMidi && readsMidi))
+    if ((route.kind == RouteKind::External || (options_.auditionMidi && readsMidi)) &&
+        hearsLiveMidi(track, readsMidi))
         midiSources.push_back(emitLiveMidiInput(track.id));
 
     switch (route.kind) {
@@ -1864,6 +1894,9 @@ void Compiler::emitTrack(const TrackInfo& track) {
             // not what its own chain made of it.
             if (refusedMidiRoutes_.contains(track.id)) {
                 // Reported where the loop was found.
+            } else if (sendsMidiOutTo(route.trackId, track.id)) {
+                // The source's MIDI Out names this track too. One connection made from both
+                // ends, so it is delivered once, by the MIDI Out route below.
             } else if (const auto source = trackMidiInput_.find(route.trackId);
                        source != trackMidiInput_.end()) {
                 const auto gate = emitInputRouteGate(track.id, 1, source->second);
@@ -1933,6 +1966,7 @@ PortRef Compiler::emitStrip(const TrackInfo& track, ChainSignal signal) {
     // own bypass flags. Post-FX and mixer analysis sit outside it.
     if (track.chain.enabled)
         signal = emitElements(track.chain.fxChainElements, fxSite, signal);
+    trackNoteTap_.try_emplace(track.id, signal.midi);
 
     // What the chain made of the track's MIDI leaves for its hardware MIDI Out (#3048).
     if (sendsMidiOut(track) && signal.midi.valid()) {
@@ -2061,6 +2095,9 @@ void Compiler::routeOutput(const TrackInfo& track, PortRef out) {
     }
 
     const auto outputRoute = parseTrackRoute(track.audioOutputDevice);
+    if (outputRoute.kind == RouteKind::None)
+        return;
+
     if (outputRoute.kind == RouteKind::External && track.audioOutputDevice.isNotEmpty() &&
         track.audioOutputDevice != "master") {
         const auto name = track.audioOutputDevice.toStdString();
@@ -2110,14 +2147,11 @@ void Compiler::emitModulationTaps() {
         if (const auto found = points.find(tap.track); found != points.end())
             audio = found->second;
 
-        // The source's chain-head MIDI, which is what a note-triggered
-        // modifier hears: the notes reaching the track rather than whatever
-        // its own instruments made of them. On the pre-FX tap alone, because a
-        // note has no fader question and two taps carrying it would fire every
-        // note-triggered modifier twice.
+        // The notes the source's instrument plays, a Step Sequencer's included (#3305). On the
+        // pre-FX tap alone, because two taps carrying them would fire every listener twice.
         PortRef midi;
         if (preFx && noteSourceTracks_.count(tap.track) != 0)
-            if (const auto found = trackMidiInput_.find(tap.track); found != trackMidiInput_.end())
+            if (const auto found = trackNoteTap_.find(tap.track); found != trackNoteTap_.end())
                 midi = found->second;
 
         // Neither, which is a modifier listening to a track this plan does not

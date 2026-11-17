@@ -308,6 +308,28 @@ class PlanExecutor {
                      const BlockInfo& block, juce::AudioBuffer<float>& output,
                      const std::function<bool()>& underClaim = {}, bool whole = false);
 
+    /// What renders the callback's side of processSide across threads (ParallelPlanExecutor).
+    class CallbackRenderer {
+      public:
+        virtual ~CallbackRenderer() = default;
+        /// The whole block, as process() renders it.
+        virtual void renderWhole(const PlanValues& values, const BlockInfo& block,
+                                 juce::AudioBuffer<float>& output) = 0;
+        /// The callback side's ops, once its MIDI prefix and parameters are resolved.
+        virtual void renderCallbackSide(const PlanValues& values, const BlockInfo& block,
+                                        juce::AudioBuffer<float>& output, bool applyValues) = 0;
+    };
+
+    /// Null renders the callback's side here, one op after another.
+    void setCallbackRenderer(CallbackRenderer* renderer) {
+        callbackRenderer_ = renderer;
+    }
+
+    /// 1 for an op the callback runs, 0 for one that may be rendered ahead.
+    int sideOf(OpId op) const {
+        return runSide_[static_cast<std::size_t>(op)];
+    }
+
     /// Whether every block rendered ahead has been taken by the callback.
     bool handoffsDrained() const {
         return handoffs_.drained();
@@ -809,8 +831,8 @@ class PlanExecutor {
     std::vector<LevelTap*> meterForOp_;
     int boundMeterCount_ = 0;
 
-    /// Where a MergeMidi or MidiNoteGate op publishes what reached it, or nullptr. See
-    /// PlanBindings::midiTaps.
+    /// Where a MergeMidi, MidiNoteGate or ModSource op publishes the MIDI it read, or
+    /// nullptr. See PlanBindings::midiTaps.
     std::vector<MidiTap*> midiTapForOp_;
 
     /** @brief One value the block publishes for whoever is drawing it (#2122). */
@@ -872,6 +894,7 @@ class PlanExecutor {
     /// What the ahead side's block clears in place of the callback's buffer; nothing reads it.
     juce::AudioBuffer<float> aheadOutput_;
     int renderAheadDepth_ = 1;
+    CallbackRenderer* callbackRenderer_ = nullptr;
 
     /// The block the ahead side is rendering, while it is: a Handoff op writes into its entry.
     std::optional<std::uint64_t> aheadBlock_;
@@ -1014,7 +1037,7 @@ class PlanExecutor {
     void publishValueTaps(const ParamTable& table, int only);
 
     /// Spend the notes in @p midi on the modifiers listening to @p op's track.
-    void feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi);
+    void feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi, const BlockInfo& block);
 
     /** @brief The parameters a mixer op reads instead of the published value. */
     struct OpMixerParams {

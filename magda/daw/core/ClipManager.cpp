@@ -15,6 +15,7 @@
 #include <utility>
 
 #include "../project/ProjectManager.hpp"
+#include "ChordProgressionConverter.hpp"
 #include "ClipOperations.hpp"
 #include "ClipPlacementPolicy.hpp"
 #include "CompSectionMath.hpp"
@@ -604,6 +605,12 @@ ClipId ClipManager::createRecordedMidiClip(TrackId trackId, RecordedMidiClipData
         clip.loopLengthBeats = clip.placement.lengthBeats;
     }
 
+    // A take on the chord track lands as a progression, as a .mid dropped there does (#3325).
+    if (const auto* track = TrackManager::getInstance().getTrack(trackId);
+        track != nullptr && traitsOf(track->type).userClips == UserClipAcceptance::Progressions)
+        annotateChordsFromNotes(
+            clip, ProjectManager::getInstance().getCurrentProjectInfo().beatsPerBar());
+
     const auto clipId = clip.id;
     clips_[clipId] = std::move(clip);
     addToSessionSlotIndex(clips_[clipId]);
@@ -1101,7 +1108,7 @@ bool ClipManager::editAudioClipSourceInExternalEditor(ClipId clipId, juce::Strin
 
     const auto editorPath = juce::String(Config::getInstance().getExternalAudioEditorPath());
     if (editorPath.isEmpty()) {
-        errorMessage = "Choose an external audio editor in Preferences > Media Library first.";
+        errorMessage = "Choose an external audio editor in Settings > Paths first.";
         return false;
     }
 

@@ -30,13 +30,17 @@ std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& 
         windowBeats <= 0.0)
         return detected;
 
+    // Each window is read a 16th after it starts, so a chord played a little late, or
+    // released a little late, still counts for the bar it belongs to (#3325).
+    const double readAfter = std::min(kChordReadDelayBeats, windowBeats * 0.5);
     auto& engine = magda::music::ChordEngine::getInstance();
     for (double beat = startBeat; beat < endBeat; beat += windowBeats) {
+        const double readAt = beat + readAfter;
         std::vector<magda::music::ChordNote> chordNotes;
         std::vector<size_t> indices;
         for (size_t i = 0; i < notes.size(); ++i) {
             const auto& note = notes[i];
-            if (note.startBeat <= beat && (note.startBeat + note.lengthBeats) > beat) {
+            if (note.startBeat <= readAt && (note.startBeat + note.lengthBeats) > readAt) {
                 chordNotes.emplace_back(note.noteNumber, note.velocity);
                 indices.push_back(i);
             }
@@ -83,6 +87,23 @@ std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& 
     }
 
     return detected;
+}
+
+void annotateChordsFromNotes(ClipInfo& clip, double beatsPerBar) {
+    for (const auto& detected : extractChordsFromNotes(clip.midiNotes, beatsPerBar)) {
+        ClipInfo::ChordAnnotation ann;
+        ann.beatPosition = detected.startBeat;
+        ann.lengthBeats = detected.lengthBeats;
+        ann.chordName = detected.name;
+
+        const int groupId = clip.nextChordGroupId++;
+        for (const auto noteIndex : detected.noteIndices)
+            if (noteIndex < clip.midiNotes.size())
+                clip.midiNotes[noteIndex].chordGroup = groupId;
+
+        ann.chordGroup = detected.noteIndices.empty() ? 0 : groupId;
+        clip.chordAnnotations.push_back(ann);
+    }
 }
 
 std::vector<MidiNote> buildVoicingNotes(music::ChordRoot root, music::ChordQuality quality,

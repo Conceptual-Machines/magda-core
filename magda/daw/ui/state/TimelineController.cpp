@@ -1223,34 +1223,30 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const GoToMarker
     return changes;
 }
 
+// Past the last marker, Next stops at the timeline end rather than wrapping (#3280).
 TimelineController::ChangeFlags TimelineController::handleEvent(const GoToNextMarkerEvent& /*e*/) {
-    if (state.markers.empty())
-        return ChangeFlags::None;
-
     const double current = state.playhead.getCurrentPositionBeats();
     const auto isAfterPlayhead = [current](const TimelineMarker& marker) {
         return marker.positionBeats > current + 0.000001;
     };
-    auto it = std::ranges::find_if(state.markers, isAfterPlayhead);
+    const auto it = std::ranges::find_if(state.markers, isAfterPlayhead);
     if (it == state.markers.end())
-        it = state.markers.begin();
-
+        return handleEvent(SetEditPositionBeatsEvent{state.timelineLengthBeats});
     return handleEvent(GoToMarkerEvent{it->id});
 }
 
+// Before the first marker, Previous stops at the start rather than wrapping (#3280).
 TimelineController::ChangeFlags TimelineController::handleEvent(
     const GoToPreviousMarkerEvent& /*e*/) {
-    if (state.markers.empty())
-        return ChangeFlags::None;
-
     const double current = state.playhead.getCurrentPositionBeats();
     const auto isBeforePlayhead = [current](const TimelineMarker& marker) {
         return marker.positionBeats < current - 0.000001;
     };
     auto earlierMarkers = state.markers | std::views::reverse;
     const auto it = std::ranges::find_if(earlierMarkers, isBeforePlayhead);
-    const int markerId = it != earlierMarkers.end() ? it->id : state.markers.back().id;
-    return handleEvent(GoToMarkerEvent{markerId});
+    if (it == earlierMarkers.end())
+        return handleEvent(SetEditPositionBeatsEvent{0.0});
+    return handleEvent(GoToMarkerEvent{it->id});
 }
 
 // ===== Viewport Event Handlers =====

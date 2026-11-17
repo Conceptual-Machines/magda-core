@@ -80,7 +80,7 @@ CapturePanel::CapturePanel(AudioEngine& engine) : engine_(engine) {
     keepMidiButton_->onClick = [this] { keep(false, true); };
     playButton_->setTooltip("Hear the selection, or what is in view");
     keepAudioButton_->setTooltip("Import the selected audio on a new track");
-    keepMidiButton_->setTooltip("Import the selected notes on the track that hears their input");
+    keepMidiButton_->setTooltip("Import the selected notes onto a new track for each input");
 
     // Seconds on the ruler: at 60 BPM its beats are seconds and its zoom is ours.
     ruler_.setDisplayMode(TimeRuler::DisplayMode::Seconds);

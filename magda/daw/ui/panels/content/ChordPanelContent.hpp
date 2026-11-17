@@ -18,6 +18,7 @@
 #include "music/ChordEngine.hpp"
 #include "music/Scales.hpp"
 #include "ui/components/chord/ChordFunction.hpp"
+#include "ui/components/chord/FifthsView.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -156,6 +157,8 @@ class ChordPanelContent : public juce::Component,
                         magda::TrackId trackId = magda::INVALID_TRACK_ID);
     /** Docked beside the chord editor: no keyboard, and the footer clears the collapse button. */
     void setInEditorSidebar(bool inSidebar);
+    /** @brief The chord editor's selected chord; without one the fifths tab follows playing. */
+    void setFifthsSource(std::optional<FifthsSource> selected);
     void toggleScaleSelection(ScaleBlockComponent* block);
     void showScalePopup(const magda::music::ScaleWithChords& scale, juce::Component* source);
 
@@ -227,10 +230,17 @@ class ChordPanelContent : public juce::Component,
     std::vector<int> previewingNotes_;  // MIDI note numbers currently sounding
 
     // Suggestion tabs: K&S (Krumhansl-Schmuckler) vs AI
-    enum class SuggestionTab { KS, AI };
+    enum class SuggestionTab { KS, AI, Fifths };
     SuggestionTab suggestionTab_ = SuggestionTab::KS;
     std::unique_ptr<magda::SvgButton> ksTabBtn_;
     std::unique_ptr<magda::SvgButton> aiTabBtn_;
+    std::unique_ptr<magda::SvgButton> fifthsTabBtn_;
+
+    // Fifths tab: the circle of fifths from the selected chord, else the last one played
+    FifthsView fifthsView_;
+    std::optional<FifthsSource> selectedSource_;
+    std::optional<FifthsSource> playedSource_;
+    void updateFifthsSource();
     juce::Label aiModelLabel_;
 
     // AI tab — inline progression display + text input

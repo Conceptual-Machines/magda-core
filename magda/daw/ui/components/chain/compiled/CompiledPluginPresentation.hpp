@@ -120,6 +120,8 @@ struct CompiledPresentationSpec {
     /// When > 0, added to the slot width while the device's visualisation shows; the sidebar's
     /// visualisation toggle then appears for it (#3201).
     int vizSlotWidth = 0;
+    /// The visualisation toggle's tooltip, naming what it shows (#3282).
+    const char* vizTooltip = nullptr;
     /// When > 0, the part of preferredSlotWidth the controls take; the sidebar's parameters
     /// toggle then hides them and the visualisation takes the body (#3201).
     int controlsSlotWidth = 0;

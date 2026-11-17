@@ -52,6 +52,11 @@ void showDevicePresetMenu(juce::Component* targetComponent, const magda::DeviceI
                           const magda::ChainNodePath& devicePath, bool isInternalDevice,
                           DevicePresetMenuCallbacks callbacks);
 
+/** @brief Loads a plugin's own preset @p file into the device at @p devicePath, naming the slot
+ * after it. */
+void loadPluginPresetFile(const magda::ChainNodePath& devicePath, const juce::File& file,
+                          const std::function<void()>& onLoaded);
+
 /** @brief Ask for a name, pre-filled with the current preset's, and save a MAGDA preset. */
 void showSaveMagdaPresetDialog(const magda::DeviceInfo& device,
                                const magda::ChainNodePath& devicePath,

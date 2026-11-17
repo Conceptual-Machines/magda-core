@@ -273,7 +273,12 @@
     "bit_depth.24": "24-bit",
     "bit_depth.32_float": "32-bit Float",
     "dither.off": "Off",
-    "dither.shaped": "Noise Shaped"
+    "dither.shaped": "Noise Shaped",
+    "label.output": "Output:",
+    "option.mix": "Mix",
+    "option.stems": "Stems (one file per track)",
+    "toggle.track_fx": "Track FX",
+    "toggle.selected_tracks": "Selected tracks only ({0})"
   },
   "export_midi": {
     "label.midi_format": "{0} Format:",
@@ -338,7 +343,34 @@
   "footer": {
     "tooltip.session": "Session",
     "tooltip.arrangement": "Arrangement",
-    "tooltip.mix": "Mix"
+    "tooltip.mix": "Mix",
+    "tooltip.model_downloading": "Local LLM: downloading, {0}",
+    "tooltip.model_checking": "Local LLM: checking the download, {0}%",
+    "menu.cancel_download": "Cancel download",
+    "menu.open_local_settings": "Open Local settings"
+  },
+  "model_download": {
+    "button.download": "Download a model",
+    "button.cancel": "Cancel download",
+    "button.resume": "Resume download",
+    "button.discard": "Discard",
+    "status.connecting": "Connecting",
+    "status.stopping": "Stopping",
+    "status.progress": "{0} of {1}",
+    "status.rate": "{0}/s",
+    "status.paused": "Paused at {0} of {1}",
+    "status.checking": "Checking the download, {0}%",
+    "status.done": "Download complete",
+    "size.gb": "{0} GB",
+    "size.mb": "{0} MB",
+    "time.under_minute": "less than a minute left",
+    "time.minutes": "{0} min left",
+    "time.hours": "{0} h {1} min left",
+    "error.unreachable": "Could not reach the download server",
+    "error.network": "The connection kept dropping",
+    "error.disk": "Could not write the model file",
+    "error.damaged": "The download was damaged and has been removed",
+    "error.move": "Could not move the model into place"
   },
   "main_window": {
     "loading.initializing": "Initializing",
@@ -371,7 +403,14 @@
     "error.no_midi_clips": "No {0} clips to export.",
     "error.no_midi_notes": "No {0} clips with notes to export.",
     "error.midi_write_failed": "Failed to write {0} file.",
-    "error.cannot_create_file": "Could not create output file:"
+    "error.cannot_create_file": "Could not create output file:",
+    "progress.exporting_stems": "Exporting Stems",
+    "choose_stems_folder": "Choose a Folder for the Stems",
+    "alert.stems_success_prefix": "{0} stems exported to:",
+    "alert.replace_title": "Replace Files?",
+    "alert.replace_body": "{0} of the stems already exist in this folder. Replace them?",
+    "alert.replace_button": "Replace",
+    "error.no_stems": "There are no tracks to export: every track is muted or off."
   },
   "mix_analysis": {
     "cleanup_failed": "Cleaning up after mix analysis failed."
@@ -456,7 +495,6 @@
     "slider.default_total_length": "Length",
     "slider.default_view": "New Project View",
     "slider.interval": "Interval",
-    "slider.render_ahead_time": "Look-Ahead",
     "slider.capture_buffer": "Capture Buffer",
     "slider.capture_length": "Capture Length",
     "toggle.enable_autosave": "Enable auto-save",
@@ -472,7 +510,6 @@
     "toggle.autohide_arrangement_scrollbars": "Auto-Hide Main View Scrollbars",
     "toggle.confirm_track_delete": "Confirm before deleting tracks",
     "toggle.auto_monitor": "Auto-monitor selected track",
-    "toggle.render_ahead": "Render playback ahead of the audio device",
     "toggle.capture": "Keep what you play, so it can be captured afterwards",
     "toggle.unload_plugins_on_freeze": "Unload plugins when freezing, to free their memory",
     "toggle.open_macros_on_select": "Open macros when selecting devices or racks",
@@ -736,7 +773,7 @@
     "error.not_initialized_title": "Audio Settings",
     "error.not_initialized": "Audio engine not initialized. Cannot open audio settings.",
     "crash_recovery.title": "Audio Driver Skipped",
-    "crash_recovery.message": "MAGDA closed unexpectedly last time while opening {0}, so it started with the default audio driver instead.\n\nYou can choose a driver again in Audio/MIDI Settings.",
+    "crash_recovery.message": "MAGDA closed unexpectedly last time while opening {0}, so it started with the default audio driver instead.\n\nYou can choose a driver again in Settings > Audio & MIDI.",
     "crash_recovery.default": "the audio driver",
     "section.device": "Device",
     "label.preview_output": "Audition browser files on",

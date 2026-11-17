@@ -97,6 +97,22 @@ TEST_CASE("Panel: an upper-zone clip remains draggable through a selection", "[h
     REQUIRE(panelCursor(PanelZone::SelectionBody) == CursorKind::DraggingHand);
 }
 
+TEST_CASE("Panel: Option inside a selection shows the copy cursor from either half",
+          "[hit-tester]") {
+    auto s = makePanelWithSelection(100.0, 300.0);
+    s.clipAtPoint = true;
+    ModifierSnapshot option;
+    option.alt = true;
+    ModifierSnapshot ghostCopy = option;
+    ghostCopy.shift = true;
+
+    REQUIRE(panelCursor(panelHit(200, 20, s), option) == CursorKind::Copying);
+    REQUIRE(panelCursor(panelHit(200, 80, s), option) == CursorKind::Copying);
+    REQUIRE(panelCursor(panelHit(200, 80, s), {}) == CursorKind::DraggingHand);
+    REQUIRE(panelCursor(panelHit(200, 80, s), ghostCopy) == CursorKind::DraggingHand);
+    REQUIRE(panelCursor(panelHit(100, 80, s), option) == CursorKind::LeftRightResize);
+}
+
 TEST_CASE("Panel: selection edges win within the threshold, left first", "[hit-tester]") {
     const auto s = makePanelWithSelection(100.0, 300.0);
 

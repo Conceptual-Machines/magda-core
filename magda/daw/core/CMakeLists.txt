@@ -60,6 +60,7 @@ target_sources(magda_daw PRIVATE
     StringTable.cpp
     ParameterDetector.cpp
     PresetManager.cpp
+    PresetDrops.cpp
     DevicePresetEnvelope.cpp
     SamplerDevices.cpp
     DrumkitManager.cpp
@@ -142,6 +143,7 @@ target_sources(magda_daw PRIVATE
     AutomationInfo.hpp
     AutomationManager.hpp
     PresetManager.hpp
+    PresetDrops.hpp
     DevicePresetEnvelope.hpp
     DrumkitManager.hpp
     GrooveStore.hpp

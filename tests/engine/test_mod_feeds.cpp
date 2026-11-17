@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -20,6 +21,7 @@
 #include "param/ParamTableCompiler.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanHandoff.hpp"
+#include "tap/NoteOnTap.hpp"
 
 /**
  * @file test_mod_feeds.cpp
@@ -77,20 +79,59 @@ class LevelDevice final : public magda::engine::EngineDevice {
     }
 };
 
-class Factory final : public magda::engine::RuntimeStateFactory {
+/// A Step Sequencer's stand-in: it plays the scripted notes from inside the chain.
+class SequencerDevice final : public magda::engine::EngineDevice {
   public:
-    explicit Factory(ScriptedMidi* midi) : midi_(midi) {}
+    explicit SequencerDevice(ScriptedMidi* midi) : midi_(midi) {}
 
-    std::unique_ptr<magda::engine::EngineDevice> createDevice(magda::engine::DeviceKey) override {
-        return std::make_unique<LevelDevice>();
-    }
-
-    std::unique_ptr<magda::engine::EngineMidiSource> createMidiInput(TrackId) override {
-        return std::make_unique<ScriptedMidiSource>(midi_);
+    void process(magda::engine::DeviceBlock& block) override {
+        block.audio.clear();
+        if (block.midiOut != nullptr && midi_ != nullptr) {
+            block.midiOut->addEvents(midi_->pending, 0, -1, 0);
+            midi_->pending.clear();
+        }
     }
 
   private:
     ScriptedMidi* midi_ = nullptr;
+};
+
+constexpr DeviceId kSequencerId = 6;
+
+/// Where the scripted notes arrive: the live input, the track's arrangement clips, or a
+/// device in front of the instrument.
+enum class NoteFrom { Input, Clip, Sequencer };
+
+class Factory final : public magda::engine::RuntimeStateFactory {
+  public:
+    explicit Factory(ScriptedMidi* midi, NoteFrom from = NoteFrom::Input)
+        : midi_(midi), from_(from) {}
+
+    std::unique_ptr<magda::engine::EngineDevice> createDevice(
+        magda::engine::DeviceKey key) override {
+        if (from_ == NoteFrom::Sequencer && key == magda::engine::DeviceKey{kSequencerId})
+            return std::make_unique<SequencerDevice>(midi_);
+        return std::make_unique<LevelDevice>();
+    }
+
+    std::unique_ptr<magda::engine::NoteOnTap> createNoteOnTap(
+        const magda::engine::OpKey& key) override {
+        return key.role == magda::engine::OpRole::ModulationTap
+                   ? std::make_unique<magda::engine::NoteOnTap>()
+                   : nullptr;
+    }
+
+    std::unique_ptr<magda::engine::EngineMidiSource> createMidiInput(TrackId) override {
+        return from_ == NoteFrom::Input ? std::make_unique<ScriptedMidiSource>(midi_) : nullptr;
+    }
+
+    std::unique_ptr<magda::engine::EngineMidiSource> createClipMidiSource(TrackId) override {
+        return from_ == NoteFrom::Clip ? std::make_unique<ScriptedMidiSource>(midi_) : nullptr;
+    }
+
+  private:
+    ScriptedMidi* midi_ = nullptr;
+    NoteFrom from_ = NoteFrom::Input;
 };
 
 DeviceInfo makeDevice(DeviceId id) {
@@ -136,8 +177,8 @@ TrackInfo trackWithModifier(ModType type, LFOTriggerMode trigger) {
 
 /// A session over @p tracks, with @p midi bound as track 1's live MIDI input.
 struct Session {
-    Session(std::vector<TrackInfo> trackList, ScriptedMidi* midi)
-        : tracks(std::move(trackList)), factory(midi), session(factory) {
+    Session(std::vector<TrackInfo> trackList, ScriptedMidi* midi, NoteFrom from = NoteFrom::Input)
+        : tracks(std::move(trackList)), factory(midi, from), session(factory) {
         master = makeMaster();
         const magda::engine::RenderContext context{kSampleRate, kBlock, 2};
         auto result = magda::test::publishProject(session, tracks, master, context);
@@ -208,6 +249,135 @@ TEST_CASE("A note reaches its modifier in the block it arrived in", "[engine][mo
     // in the one after: distance zero.
     midi.pending.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
     CHECK(session.render() == approx(1.0f));
+}
+
+TEST_CASE("A clip's note reaches a MIDI-triggered modifier", "[engine][mod][feeds][3305]") {
+    const auto type = GENERATE(ModType::Envelope, ModType::LFO);
+    CAPTURE(type);
+    auto track = trackWithModifier(type, LFOTriggerMode::MIDI);
+
+    ScriptedMidi midi;
+    Session session({track}, &midi, NoteFrom::Clip);
+    REQUIRE(session.published);
+
+    CHECK(session.render() == approx(0.0f));
+
+    midi.pending.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    std::vector<float> heard;
+    for (int block = 0; block < 8; ++block)
+        heard.push_back(session.render());
+    CHECK(std::ranges::any_of(heard, [](float level) { return level > 1e-3f; }));
+}
+
+TEST_CASE("A note a device plays in front of the instrument reaches a MIDI-triggered modifier",
+          "[engine][mod][feeds][3305]") {
+    const auto type = GENERATE(ModType::Envelope, ModType::LFO);
+    CAPTURE(type);
+    auto track = trackWithModifier(type, LFOTriggerMode::MIDI);
+
+    // The sequencer, then the device the modifier drives as the instrument it plays.
+    DeviceInfo sequencer;
+    sequencer.id = kSequencerId;
+    sequencer.name = "Sequencer";
+    sequencer.deviceType = DeviceType::MIDI;
+    sequencer.canReceiveMidi = true;
+    sequencer.producesMidi = true;
+    sequencer.midiInThru = false;
+    auto& elements = track.chain.fxChainElements;
+    auto& instrument = getDevice(elements.front());
+    instrument.deviceType = DeviceType::Instrument;
+    instrument.isInstrument = true;
+    instrument.canReceiveMidi = true;
+    elements.insert(elements.begin(), makeDeviceElement(sequencer));
+
+    ScriptedMidi midi;
+    Session session({track}, &midi, NoteFrom::Sequencer);
+    REQUIRE(session.published);
+
+    CHECK(session.render() == approx(0.0f));
+
+    // Made during the walk rather than read ahead of it, so it lands a block later.
+    midi.pending.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    std::vector<float> heard;
+    for (int block = 0; block < 8; ++block)
+        heard.push_back(session.render());
+    CHECK(std::ranges::any_of(heard, [](float level) { return level > 1e-3f; }));
+}
+
+TEST_CASE("The notes a modifier was fed reach the host's tap", "[engine][mod][feeds][3305]") {
+    auto track = trackWithModifier(ModType::LFO, LFOTriggerMode::MIDI);
+
+    ScriptedMidi midi;
+    Session session({track}, &midi, NoteFrom::Clip);
+    REQUIRE(session.published);
+
+    struct Taken {
+        magda::engine::NoteOnTap::Notes started;
+        bool ended = false;
+    };
+    const auto taken = [&session] {
+        Taken result;
+        int taps = 0;
+        session.session.forEachNoteOnTap(
+            [&](const magda::engine::OpKey& key, magda::engine::NoteOnTap& tap) {
+                if (key.role != magda::engine::OpRole::ModulationTap)
+                    return;
+                ++taps;
+                CHECK(key.trackId == 1);
+                result.started |= tap.take();
+                result.ended = tap.takeEnded();
+            });
+        CHECK(taps == 1);
+        return result;
+    };
+
+    session.render();
+    CHECK(taken().started.none());
+
+    midi.pending.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    session.render();
+    const auto onset = taken();
+    CHECK(onset.started.count() == 1);
+    CHECK(onset.started.test(60));
+    CHECK_FALSE(onset.ended);
+
+    // The note-off a transport stop sends for every clip note still sounding.
+    midi.pending.addEvent(juce::MidiMessage::noteOff(1, 60), 0);
+    session.render();
+    const auto release = taken();
+    CHECK(release.started.none());
+    CHECK(release.ended);
+}
+
+TEST_CASE("A note tap says the notes ended only once none is held", "[engine][tap][3305]") {
+    magda::engine::NoteOnTap tap;
+    const BlockInfo block;
+    const auto play = [&](std::initializer_list<juce::MidiMessage> messages) {
+        juce::MidiBuffer midi;
+        for (const auto& message : messages)
+            midi.addEvent(message, 0);
+        tap.write(midi, block);
+    };
+
+    play({juce::MidiMessage::noteOn(1, 60, 1.0f), juce::MidiMessage::noteOn(1, 64, 1.0f)});
+    play({juce::MidiMessage::noteOff(1, 60)});
+    CHECK_FALSE(tap.takeEnded());
+
+    play({juce::MidiMessage::noteOff(1, 64)});
+    CHECK(tap.takeEnded());
+    CHECK_FALSE(tap.takeEnded());
+
+    // A stray note-off ends nothing; all-notes-off ends whatever was held.
+    play({juce::MidiMessage::noteOff(1, 60)});
+    CHECK_FALSE(tap.takeEnded());
+    play({juce::MidiMessage::noteOn(1, 60, 1.0f)});
+    play({juce::MidiMessage::allNotesOff(1)});
+    CHECK(tap.takeEnded());
+
+    // Legato: the last note ends but the next is already held when the host looks.
+    play({juce::MidiMessage::noteOn(1, 60, 1.0f)});
+    play({juce::MidiMessage::noteOff(1, 60), juce::MidiMessage::noteOn(1, 62, 1.0f)});
+    CHECK_FALSE(tap.takeEnded());
 }
 
 TEST_CASE("A level reaches its modifier the block after the one it was in",

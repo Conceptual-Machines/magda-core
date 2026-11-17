@@ -163,9 +163,15 @@ class PianoRollContent : public MidiEditorContent,
     }
     // Re-run chord detection from the clip's notes (rebuilds the chord lane).
     void redetectChords();
+    /** @brief Draws an editing-clip note at @p beat / @p length until the notes next refresh. */
+    void showNoteAt(size_t noteIndex, double beat, double length);
     // Clip-relative beat under an x pixel on the chord lane (>= 0). Shared by the
     // click-to-add handler and chord-drop targets.
     double chordRowBeatForX(int x) const;
+    /** @brief The key the chord editor reads its degrees in: the one the progression suggests. */
+    static std::optional<chord_function::Key> progressionKey(const magda::ClipInfo& clip);
+    /** @brief The lane scrolled or zoomed, so every beat sits at a new x. */
+    virtual void onChordLaneMoved() {}
 
   private:
     // MidiEditorContent virtual implementations

@@ -15,6 +15,7 @@
 
 #include "../components/tracks/ChordFoldControls.hpp"
 #include "../components/tracks/TrackSeparatorView.hpp"
+#include "../utils/TrackNamesSnapshot.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/io/AudioIOControl.hpp"
 #include "core/ClipManager.hpp"
@@ -49,7 +50,6 @@ class SessionView : public juce::Component,
                     public ClipManagerListener,
                     public ProjectManagerListener,
                     public SelectionManagerListener,
-                    public ViewModeListener,
                     public MidiBridge::Listener,
                     private HardwareChannels::Listener,
                     private ConfigListener {
@@ -64,6 +64,9 @@ class SessionView : public juce::Component,
 
     // Timer callback for meter updates
     void timerCallback() override;
+
+    /// Rebuilds on being shown if a track was renamed since the last build.
+    void visibilityChanged() override;
 
     // TrackManagerListener
     void tracksChanged() override;
@@ -90,9 +93,6 @@ class SessionView : public juce::Component,
     void selectionTypeChanged(SelectionType newType) override;
     void multiTrackSelectionChanged(const std::unordered_set<TrackId>& trackIds) override;
     void multiClipSelectionChanged(const std::unordered_set<ClipId>& clipIds) override;
-
-    // ViewModeListener
-    void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
 
     // FileDragAndDropTarget
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
@@ -316,7 +316,8 @@ class SessionView : public juce::Component,
     static bool deleteSelectedSessionClips();
 
     // View mode state
-    ViewMode currentViewMode_ = ViewMode::Live;
+    const ViewMode currentViewMode_ = ViewMode::Live;  // the only mode the view is on screen in
+    TrackNamesSnapshot namesAtBuild_;
     std::vector<TrackId> visibleTrackIds_;
 
     // Selection

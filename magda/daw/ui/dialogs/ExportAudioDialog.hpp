@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <optional>
+#include <vector>
 
 #include "../../engine/AudioEngine.hpp"
 
@@ -22,6 +23,7 @@ namespace magda {
  * - Bitrate for lossy formats
  * - Normalization (peak to 0dB)
  * - Time range (entire arrangement or selection)
+ * - The mix, or one file per track (#54)
  */
 class ExportAudioDialog : public juce::Component {
   public:
@@ -39,6 +41,13 @@ class ExportAudioDialog : public juce::Component {
         bool realTimeRender = false;
         double leadInSilence = 0.0;  // Seconds of silence before audio (0-2s)
         ExportRange exportRange = ExportRange::EntireSong;
+
+        /// One file per track in place of the mix (#54).
+        bool stems = false;
+        bool stemTrackEffects = true;
+
+        /// The tracks a stem export is limited to; empty exports every track.
+        std::vector<TrackId> stemTrackIds;
     };
 
     explicit ExportAudioDialog();
@@ -61,10 +70,14 @@ class ExportAudioDialog : public juce::Component {
     void setTimeSelectionAvailable(bool available);
     void setLoopRegionAvailable(bool available);
 
+    /// The tracks "Selected tracks only" exports as stems; none hides the option.
+    void setSelectedTracks(std::vector<TrackId> trackIds);
+
     // Static method to show as modal dialog
     static void showDialog(juce::Component* parent,
                            std::function<void(const Settings&)> exportCallback,
-                           bool hasTimeSelection = false, bool hasLoopRegion = false);
+                           bool hasTimeSelection = false, bool hasLoopRegion = false,
+                           std::vector<TrackId> selectedTracks = {});
 
   private:
     void onFormatChanged();
@@ -79,6 +92,9 @@ class ExportAudioDialog : public juce::Component {
 
     /// Fills the bitrate combo with the selected lossy format's choices.
     void populateBitrateOptions();
+
+    /// The stem switches only mean something while Stems is chosen.
+    void updateStemRows();
 
     // Format selection
     juce::Label formatLabel_;
@@ -115,6 +131,14 @@ class ExportAudioDialog : public juce::Component {
     juce::ToggleButton exportEntireSongButton_;
     juce::ToggleButton exportTimeSelectionButton_;
     juce::ToggleButton exportLoopRegionButton_;
+
+    // The mix or one file per track
+    juce::Label outputLabel_;
+    juce::ToggleButton exportMixButton_;
+    juce::ToggleButton exportStemsButton_;
+    juce::ToggleButton stemTrackEffectsCheckbox_;
+    juce::ToggleButton selectedTracksOnlyCheckbox_;
+    std::vector<TrackId> selectedTracks_;
 
     // Buttons
     juce::TextButton exportButton_;

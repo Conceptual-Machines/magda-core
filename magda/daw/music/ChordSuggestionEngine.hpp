@@ -56,8 +56,8 @@ class ChordSuggestionEngine {
     std::optional<std::pair<juce::String, juce::String>> inferKeyModeFromScaleDetection() const;
 
     juce::String getDetectedScalesString(float novelty = 0.3f) const;
-    std::vector<std::pair<juce::String, juce::String>> getTopDetectedScales(
-        int maxScales = 3, float novelty = 0.3f) const;
+    std::vector<ScaleWithChords> getTopDetectedScales(int maxScales = 3,
+                                                      float novelty = 0.3f) const;
 
     static int calculateTargetOctave(const std::vector<Chord>& recentChords);
 
