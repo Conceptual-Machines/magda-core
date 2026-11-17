@@ -273,7 +273,12 @@
     "bit_depth.24": "24-bit",
     "bit_depth.32_float": "32-bit 浮動小数点数",
     "dither.off": "Off",
-    "dither.shaped": "ノイズシェイプ"
+    "dither.shaped": "ノイズシェイプ",
+    "label.output": "出力：",
+    "option.mix": "ミックス",
+    "option.stems": "ステム（トラックごとに1ファイル）",
+    "toggle.track_fx": "トラックFX",
+    "toggle.selected_tracks": "選択したトラックのみ（{0}）"
   },
   "export_midi": {
     "label.midi_format": "{0} フォーマット：",
@@ -338,7 +343,34 @@
   "footer": {
     "tooltip.session": "セッション",
     "tooltip.arrangement": "アレンジメント",
-    "tooltip.mix": "ミックス"
+    "tooltip.mix": "ミックス",
+    "tooltip.model_downloading": "ローカルLLM：ダウンロード中、{0}",
+    "tooltip.model_checking": "ローカルLLM：ダウンロードを確認中、{0}%",
+    "menu.cancel_download": "ダウンロードをキャンセル",
+    "menu.open_local_settings": "ローカルLLMの設定を開く"
+  },
+  "model_download": {
+    "button.download": "モデルをダウンロード",
+    "button.cancel": "ダウンロードをキャンセル",
+    "button.resume": "ダウンロードを再開",
+    "button.discard": "破棄",
+    "status.connecting": "接続中",
+    "status.stopping": "停止中",
+    "status.progress": "{0} / {1}",
+    "status.rate": "{0}/秒",
+    "status.paused": "{0} / {1} で一時停止中",
+    "status.checking": "ダウンロードを確認中、{0}%",
+    "status.done": "ダウンロード完了",
+    "size.gb": "{0} GB",
+    "size.mb": "{0} MB",
+    "time.under_minute": "残り1分未満",
+    "time.minutes": "残り{0}分",
+    "time.hours": "残り{0}時間{1}分",
+    "error.unreachable": "ダウンロードサーバーに接続できませんでした",
+    "error.network": "接続が繰り返し切断されました",
+    "error.disk": "モデルファイルを書き込めませんでした",
+    "error.damaged": "ダウンロードしたファイルが破損していたため削除しました",
+    "error.move": "モデルを所定の場所に移動できませんでした"
   },
   "main_window": {
     "loading.initializing": "初期化しています",
@@ -371,7 +403,14 @@
     "error.no_midi_clips": "エクスポートする {0} クリップがありません。",
     "error.no_midi_notes": "エクスポートする{0}クリップにはノートがありません。",
     "error.midi_write_failed": "{0} ファイルの書き込みに失敗しました。",
-    "error.cannot_create_file": "ファイルを作成できませんでした："
+    "error.cannot_create_file": "ファイルを作成できませんでした：",
+    "progress.exporting_stems": "ステムをエクスポート中",
+    "choose_stems_folder": "ステムの保存先フォルダを選択",
+    "alert.stems_success_prefix": "{0} 個のステムをエクスポートしました：",
+    "alert.replace_title": "ファイルを置き換えますか？",
+    "alert.replace_body": "このフォルダには既に {0} 個のステムがあります。置き換えますか？",
+    "alert.replace_button": "置き換える",
+    "error.no_stems": "エクスポートするトラックがありません。すべてのトラックがミュートまたは無効です。"
   },
   "mix_analysis": {
     "cleanup_failed": "ミックス解析後のクリーンアップに失敗しました。"
@@ -456,7 +495,6 @@
     "slider.default_total_length": "長さ",
     "slider.default_view": "新規プロジェクトの表示",
     "slider.interval": "間隔",
-    "slider.render_ahead_time": "先読み",
     "slider.capture_buffer": "キャプチャ・バッファ",
     "slider.capture_length": "キャプチャの長さ",
     "toggle.enable_autosave": "自動保存を有効にする",
@@ -472,7 +510,6 @@
     "toggle.autohide_arrangement_scrollbars": "メインビューのスクロールバーを自動で隠す",
     "toggle.confirm_track_delete": "トラックを削除する前に確認する",
     "toggle.auto_monitor": "選択したトラックを自動でモニターする",
-    "toggle.render_ahead": "オーディオデバイスよりも先にレンダリングを再生する",
     "toggle.capture": "後でキャプチャすることができるように、再生するものを維持します。",
     "toggle.unload_plugins_on_freeze": "フリーズ時にプラグインをアンロードしてメモリを解放します",
     "toggle.open_macros_on_select": "デバイスまたはラック選択時にマクロを開く",
@@ -736,7 +773,7 @@
     "error.not_initialized_title": "オーディオ設定",
     "error.not_initialized": "オーディオエンジンが初期化されていません。オーディオ設定を開けません。",
     "crash_recovery.title": "オーディオドライバーがスキップされました",
-    "crash_recovery.message": "前回、MAGDAが{0}を開こうとした際に予期せず終了してしまったため、代わりにデフォルトのオーディオドライバーで起動しました。\n\nオーディオ/MIDI設定で、ドライバーを再度選択することができます。",
+    "crash_recovery.message": "前回 {0} を開いている途中で MAGDA が予期せず終了したため、代わりに既定のオーディオドライバーで起動しました。\n\n設定 > オーディオと MIDI でドライバーを選び直せます。",
     "crash_recovery.default": "オーディオドライバー",
     "section.device": "デバイス",
     "label.preview_output": "ブラウザファイルの試聴オン",

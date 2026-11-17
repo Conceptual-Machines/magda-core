@@ -273,7 +273,12 @@
     "bit_depth.24": "24 бит",
     "bit_depth.32_float": "32 бит с плавающей точкой",
     "dither.off": "Выкл.",
-    "dither.shaped": "С формированием шума"
+    "dither.shaped": "С формированием шума",
+    "label.output": "Вывод:",
+    "option.mix": "Микс",
+    "option.stems": "Стемы (по файлу на дорожку)",
+    "toggle.track_fx": "Эффекты дорожек",
+    "toggle.selected_tracks": "Только выбранные дорожки ({0})"
   },
   "export_midi": {
     "label.midi_format": "Формат {0}:",
@@ -338,7 +343,34 @@
   "footer": {
     "tooltip.session": "Сессия",
     "tooltip.arrangement": "Аранжировка",
-    "tooltip.mix": "Микс"
+    "tooltip.mix": "Микс",
+    "tooltip.model_downloading": "Локальная LLM: загрузка, {0}",
+    "tooltip.model_checking": "Локальная LLM: проверка загрузки, {0}%",
+    "menu.cancel_download": "Отменить загрузку",
+    "menu.open_local_settings": "Открыть настройки локальной LLM"
+  },
+  "model_download": {
+    "button.download": "Скачать модель",
+    "button.cancel": "Отменить загрузку",
+    "button.resume": "Возобновить загрузку",
+    "button.discard": "Удалить",
+    "status.connecting": "Подключение",
+    "status.stopping": "Остановка",
+    "status.progress": "{0} из {1}",
+    "status.rate": "{0}/с",
+    "status.paused": "Приостановлено: {0} из {1}",
+    "status.checking": "Проверка загрузки, {0}%",
+    "status.done": "Загрузка завершена",
+    "size.gb": "{0} ГБ",
+    "size.mb": "{0} МБ",
+    "time.under_minute": "осталось меньше минуты",
+    "time.minutes": "осталось {0} мин",
+    "time.hours": "осталось {0} ч {1} мин",
+    "error.unreachable": "Не удалось связаться с сервером загрузки",
+    "error.network": "Соединение постоянно обрывалось",
+    "error.disk": "Не удалось записать файл модели",
+    "error.damaged": "Загруженный файл был повреждён и удалён",
+    "error.move": "Не удалось переместить модель на место"
   },
   "main_window": {
     "loading.initializing": "Инициализация",
@@ -371,7 +403,14 @@
     "error.no_midi_clips": "Нет {0}-клипов для экспорта.",
     "error.no_midi_notes": "Нет {0}-клипов с нотами для экспорта.",
     "error.midi_write_failed": "Не удалось записать {0}-файл.",
-    "error.cannot_create_file": "Не удалось создать выходной файл:"
+    "error.cannot_create_file": "Не удалось создать выходной файл:",
+    "progress.exporting_stems": "Экспорт стемов",
+    "choose_stems_folder": "Выберите папку для стемов",
+    "alert.stems_success_prefix": "Стемы ({0}) экспортированы в:",
+    "alert.replace_title": "Заменить файлы?",
+    "alert.replace_body": "Некоторые стемы ({0}) уже есть в этой папке. Заменить их?",
+    "alert.replace_button": "Заменить",
+    "error.no_stems": "Нет дорожек для экспорта: все дорожки заглушены или выключены."
   },
   "mix_analysis": {
     "cleanup_failed": "Не удалось выполнить очистку после анализа микса."
@@ -456,7 +495,6 @@
     "slider.default_total_length": "Длина",
     "slider.default_view": "Вид нового проекта",
     "slider.interval": "Интервал",
-    "slider.render_ahead_time": "Упреждение",
     "slider.capture_buffer": "Буфер захвата",
     "slider.capture_length": "Длина захвата",
     "toggle.enable_autosave": "Автосохранение",
@@ -472,7 +510,6 @@
     "toggle.autohide_arrangement_scrollbars": "Автоскрытие полос прокрутки главного вида",
     "toggle.confirm_track_delete": "Подтверждение перед удалением дорожки",
     "toggle.auto_monitor": "Автомониторинг выбранной дорожки",
-    "toggle.render_ahead": "Рендерить воспроизведение с опережением аудиоустройства",
     "toggle.capture": "Сохранять сыгранное, чтобы его можно было захватить позже",
     "toggle.unload_plugins_on_freeze": "Выгружать плагины при заморозке, чтобы освободить память",
     "toggle.open_macros_on_select": "Открывать макросы при выборе устройств или рэков",
@@ -736,7 +773,7 @@
     "error.not_initialized_title": "Настройки аудио",
     "error.not_initialized": "Аудиодвижок не инициализирован. Невозможно открыть настройки аудио.",
     "crash_recovery.title": "Аудиодрайвер пропущен",
-    "crash_recovery.message": "В прошлый раз MAGDA неожиданно закрылась при открытии {0}, поэтому запущена со стандартным аудиодрайвером.\n\nВыбрать драйвер снова можно в настройках аудио/MIDI.",
+    "crash_recovery.message": "В прошлый раз MAGDA неожиданно закрылась при открытии {0}, поэтому запустилась с аудиодрайвером по умолчанию.\n\nДрайвер можно снова выбрать в разделе «Настройки > Аудио и MIDI».",
     "crash_recovery.default": "аудиодрайвера",
     "section.device": "Устройство",
     "label.preview_output": "Прослушивать файлы браузера через",

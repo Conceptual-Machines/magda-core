@@ -273,7 +273,12 @@
     "bit_depth.24": "24-bit",
     "bit_depth.32_float": "32 bits, flotante",
     "dither.off": "Apagado",
-    "dither.shaped": "Ruido definido"
+    "dither.shaped": "Ruido definido",
+    "label.output": "Salida:",
+    "option.mix": "Mezcla",
+    "option.stems": "Stems (un archivo por pista)",
+    "toggle.track_fx": "Efectos de pista",
+    "toggle.selected_tracks": "Solo las pistas seleccionadas ({0})"
   },
   "export_midi": {
     "label.midi_format": "Formato {0}:",
@@ -338,7 +343,34 @@
   "footer": {
     "tooltip.session": "Sesión",
     "tooltip.arrangement": "Arreglo",
-    "tooltip.mix": "Mezcla"
+    "tooltip.mix": "Mezcla",
+    "tooltip.model_downloading": "LLM local: descargando, {0}",
+    "tooltip.model_checking": "LLM local: comprobando la descarga, {0}%",
+    "menu.cancel_download": "Cancelar descarga",
+    "menu.open_local_settings": "Abrir ajustes del LLM local"
+  },
+  "model_download": {
+    "button.download": "Descargar un modelo",
+    "button.cancel": "Cancelar descarga",
+    "button.resume": "Reanudar descarga",
+    "button.discard": "Descartar",
+    "status.connecting": "Conectando",
+    "status.stopping": "Deteniendo",
+    "status.progress": "{0} de {1}",
+    "status.rate": "{0}/s",
+    "status.paused": "En pausa en {0} de {1}",
+    "status.checking": "Comprobando la descarga, {0}%",
+    "status.done": "Descarga completa",
+    "size.gb": "{0} GB",
+    "size.mb": "{0} MB",
+    "time.under_minute": "menos de un minuto restante",
+    "time.minutes": "quedan {0} min",
+    "time.hours": "quedan {0} h {1} min",
+    "error.unreachable": "No se pudo conectar con el servidor de descarga",
+    "error.network": "La conexión se cortaba una y otra vez",
+    "error.disk": "No se pudo escribir el archivo del modelo",
+    "error.damaged": "La descarga estaba dañada y se ha eliminado",
+    "error.move": "No se pudo mover el modelo a su ubicación"
   },
   "main_window": {
     "loading.initializing": "Inicializando",
@@ -371,7 +403,14 @@
     "error.no_midi_clips": "Sin {0} clips para exportar.",
     "error.no_midi_notes": "No hay {0} clips con notas para exportar.",
     "error.midi_write_failed": "Error al escribir {0} archivo.",
-    "error.cannot_create_file": "No se pudo crear archivo de salida:"
+    "error.cannot_create_file": "No se pudo crear archivo de salida:",
+    "progress.exporting_stems": "Exportando stems",
+    "choose_stems_folder": "Elija una carpeta para los stems",
+    "alert.stems_success_prefix": "{0} stems exportados a:",
+    "alert.replace_title": "¿Reemplazar archivos?",
+    "alert.replace_body": "{0} de los stems ya existen en esta carpeta. ¿Reemplazarlos?",
+    "alert.replace_button": "Reemplazar",
+    "error.no_stems": "No hay pistas que exportar: todas están silenciadas o desactivadas."
   },
   "mix_analysis": {
     "cleanup_failed": "Falló la limpieza después del análisis de mezcla."
@@ -456,7 +495,6 @@
     "slider.default_total_length": "Longitud",
     "slider.default_view": "Nueva vista",
     "slider.interval": "Intervalo",
-    "slider.render_ahead_time": "Anticipación",
     "slider.capture_buffer": "Búfer de captura",
     "slider.capture_length": "Duración de captura",
     "toggle.enable_autosave": "Activar autoguardado",
@@ -472,7 +510,6 @@
     "toggle.autohide_arrangement_scrollbars": "Ocultar deslizadores de vista principal",
     "toggle.confirm_track_delete": "Confirmar antes de eliminar pistas",
     "toggle.auto_monitor": "Automonitorear la pista seleccionada",
-    "toggle.render_ahead": "Renderizar la reproducción por adelantado al dispositivo de audio",
     "toggle.capture": "Conservar lo que se toca, para poder capturarlo después",
     "toggle.unload_plugins_on_freeze": "Descargar los plugins al congelar, para liberar su memoria",
     "toggle.open_macros_on_select": "Abrir macros al elegir dispositivos o racks",
@@ -736,7 +773,7 @@
     "error.not_initialized_title": "Ajustes de audio",
     "error.not_initialized": "Audio no iniciado. No se puede abrir los ajustes.",
     "crash_recovery.title": "Controlador de audio omitido",
-    "crash_recovery.message": "MAGDA se cerró inesperadamente la última vez al abrir {0}, así que se inició con el controlador de audio predeterminado.\n\nPuede volver a elegir un controlador en Ajustes de audio/MIDI.",
+    "crash_recovery.message": "MAGDA se cerró inesperadamente la última vez al abrir {0}, así que se inició con el controlador de audio predeterminado.\n\nSe puede volver a elegir un controlador en Ajustes > Audio y MIDI.",
     "crash_recovery.default": "el controlador de audio",
     "section.device": "Dispositivo",
     "label.preview_output": "Previsualizar archivos del navegador en",
