@@ -187,10 +187,6 @@ set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
 # JUCE is the explicit framework dependency for the app and native host.
-# 9.0.3 aborts when Windows refuses a MIDI input; upstream fixed it in 5a3189992f. Drop at the next bump.
-include(cmake/SubmodulePatches.cmake)
-magda_apply_submodule_patch(${CMAKE_CURRENT_SOURCE_DIR}/third_party/JUCE
-                            ${CMAKE_CURRENT_SOURCE_DIR}/patches/juce-win-midi-input-open-failure.patch)
 add_subdirectory(third_party/JUCE)
 
 # ARA SDK 2.3.0, the release JUCE 9 requires (its BREAKING_CHANGES.md) (#1579). Headers only.

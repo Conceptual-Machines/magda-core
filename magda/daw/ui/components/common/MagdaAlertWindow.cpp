@@ -491,23 +491,30 @@ void MagdaAlertWindow::paintShell(juce::Graphics& g) {
         messageLayout_.draw(g, messageArea_.toFloat());
 }
 
-juce::AlertWindow* createMagdaAlertWindow(const juce::String& title, const juce::String& message,
-                                          const juce::String& button1, const juce::String& button2,
-                                          const juce::String& button3,
-                                          juce::MessageBoxIconType iconType, int numButtons,
-                                          juce::Component* associatedComponent) {
-    auto* alert = new MagdaAlertWindow(title, message, iconType, associatedComponent);
-    const juce::KeyPress returnKey(juce::KeyPress::returnKey);
-    const juce::KeyPress escapeKey(juce::KeyPress::escapeKey);
-    if (numButtons == 1) {
-        alert->addButton(button1, 0, returnKey);
-    } else if (numButtons == 2) {
-        alert->addButton(button1, 1, returnKey);
-        alert->addButton(button2, 0, escapeKey);
-    } else if (numButtons == 3) {
-        alert->addButton(button1, 1, returnKey);
-        alert->addButton(button2, 2);
-        alert->addButton(button3, 0, escapeKey);
+std::unique_ptr<juce::AlertWindow> createMagdaAlertWindow(const juce::MessageBoxOptions& options) {
+    auto alert =
+        std::make_unique<MagdaAlertWindow>(options.getTitle(), options.getMessage(),
+                                           options.getIconType(), options.getAssociatedComponent());
+    const auto buttons = options.getButtons();
+    const auto count = buttons.size();
+
+    const auto* const preferred = std::find_if(buttons.begin(), buttons.end(),
+                                               [](const auto& b) { return b.isPreferredAction(); });
+    const auto returnIndex =
+        preferred != buttons.end() ? static_cast<size_t>(preferred - buttons.begin()) : 0;
+
+    auto cancelIndex = count > 1 ? count - 1 : count;
+    for (size_t i = 0; i < count; ++i)
+        if (buttons[i].getRole() == juce::MessageBoxButtonRole::cancel)
+            cancelIndex = i;
+
+    for (size_t i = 0; i < count; ++i) {
+        juce::KeyPress key;
+        if (i == returnIndex)
+            key = juce::KeyPress(juce::KeyPress::returnKey);
+        else if (i == cancelIndex)
+            key = juce::KeyPress(juce::KeyPress::escapeKey);
+        alert->addButton(buttons[i].getText(), buttons[i].getCode(), key);
     }
     return alert;
 }

@@ -410,8 +410,8 @@ class TransportPage : public juce::Component, private juce::Timer {
                 .withIconType(juce::MessageBoxIconType::QuestionIcon)
                 .withTitle(tr("connections.rotate_title").replace("{0}", transportName))
                 .withMessage(message)
-                .withButton(tr("connections.rotate_confirm"))
-                .withButton(tr("connections.rotate_cancel")),
+                .withButton(tr("connections.rotate_confirm"), 1)
+                .withButton(tr("connections.rotate_cancel"), 0),
             [safeThis](int result) {
                 if (result != 1 || safeThis == nullptr)
                     return;

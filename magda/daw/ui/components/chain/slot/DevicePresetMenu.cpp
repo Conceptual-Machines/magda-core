@@ -29,7 +29,7 @@ void showPresetErrorAsync(const juce::String& title, const juce::String& message
                                      .withIconType(juce::MessageBoxIconType::WarningIcon)
                                      .withTitle(title)
                                      .withMessage(message)
-                                     .withButton("OK"),
+                                     .withButton("OK", 0),
                                  nullptr);
 }
 
@@ -213,8 +213,8 @@ void showSaveMagdaPresetDialog(const magda::DeviceInfo& device,
                         .withIconType(juce::MessageBoxIconType::QuestionIcon)
                         .withTitle("Overwrite Preset?")
                         .withMessage("\"" + fullName + "\" already exists. Overwrite?")
-                        .withButton("Overwrite")
-                        .withButton("Cancel"),
+                        .withButton("Overwrite", 1)
+                        .withButton("Cancel", 0),
                     [doSave](int choice) {
                         if (choice == 1)
                             doSave();
@@ -291,8 +291,8 @@ void showSavePluginPresetDialog(const magda::DeviceInfo& device,
                         .withIconType(juce::MessageBoxIconType::QuestionIcon)
                         .withTitle("Overwrite Preset?")
                         .withMessage("\"" + target.getFileName() + "\" already exists. Overwrite?")
-                        .withButton("Overwrite")
-                        .withButton("Cancel"),
+                        .withButton("Overwrite", 1)
+                        .withButton("Cancel", 0),
                     [doSave](int choice) {
                         if (choice == 1)
                             doSave();

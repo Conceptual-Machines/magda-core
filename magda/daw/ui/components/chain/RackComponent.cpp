@@ -1122,7 +1122,7 @@ void showRackPresetErrorAsync(const juce::String& title, const juce::String& mes
                                      .withIconType(juce::MessageBoxIconType::WarningIcon)
                                      .withTitle(title)
                                      .withMessage(message)
-                                     .withButton("OK"),
+                                     .withButton("OK", 0),
                                  nullptr);
 }
 
@@ -1247,8 +1247,8 @@ void RackComponent::showSaveRackPresetDialog() {
                         .withIconType(juce::MessageBoxIconType::QuestionIcon)
                         .withTitle("Overwrite Rack Preset?")
                         .withMessage("\"" + name + "\" already exists. Overwrite?")
-                        .withButton("Overwrite")
-                        .withButton("Cancel"),
+                        .withButton("Overwrite", 1)
+                        .withButton("Cancel", 0),
                     [doSave](int r) {
                         if (r == 1)
                             doSave();

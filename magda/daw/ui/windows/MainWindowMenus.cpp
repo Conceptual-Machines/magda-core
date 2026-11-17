@@ -191,9 +191,9 @@ void MainWindow::offerMissingMediaRecovery(std::vector<ProjectManager::MissingMe
             .withIconType(juce::MessageBoxIconType::WarningIcon)
             .withTitle(tr("missing_media.title"))
             .withMessage(message)
-            .withButton(tr("missing_media.search_folder"))
-            .withButton(tr("missing_media.locate_files"))
-            .withButton(tr("missing_media.keep_offline"))
+            .withButton(tr("missing_media.search_folder"), 1)
+            .withButton(tr("missing_media.locate_files"), 2)
+            .withButton(tr("missing_media.keep_offline"), 0)
             .withAssociatedComponent(this),
         [safeThis, missing = std::move(missing), generation](int result) mutable {
             if (safeThis == nullptr || !safeThis->isCurrentProjectGeneration(generation))
@@ -278,8 +278,8 @@ void MainWindow::completeMissingMediaSearch(
             .withIconType(juce::MessageBoxIconType::InfoIcon)
             .withTitle(tr("missing_media.title"))
             .withMessage(message)
-            .withButton(tr("missing_media.locate_remaining"))
-            .withButton(tr("missing_media.keep_offline"))
+            .withButton(tr("missing_media.locate_remaining"), 1)
+            .withButton(tr("missing_media.keep_offline"), 0)
             .withAssociatedComponent(this),
         [safeThis, remaining = std::move(remaining), generation, repaired](int result) mutable {
             if (safeThis == nullptr || !safeThis->isCurrentProjectGeneration(generation))
@@ -365,8 +365,8 @@ void MainWindow::locateMissingMediaFiles(std::vector<ProjectManager::MissingMedi
                         .withIconType(juce::MessageBoxIconType::WarningIcon)
                         .withTitle(tr("missing_media.title"))
                         .withMessage(tr("missing_media.relink_failed"))
-                        .withButton(tr("missing_media.retry"))
-                        .withButton(tr("missing_media.skip"))
+                        .withButton(tr("missing_media.retry"), 1)
+                        .withButton(tr("missing_media.skip"), 0)
                         .withAssociatedComponent(safeThis.getComponent()),
                     [retrySafe, missing = std::move(missing), index, generation,
                      repairedCount](int result) mutable {
@@ -392,7 +392,7 @@ void MainWindow::finishMissingMediaRecovery(const juce::String& message, std::ui
                                      .withIconType(juce::MessageBoxIconType::InfoIcon)
                                      .withTitle(tr("missing_media.title"))
                                      .withMessage(message)
-                                     .withButton(tr("dialogs.ok"))
+                                     .withButton(tr("dialogs.ok"), 0)
                                      .withAssociatedComponent(this),
                                  [safeThis, generation](int) {
                                      if (safeThis != nullptr &&
