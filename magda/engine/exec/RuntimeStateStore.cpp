@@ -230,6 +230,7 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
 
             case OpKind::MergeMidi:
             case OpKind::MidiNoteGate:
+            case OpKind::ModSource:
                 if (auto* tap = realiseNoteOnTap(op.key))
                     bindings.midiTaps[op.key] = tap;
                 break;
@@ -332,7 +333,8 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
     for (const auto& op : livePlan.ops) {
         if (op.kind == OpKind::Meter)
             liveMeters.insert(op.key);
-        else if (op.kind == OpKind::MergeMidi || op.kind == OpKind::MidiNoteGate)
+        else if (op.kind == OpKind::MergeMidi || op.kind == OpKind::MidiNoteGate ||
+                 op.kind == OpKind::ModSource)
             liveMidiOps.insert(op.key);
     }
 

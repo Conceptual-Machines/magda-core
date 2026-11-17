@@ -591,23 +591,12 @@ std::optional<TrackRoutingView> TrackApiLive::getRouting(TrackId trackId) const 
     if (track == nullptr)
         return std::nullopt;
 
-    // Its own MIDI Out, or else the first track pulling its MIDI through an input.
-    juce::String midiOutput = track->midiOutputDevice;
-    const auto source = "track:" + juce::String(trackId);
-    if (!midiOutput.startsWith("track:")) {
-        for (const auto& candidate : tracks.getTracks()) {
-            if (candidate.midiInputDevice == source) {
-                midiOutput = "track:" + juce::String(candidate.id);
-                break;
-            }
-        }
-    }
     return TrackRoutingView{
         trackId,
         publicRouteId(RoutingMedia::Audio, RoutingDirection::Input, track->audioInputDevice),
         publicRouteId(RoutingMedia::Midi, RoutingDirection::Input, track->midiInputDevice),
         publicRouteId(RoutingMedia::Audio, RoutingDirection::Output, track->audioOutputDevice),
-        publicRouteId(RoutingMedia::Midi, RoutingDirection::Output, midiOutput),
+        publicRouteId(RoutingMedia::Midi, RoutingDirection::Output, track->midiOutputDevice),
         track->midiInputChannel,
         track->midiOutputChannel,
         track->recordArmed,
@@ -706,23 +695,9 @@ SetTrackRoutingResult TrackApiLive::setRouting(TrackId trackId, const TrackRouti
         }
     }
 
-    // A track pulling another's MIDI through its input is that source's one route:
-    // the source's MIDI Out and other pullers give way. Sent from the source, a
-    // route is the source's own and any number may name one destination (#2209).
-    if (midiInput) {
-        if (const auto sourceId = trackIdFromRoute(*midiInput)) {
-            for (auto& state : after)
-                if (state.trackId != trackId && state.midiInput == *midiInput)
-                    state.midiInput.clear();
-            if (auto* source = stateFor(after, *sourceId))
-                source->midiOutput.clear();
-        }
-    }
+    // A MIDI input and a MIDI Out are each their own track's route: any number of tracks
+    // may take one source as input, and a source's MIDI Out leaves them alone (#2209).
     if (midiOutput) {
-        const auto sourceRoute = "track:" + juce::String(trackId);
-        for (auto& state : after)
-            if (state.midiInput == sourceRoute)
-                state.midiInput.clear();
         if (const auto destinationId = trackIdFromRoute(*midiOutput);
             destinationId && stateFor(after, *destinationId) == nullptr)
             return {SetTrackRoutingStatus::EndpointNotFound, {}};

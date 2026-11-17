@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/engine/host/OfflineRenderModel.hpp"
+#include "plan/TrackRouting.hpp"
 
 /**
  * @file test_offline_render_model.cpp
@@ -261,4 +262,48 @@ TEST_CASE("A freeze renders its track up to the fader, unmuted, with nothing sol
     CHECK_FALSE(feeding->soloed);
     CHECK(feeding->volume == 0.5f);
     CHECK(feeding->audioOutputDevice == "track:2");
+}
+
+TEST_CASE("A stem sends its track alone to the master and keeps the faders",
+          "[engine][offline][54]") {
+    auto model = project();
+    model.tracks[0].soloed = true;
+
+    OfflineRenderRequest request;
+    request.useTrackEffects = false;
+    request.useMasterPlugins = false;
+
+    SECTION("a return hears its sender's send and none of its output") {
+        request.trackIds = {3, 1};
+        request.stemTrackId = 3;
+
+        const auto narrowed = narrowForRender(std::move(model), request);
+        const auto* aux = find(narrowed, 3);
+        const auto* sender = find(narrowed, 1);
+        REQUIRE(aux != nullptr);
+        REQUIRE(sender != nullptr);
+
+        CHECK(aux->audioOutputDevice == "master");
+        CHECK(sender->audioOutputDevice == magda::engine::kNoRoute);
+        REQUIRE(sender->sends.size() == 1);
+        CHECK_FALSE(sender->soloed);
+        CHECK(sender->volume == 0.5f);
+        CHECK(sender->pan == -0.25f);
+        CHECK(sender->chain.fxChainElements.size() == 2);
+    }
+
+    SECTION("a bus hears what is routed into it") {
+        request.trackIds = {2, 1};
+        request.stemTrackId = 2;
+
+        const auto narrowed = narrowForRender(std::move(model), request);
+        const auto* bus = find(narrowed, 2);
+        const auto* feeding = find(narrowed, 1);
+        REQUIRE(bus != nullptr);
+        REQUIRE(feeding != nullptr);
+
+        CHECK(bus->audioOutputDevice == "master");
+        CHECK(feeding->audioOutputDevice == "track:2");
+        CHECK(feeding->sends.empty());
+    }
 }

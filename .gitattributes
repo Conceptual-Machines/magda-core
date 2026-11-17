@@ -9,3 +9,7 @@ tests/goldens/plan/*.txt text eol=lf
 # as they were written. Two presets carry CRLF endings from a Windows save;
 # normalizing them would hand the loader bytes no released version ever wrote.
 tests/corpus/** -text
+
+# JUCE commits its sources with CRLF, so a patch against them carries CR bytes that a
+# translating checkout would strip.
+patches/juce-*.patch -text

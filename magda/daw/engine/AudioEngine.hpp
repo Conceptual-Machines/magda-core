@@ -6,6 +6,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
@@ -118,6 +119,10 @@ struct OfflineRenderRequest {
 
     /// The track a freeze renders: up to its fader, unmuted, with no track soloed.
     TrackId freezeTrackId = INVALID_TRACK_ID;
+
+    /// The track a stem renders: its output alone, faders kept, with no track soloed (#54).
+    /// trackIds holds it and its stemSources().
+    TrackId stemTrackId = INVALID_TRACK_ID;
 };
 
 struct OfflineRenderResult {
@@ -396,6 +401,12 @@ class AudioEngine : public AudioEngineListener {
     virtual std::shared_ptr<daw::audio::MagdaDevice> renderedDevice(
         const ChainNodePath& /*devicePath*/) const {
         return {};
+    }
+
+    /// Moves whenever what renderedDevice() answers may have changed, so a UI holding an
+    /// answer knows when to ask again. Message thread.
+    virtual std::uint64_t publishCount() const {
+        return 0;
     }
 
     /**

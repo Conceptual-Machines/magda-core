@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <magda/sdk/lockfree/SidechainTriggerBus.hpp>
 #include <map>
 #include <memory>
 #include <optional>
@@ -42,6 +43,7 @@
 #include "../../core/DrumGridPads.hpp"
 #include "../../core/MidiNoteCommands.hpp"
 #include "../../core/OpenProjectAddressing.hpp"
+#include "../../core/SelectionManager.hpp"
 #include "../../core/TempoMap.hpp"
 #include "../../core/TrackAvailability.hpp"
 #include "../../core/TrackCommands.hpp"
@@ -68,6 +70,7 @@
 #include "SessionArrangementCapture.hpp"
 #include "SlotLauncher.hpp"
 #include "TrackFreeze.hpp"
+#include "TracksBeingPlayed.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/ClipVoicePool.hpp"
 #include "exec/EngineSession.hpp"
@@ -421,6 +424,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                 private ClipManagerListener,
                                 private ProjectManagerListener,
                                 private BindingRegistryListener,
+                                private SelectionManagerListener,
                                 public OfflineRenderHost,
                                 public LaunchHost,
                                 public InsertCaptureHost {
@@ -515,7 +519,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         publishMeters();
         publishDeviceMeters();
         publishRackMeters();
-        publishPadTriggers();
+        publishNoteTriggers();
 
         for (const auto& line : trace_.drain())
             EngineTrace::print(line);
@@ -650,14 +654,22 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     }
 
     /// The notes each pad's gate passed since the last tick, as the grid notes
-    /// that started them (#2669).
-    void publishPadTriggers() {
-        if (session_ == nullptr || deviceMeters_ == nullptr)
+    /// that started them (#2669), and the notes each track's note-triggered
+    /// modifiers were fed, as retriggers for the model's copy of them (#3305).
+    void publishNoteTriggers() {
+        if (session_ == nullptr)
             return;
 
         session_->forEachNoteOnTap([this](const engine::OpKey& key, engine::NoteOnTap& tap) {
             const auto started = tap.take();
-            if (started.none())
+            if (key.role == engine::OpRole::ModulationTap) {
+                if (started.any())
+                    SidechainTriggerBus::getInstance().triggerNoteOn(key.trackId);
+                if (tap.takeEnded())
+                    TrackManager::getInstance().triggerMidiNotesEnded(key.trackId);
+                return;
+            }
+            if (started.none() || deviceMeters_ == nullptr)
                 return;
 
             const auto grid = devicePaths_.find(key.deviceKey());
@@ -724,6 +736,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         ClipManager::getInstance().addListener(this);
         ProjectManager::getInstance().addListener(this);
         BindingRegistry::getInstance().addListener(this);
+        SelectionManager::getInstance().addListener(this);
         devices_->addAudioCallback(this);
     }
 
@@ -738,6 +751,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         devices_->removeAudioCallback(this);
         stopRecording(true, false);
         stopClockPorts(clockPorts_);
+        SelectionManager::getInstance().removeListener(this);
         BindingRegistry::getInstance().removeListener(this);
         ProjectManager::getInstance().removeListener(this);
         ClipManager::getInstance().removeListener(this);
@@ -768,7 +782,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         options.tracksMissingDevices = tracksHoldingUnregisteredDevices(tracks, master);
         if (sessionRendersAhead_) {
             options.sessionTracks = sessionTracks();
-            options.aheadAudioOnly = true;
+            options.playedInstruments = playedInstruments();
         }
         auto plan = engine::compileRenderPlan(tracks, master, options);
 
@@ -796,11 +810,48 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         return tracks;
     }
 
+    static std::set<TrackId> playedInstruments() {
+        return tracksBeingPlayed(TrackManager::getInstance().getTracks(),
+                                 SelectionManager::getInstance(), ClipManager::getInstance());
+    }
+
+    /// A selection that moves which instruments are played moves the plan's boundary.
+    void selectionMoved() {
+        if (sessionRendersAhead_ && playedInstruments() != compiledPlayedInstruments_)
+            wantPlan();
+    }
+
+    void selectionTypeChanged(SelectionType) override {
+        selectionMoved();
+    }
+    void trackSelectionChanged(TrackId) override {
+        selectionMoved();
+    }
+    void multiTrackSelectionChanged(const std::unordered_set<TrackId>&) override {
+        selectionMoved();
+    }
+    void clipSelectionChanged(ClipId) override {
+        selectionMoved();
+    }
+    void multiClipSelectionChanged(const std::unordered_set<ClipId>&) override {
+        selectionMoved();
+    }
+    void noteSelectionChanged(const NoteSelection&) override {
+        selectionMoved();
+    }
+    void deviceSelectionChanged(const DeviceSelection&) override {
+        selectionMoved();
+    }
+    void chainNodeSelectionChanged(const ChainNodePath&) override {
+        selectionMoved();
+    }
+
     bool publishPlan(std::shared_ptr<const engine::RenderPlan> plan = nullptr) {
         const auto& model = TrackManager::getInstance().getTracks();
         const auto* master = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
         if (session_ == nullptr || master == nullptr)
             return false;
+        const auto started = juce::Time::getMillisecondCounterHiRes();
 
         // Before the plan binds them, so an "all" route resolves to the inputs
         // this machine has now rather than to whichever of them has already
@@ -813,6 +864,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // two walks that disagree (#2570). Only a structural edit moves a
         // device, which is what gets here.
         devicePaths_ = adapter::devicePathsIn(model, *master);
+        deviceKeys_.clear();
+        for (const auto& [key, path] : devicePaths_)
+            deviceKeys_.emplace(path, key);
         rackIds_ = modelRacks(model, *master);
 
         const auto tracks = playedTracks();
@@ -829,7 +883,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         if (plan == nullptr)
             plan = compilePlan(tracks, *master);
+        const auto compiled = juce::Time::getMillisecondCounterHiRes();
         compiledSessionTracks_ = sessionRendersAhead_ ? sessionTracks() : std::set<TrackId>{};
+        auto played = sessionRendersAhead_ ? playedInstruments() : std::set<TrackId>{};
+        const auto playedMoved = played != compiledPlayedInstruments_;
+        compiledPlayedInstruments_ = std::move(played);
         report("plan", plan->diagnostics);
 
         // Values and ids off the model rather than what plays: a frozen chain's
@@ -841,6 +899,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         const auto ids = idsToRetain(valueTracks, *master);
         const auto result = session_->publish(plan, context_, ids, std::move(values));
         report("publish", result.messages);
+        ++publishCount_;
+
+        // How long this held the message thread, and whether a selection moved it (#1898).
+        const auto finished = juce::Time::getMillisecondCounterHiRes();
+        juce::Logger::writeToLog(
+            "[engine] plan published in " + juce::String(finished - started, 1) + " ms (compile " +
+            juce::String(compiled - started, 1) + ", swap " + juce::String(finished - compiled, 1) +
+            ")" + (playedMoved ? ", played instruments moved" : ""));
 
         if (!result.published)
             return false;
@@ -2597,6 +2663,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             araTracks_->forgetProject();
         routing_.reset();
         devicePaths_.clear();
+        deviceKeys_.clear();
+        ++publishCount_;
 
         // Before the next project names the same addresses, since the first
         // tick that reports over them is a frame away (#2570).
@@ -3785,10 +3853,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /**
      * @brief The MAGDA device rendering at @p devicePath, or null (#2585).
      *
-     * Addressed off the same map the slot meters read, so the device a
-     * faceplate draws and the device it reads telemetry off cannot come from
-     * two walks that disagree -- and so a repaint costs a scan of the project's
-     * devices rather than a walk of its chains.
+     * Addressed off the same reading of the model the slot meters use, so the
+     * device a faceplate draws and the device it reads telemetry off cannot
+     * come from two walks that disagree.
      *
      * The store's lease comes back with it: a UI reading a ring holds the
      * instance open for the duration of the read, whatever a publish does to
@@ -3798,12 +3865,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (session_ == nullptr || !devicePath.isValid())
             return {};
 
-        const auto slot = std::ranges::find(devicePaths_, devicePath,
-                                            [](const auto& entry) { return entry.second; });
-        if (slot == devicePaths_.end())
+        const auto slot = deviceKeys_.find(devicePath);
+        if (slot == deviceKeys_.end())
             return {};
 
-        return session_->device(slot->first);
+        return session_->device(slot->second);
     }
 
     void invalidateParameterWritesAt(const ChainNodePath& devicePath) const {
@@ -3820,6 +3886,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         auto* device = magdaIn(*held);
         return device != nullptr ? std::shared_ptr<audio::MagdaDevice>{std::move(held), device}
                                  : nullptr;
+    }
+
+    std::uint64_t publishCount() const {
+        return publishCount_;
     }
 
     std::optional<float> observedParameter(const ChainNodePath& devicePath, int paramIndex) const {
@@ -4213,6 +4283,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// The tracks the live plan renders at the callback for their session clips, and whether
     /// the session renders anything ahead, as it was made.
     std::set<TrackId> compiledSessionTracks_;
+    std::set<TrackId> compiledPlayedInstruments_;
     bool sessionRendersAhead_ = false;
 
     /// How far the session renders ahead (#1898), applied when it is made.
@@ -4252,6 +4323,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// Where each device the model holds sits, by the key its ops carry.
     /// Rebuilt with every plan, which is what a device moving is (#2570).
     std::map<engine::DeviceKey, ChainNodePath> devicePaths_;
+
+    /// The same map turned round, for the faceplates that look a device up by path every frame.
+    std::map<ChainNodePath, engine::DeviceKey> deviceKeys_;
+
+    /// Moves whenever what renderedDevice() answers may have changed.
+    std::uint64_t publishCount_ = 0;
 
     /// The racks the model holds, which a rack id alone addresses (#2649).
     std::set<RackId> rackIds_;
@@ -4460,6 +4537,10 @@ HostParameters EngineHost::describeDeviceParameters(const ChainNodePath& deviceP
 std::shared_ptr<audio::MagdaDevice> EngineHost::renderedDevice(
     const ChainNodePath& devicePath) const {
     return impl_->renderedDevice(devicePath);
+}
+
+std::uint64_t EngineHost::publishCount() const {
+    return impl_->publishCount();
 }
 
 void EngineHost::invalidateParameterWritesAt(const ChainNodePath& devicePath) const {

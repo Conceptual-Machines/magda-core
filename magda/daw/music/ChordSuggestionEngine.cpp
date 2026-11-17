@@ -321,22 +321,14 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
     diatonicCandidates = filterRecentChords(diatonicCandidates, recentChords);
     nonDiatonicCandidates = filterRecentChords(nonDiatonicCandidates, recentChords);
 
-    // Filter candidates based on scales, respecting novelty parameter
+    // Novelty does not loosen the scale filter; it widens the detected scales instead (#3291).
     std::set<int> allowedPitchClasses;
-    bool scaleFiltersDiatonic = false;
-    bool scaleFiltersNonDiatonic = false;
-    const auto inScale = [&](const SuggestionItem& candidate) {
-        if (candidate.source == "polychord")
+    const auto passesScaleFilter = [&](const SuggestionItem& candidate) {
+        if (allowedPitchClasses.empty() || candidate.source == "polychord")
             return true;
         return std::ranges::all_of(candidate.chord.notes, [&](const auto& note) {
             return allowedPitchClasses.contains(note.noteNumber % 12);
         });
-    };
-    // Whether the scale filter, as novelty has set it, admits @p candidate.
-    const auto passesScaleFilter = [&](const SuggestionItem& candidate) {
-        const bool filtered =
-            candidate.source == "diatonic" ? scaleFiltersDiatonic : scaleFiltersNonDiatonic;
-        return !filtered || inScale(candidate);
     };
 
     if (params.useScaleFiltering) {
@@ -344,35 +336,13 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
         if (!params.explicitScalePitchClasses.empty()) {
             allowedPitchClasses = params.explicitScalePitchClasses;
         } else {
-            auto detectedScales =
-                getTopDetectedScales(3, params.novelty);  // Get top 3 scales (novelty-aware)
-            for (const auto& [scaleRoot, scaleName] : detectedScales) {
-                int scaleRootSemitone = noteToSemitone(scaleRoot);
-                if (scaleRootSemitone < 0)
-                    continue;
-
-                const auto& allScales = getAllScalesWithChordsCached();
-                for (const auto& scale : allScales) {
-                    if (juce::String(scale.name) == scaleName &&
-                        scale.rootNote % 12 == scaleRootSemitone) {
-                        for (int pitch : scale.pitches) {
-                            allowedPitchClasses.insert(pitch % 12);
-                        }
-                        break;
-                    }
-                }
-            }
+            for (const auto& scale : getTopDetectedScales(3, params.novelty))
+                for (int pitch : scale.pitches)
+                    allowedPitchClasses.insert(pitch % 12);
         }
 
-        if (!allowedPitchClasses.empty() && params.novelty < 0.8f) {
-            float filterStrength =
-                1.0f - (params.novelty / 0.8f);  // 1.0 at novelty=0, 0.0 at novelty=0.8
-
-            scaleFiltersDiatonic = filterStrength > 0.2f;
-            scaleFiltersNonDiatonic = filterStrength > 0.5f;
-            std::erase_if(diatonicCandidates, std::not_fn(passesScaleFilter));
-            std::erase_if(nonDiatonicCandidates, std::not_fn(passesScaleFilter));
-        }
+        std::erase_if(diatonicCandidates, std::not_fn(passesScaleFilter));
+        std::erase_if(nonDiatonicCandidates, std::not_fn(passesScaleFilter));
     }
 
     // Mix candidates based on novelty (following aideas-lab logic)
@@ -1993,9 +1963,9 @@ juce::String ChordSuggestionEngine::getDetectedScalesString(float /*novelty*/) c
     }
 }
 
-std::vector<std::pair<juce::String, juce::String>> ChordSuggestionEngine::getTopDetectedScales(
-    int maxScales, float novelty) const {
-    std::vector<std::pair<juce::String, juce::String>> topScales;
+std::vector<ScaleWithChords> ChordSuggestionEngine::getTopDetectedScales(int maxScales,
+                                                                         float novelty) const {
+    std::vector<ScaleWithChords> topScales;
 
     if (recentChords_.empty()) {
         return topScales;
@@ -2082,19 +2052,8 @@ std::vector<std::pair<juce::String, juce::String>> ChordSuggestionEngine::getTop
         for (int i = 0; i < std::min(maxScales, static_cast<int>(detectedScales.size())); ++i) {
             const auto& [scale, matchScore] = detectedScales[i];
 
-            if (matchScore.matchedNotes.size() >= 3) {
-                juce::String rootNote = NOTE_NAMES[scale.rootNote % 12];
-                juce::String scaleName = juce::String(scale.name);
-
-                // Normalize mode names
-                if (scaleName.contains("Ionian")) {
-                    scaleName = scaleName.replace("Ionian", "Major");
-                } else if (scaleName.contains("Aeolian")) {
-                    scaleName = scaleName.replace("Aeolian", "Minor");
-                }
-
-                topScales.emplace_back(rootNote, scaleName);
-            }
+            if (matchScore.matchedNotes.size() >= 3)
+                topScales.push_back(scale);
         }
 
     } catch (const std::exception& e) {

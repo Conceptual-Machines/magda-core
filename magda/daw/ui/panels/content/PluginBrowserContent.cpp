@@ -129,6 +129,24 @@ void applyRawPluginFieldsToDevice(const PluginBrowserInfo& plugin, magda::Device
     device.browserCategoryOverride = plugin.categoryOverride;
 }
 
+magda::DeviceInfo deviceForPlugin(const PluginBrowserInfo& plugin) {
+    magda::DeviceInfo device;
+    applyRawPluginFieldsToDevice(plugin, device);
+    device.uniqueId = plugin.uniqueId;
+    device.fileOrIdentifier = plugin.fileOrIdentifier;
+
+    if (plugin.format == "VST3") {
+        device.format = magda::PluginFormat::VST3;
+    } else if (plugin.format == "AU" || plugin.format == "AudioUnit") {
+        device.format = magda::PluginFormat::AU;
+    } else if (plugin.format == "LV2") {
+        device.format = magda::PluginFormat::LV2;
+    } else if (plugin.format == "Internal") {
+        device.format = magda::PluginFormat::Internal;
+    }
+    return device;
+}
+
 }  // namespace
 
 // =============================================================================
@@ -252,8 +270,7 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
     }
 
     void itemDoubleClicked(const juce::MouseEvent&) override {
-        // Would add plugin to selected track's FX chain
-        DBG("Double-clicked plugin: " + plugin_.name);
+        owner_.addToSelectedTrack(plugin_);
     }
 
     int getItemHeight() const override {
@@ -811,6 +828,14 @@ void PluginBrowserContent::filterBySearch(const juce::String& searchText) {
     rootItem_->setOpen(true);
 }
 
+void PluginBrowserContent::addToSelectedTrack(const PluginBrowserInfo& plugin) {
+    auto& tm = magda::TrackManager::getInstance();
+    const auto selectedTrack = tm.getSelectedTrack();
+    // TODO: make the insertion point configurable; track devices display before racks.
+    if (selectedTrack != magda::INVALID_TRACK_ID)
+        tm.addDeviceToTrack(selectedTrack, deviceForPlugin(plugin));
+}
+
 void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin,
                                                  juce::Point<int> position) {
     juce::PopupMenu menu;
@@ -889,47 +914,16 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
         [this, plugin](int result) {
             auto& tm = magda::TrackManager::getInstance();
 
-            // Helper to create device info from plugin
-            auto createDevice = [&plugin]() {
-                magda::DeviceInfo device;
-                applyRawPluginFieldsToDevice(plugin, device);
-                // External plugin identification
-                device.uniqueId = plugin.uniqueId;
-                device.fileOrIdentifier = plugin.fileOrIdentifier;
-
-                if (plugin.format == "VST3") {
-                    device.format = magda::PluginFormat::VST3;
-                } else if (plugin.format == "AU" || plugin.format == "AudioUnit") {
-                    device.format = magda::PluginFormat::AU;
-                } else if (plugin.format == "LV2") {
-                    device.format = magda::PluginFormat::LV2;
-                } else if (plugin.format == "Internal") {
-                    device.format = magda::PluginFormat::Internal;
-                }
-                return device;
-            };
-
             switch (result) {
-                case 1: {
-                    // Add to selected track
-                    // TODO: Make insertion position user-configurable:
-                    // - Currently adds to track->devices which displays BEFORE racks
-                    // - Option to add after racks (true end of signal chain)
-                    // - Option to add to first chain if racks exist
-                    auto selectedTrack = tm.getSelectedTrack();
-                    if (selectedTrack != magda::INVALID_TRACK_ID) {
-                        tm.addDeviceToTrack(selectedTrack, createDevice());
-                        DBG("Added device: " + plugin.name + " to track " +
-                            juce::String(selectedTrack));
-                    }
+                case 1:
+                    addToSelectedTrack(plugin);
                     break;
-                }
                 case 2: {
                     // Add to selected chain
                     if (tm.hasSelectedChain()) {
                         tm.addDeviceToChain(tm.getSelectedChainTrackId(),
                                             tm.getSelectedChainRackId(), tm.getSelectedChainId(),
-                                            createDevice());
+                                            deviceForPlugin(plugin));
                         DBG("Added device: " + plugin.name + " to selected chain");
                     }
                     break;

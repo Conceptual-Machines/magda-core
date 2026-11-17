@@ -112,11 +112,11 @@ class ArrangementRowAlignmentTest final : public juce::UnitTest {
     void testWhatEachTypeExposes() {
         beginTest("Each track type exposes its own controls and no others");
 
-        // #3228: volume and the audition control, nothing else.
+        // #3228: volume and the audition control; #3325: record-arm.
         const auto chord = TrackControlsPolicy::forType(TrackType::Chord);
-        expect(chord.gain && chord.mute, "volume and the audition control");
+        expect(chord.gain && chord.mute && chord.record, "volume, audition and record-arm");
         expect(chord.muteStyle == TrackControlsPolicy::MuteStyle::ChordAudition);
-        expect(!chord.pan && !chord.solo && !chord.record && !chord.monitor && !chord.automation);
+        expect(!chord.pan && !chord.solo && !chord.monitor && !chord.automation);
         expect(!chord.anyRouting() && !chord.sends && !chord.meter);
 
         for (const auto type : {TrackType::Aux, TrackType::Group}) {

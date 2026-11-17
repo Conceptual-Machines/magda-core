@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ranges>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -564,14 +565,30 @@ std::vector<std::string> pluginsFromTokens(const std::vector<std::string>& token
     return out;
 }
 
+// The conv net has no abstain label, so it maps any input onto a command:
+// "hello" became a track delete (#3312). Require a word naming an operation.
+bool namesAnOperation(const std::vector<std::string>& tokens) {
+    static const std::set<std::string> kOperationWords = {
+        "add",    "apply",  "bin",    "boost",    "bring",     "call",      "change", "clear",
+        "color",  "colour", "create", "cut",      "delete",    "disable",   "ditch",  "drop",
+        "enable", "give",   "group",  "groove",   "grooves",   "highlight", "insert", "isolate",
+        "kill",   "label",  "load",   "lose",     "lower",     "make",      "move",   "mute",
+        "new",    "pan",    "put",    "quantise", "quantize",  "raise",     "reduce", "remove",
+        "rename", "rid",    "scrap",  "select",   "set",       "shift",     "show",   "silence",
+        "snap",   "solo",   "spin",   "throw",    "transpose", "trash",     "turn",   "unmute",
+        "unsolo", "use",
+    };
+    return std::ranges::any_of(tokens,
+                               [](const auto& t) { return kOperationWords.contains(toLower(t)); });
+}
+
 // tagging._refine_intent
 //
 // Guards the one intent whose errors are unrecoverable. delete_track destroys
-// work, so it is deterministic rather than trusted to the classifier: without a
-// resolved track name it needs BOTH a deletion verb AND a mention of a track.
-// "undo that" has neither and used to render track(name="").delete(); "scrap
-// that" has the verb but no object, since "that" is the previous action rather
-// than something in the project.
+// work, so it is deterministic rather than trusted to the classifier: it needs
+// a deletion verb AND a target, either a resolved name or the word "track".
+// "hello" resolved a name and deleted that track (#3312); "scrap that" has the
+// verb but no object, since "that" is the previous action.
 //
 // mute_track and solo_track are retired from the encoder's intent set but stay
 // here because the renderer is shared — the conv net's shipped weights still
@@ -590,8 +607,6 @@ std::string refineIntent(const std::string& intent, const std::vector<std::strin
     }
     if (intent != "delete_track")
         return intent;
-    if (!name.empty())
-        return "delete_track";  // an explicit target settles it
 
     static const char* kDeleteVerbs[] = {"delete", "remove", "bin",  "trash", "scrap",
                                          "kill",   "ditch",  "lose", "rid",   "drop"};
@@ -600,7 +615,8 @@ std::string refineIntent(const std::string& intent, const std::vector<std::strin
     for (const char* v : kDeleteVerbs)
         if (wordSearch(text, v))
             hasVerb = true;
-    const bool namesATrack = wordSearch(text, "track") || wordSearch(text, "tracks");
+    const bool namesATrack =
+        !name.empty() || wordSearch(text, "track") || wordSearch(text, "tracks");
     return (hasVerb && namesATrack) ? "delete_track" : "unsupported";
 }
 
@@ -733,6 +749,8 @@ std::string CommandModel::generate(const std::string& text) const {
     DBG("MAGDA CommandModel: in=\"" + juce::String(text) + "\" intent=" + juce::String(p.intent) +
         " [" + tagged + "]");
 
+    if (!namesAnOperation(p.tokens))
+        return "";
     return renderPrediction(p);
 }
 
@@ -824,15 +842,15 @@ std::string CommandModel::renderPrediction(const Prediction& p) {
             plugs.push_back(aliasToken(pl));
         if (plugs.empty())
             plugs = pluginsFromTokens(tokens);
-        if (plugs.empty()) {
-            // Match Python q(None) -> "None" when nothing resolves.
-            lines.push_back(trackRef() + ".fx.add(name=" + q("None") + ")");
-        } else {
-            for (const auto& p : plugs)  // fan out, one fx.add per plugin
-                lines.push_back(trackRef() + ".fx.add(name=" + q(p) + ")");
-        }
+        if (plugs.empty())
+            return "";               // nothing to add: abstain (#3312)
+        for (const auto& p : plugs)  // fan out, one fx.add per plugin
+            lines.push_back(trackRef() + ".fx.add(name=" + q(p) + ")");
     } else if (intent == "rename_track") {
-        lines.push_back(trackRef() + ".track.set(name=" + q(canonName(s.first("NEW_NAME"))) + ")");
+        const std::string newName = canonName(s.first("NEW_NAME"));
+        if (newName.empty())
+            return "";
+        lines.push_back(trackRef() + ".track.set(name=" + q(newName) + ")");
     } else if (intent == "delete_track") {
         lines.push_back(trackRef() + ".delete()");
     } else if (intent == "mute_track") {
@@ -883,8 +901,9 @@ std::string CommandModel::renderPrediction(const Prediction& p) {
             if (c)
                 colour = c;
         }
-        // Match Python q(None) -> "None" when no colour word resolves.
-        lines.push_back(trackRef() + ".track.set(colour=" + q(colour ? colour : "None") + ")");
+        if (colour == nullptr)
+            return "";
+        lines.push_back(trackRef() + ".track.set(colour=" + q(colour) + ")");
     } else if (intent == "set_track_volume") {
         double v = s.has("VALUE") ? parseNumber(s.first("VALUE")) : 0.0;
         lines.push_back(trackRef() + ".track.set(volume_db=" + fmtG(v) + ")");
@@ -953,8 +972,10 @@ std::string CommandModel::renderPrediction(const Prediction& p) {
             lines.push_back(trackRef() + ".clip.set(enabled=" + flag + ")");
         }
     } else if (intent == "clip_rename") {
-        lines.push_back(trackRef() + ".clip.rename(name=" + q(canonName(s.first("CLIP_NAME"))) +
-                        ")");
+        const std::string clipName = canonName(s.first("CLIP_NAME"));
+        if (clipName.empty())
+            return "";
+        lines.push_back(trackRef() + ".clip.rename(name=" + q(clipName) + ")");
     } else if (intent == "clip_delete") {
         lines.push_back(trackRef() + ".clip.delete(index=" + fmtG(valueOrFirstNumber(s, tokens)) +
                         ")");

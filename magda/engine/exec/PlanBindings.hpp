@@ -112,8 +112,9 @@ struct PlanBindings {
      * Keyed by OpKey for the same reason the meters are: this names a place in
      * the signal, not a thing in the project. The place worth binding is a
      * track's TrackMidiInput op, which is everything feeding its chain before
-     * any device sees it. A pad's MidiNoteGate is the other, for its trigger
-     * light (#2669).
+     * any device sees it. A pad's MidiNoteGate is another, for its trigger
+     * light (#2669), and a ModSource the third, for the notes its modifiers
+     * were fed (#3305).
      *
      * Optional exactly like a meter. Nothing binds these in a render nobody is
      * observing, and an unbound op is not reported.

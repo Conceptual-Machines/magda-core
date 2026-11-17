@@ -34,8 +34,9 @@ void ClipInspector::paint(juce::Graphics& g) {
 
     // Full bar fills the name block with the clip colour, as the track inspector does.
     if (nameFilled_) {
-        g.setColour(nameFill_);
-        g.fillRoundedRectangle(nameArea_.toFloat().expanded(6.0f, 3.0f), 4.0f);
+        const auto block = nameArea_.toFloat().expanded(6.0f, 3.0f);
+        g.setGradientFill(magda::deriveTrackHeadGradient(nameColour_, 0.0f, block));
+        g.fillRoundedRectangle(block, 4.0f);
     }
 
     // Hairline under the header, where the scrolling sections begin.
@@ -90,13 +91,13 @@ void ClipInspector::applyHeaderStyle() {
         nameFilled_ = fullBar;
         resized();
     }
-    nameFill_ = fullBar ? magda::deriveTrackSwatch(clip->colour) : juce::Colours::transparentBlack;
+    nameColour_ = fullBar ? clip->colour : juce::Colour();
     clipNameValue_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     clipNameValue_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
-    clipNameValue_.setColour(juce::Label::textColourId,
-                             fullBar ? juce::Colours::white : ActiveTheme::getTextColour());
+    const auto ink = fullBar ? magda::trackHeadNameColour() : ActiveTheme::getTextColour();
+    clipNameValue_.setColour(juce::Label::textColourId, ink);
     clipSubline_.setColour(juce::Label::textColourId,
-                           fullBar ? juce::Colours::white.withAlpha(0.7f)
+                           fullBar ? ink.withAlpha(0.7f)
                                    : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
     repaint();
 }

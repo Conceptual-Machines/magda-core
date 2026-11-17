@@ -162,6 +162,24 @@ class ChordProgressionConverterTest final : public juce::UnitTest {
             }
         }
 
+        beginTest("extractChordsFromNotes: a chord played a little late keeps its bar");
+        {
+            // C let go and G struck just after the bar line, as played rather than drawn.
+            std::vector<MidiNote> notes;
+            for (int p : {60, 64, 67})
+                notes.push_back(note(p, 0.0, 4.05));
+            for (int p : {67, 71, 74})
+                notes.push_back(note(p, 4.08, 3.92));
+
+            const auto chords = extractChordsFromNotes(notes, 4);
+            expectEquals(static_cast<int>(chords.size()), 2);
+            if (chords.size() == 2) {
+                expect(chords[1].root == ChordRoot::G, "the late G is read for its own bar");
+                expectWithinAbsoluteError(chords[1].startBeat, 4.0, 1e-9);
+                expectEquals(static_cast<int>(chords[1].noteIndices.size()), 3);
+            }
+        }
+
         beginTest("extractChordsFromNotes: a lone note is not a chord");
         {
             std::vector<MidiNote> notes{note(60, 0.0, 4.0)};

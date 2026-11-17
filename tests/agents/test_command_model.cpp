@@ -85,3 +85,35 @@ TEST_CASE("Command model matches Python float() on out-of-range numeric text",
     CHECK(CommandModel::renderPrediction(prediction) ==
           "track(name=\"Bass\").track.set(volume_db=-inf)");
 }
+
+// The conv net has no abstain label; questions and chat used to become track
+// creates, renames and deletes (#3312).
+TEST_CASE("Command model refuses requests that are not operations", "[agents][command_model]") {
+    CommandModel model;
+    for (const char* text :
+         {"What can you do in this DAW?", "@What can you do in this DAW?", "how do I add reverb?",
+          "what is a compressor?", "tell me a joke", "hello", "thanks", "can you help me?",
+          "why is my mix muddy?", "what plugins do I have?", "explain sidechain compression",
+          "I want something dreamy", "make it sound better", "undo that", "play", "stop"}) {
+        INFO(text);
+        CHECK(model.generate(text).empty());
+    }
+}
+
+TEST_CASE("Command model renderer abstains when a required slot is missing",
+          "[agents][command_model]") {
+    const auto render = [](std::string intent, std::vector<std::string> tokens,
+                           std::vector<std::string> tags) {
+        return CommandModel::renderPrediction(
+            {.intent = std::move(intent), .tokens = std::move(tokens), .tags = std::move(tags)});
+    };
+    CHECK(render("add_plugin", {"add", "something", "to", "Bass"}, {"O", "O", "O", "B-TRACK_NAME"})
+              .empty());
+    CHECK(
+        render("set_track_color", {"make", "Bass", "better"}, {"O", "B-TRACK_NAME", "O"}).empty());
+    CHECK(render("rename_track", {"rename", "Bass"}, {"O", "B-TRACK_NAME"}).empty());
+    CHECK(render("clip_rename", {"rename", "the", "clip"}, {"O", "O", "O"}).empty());
+    CHECK(render("delete_track", {"hello"}, {"B-TRACK_NAME"}).empty());
+    CHECK(render("delete_track", {"delete", "Pads"}, {"O", "B-TRACK_NAME"}) ==
+          "track(name=\"Pads\").delete()");
+}

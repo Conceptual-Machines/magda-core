@@ -167,11 +167,16 @@ class MidiActivityIndicator : public juce::Component {
         float dotY = bounds.getY() + 2.0f;  // Small padding from top
         auto dotBounds = juce::Rectangle<float>(dotX, dotY, dotSize, dotSize);
 
-        // Inactive state: neutral dimmed dot (dark on the selected fill)
-        g.setColour(onColouredHead_
-                        ? juce::Colours::white.withAlpha(0.4f)
-                        : ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.4f));
-        g.fillEllipse(dotBounds);
+        // Inactive state: neutral dimmed dot; on a full-bar head, in a dark socket (#3307).
+        if (onColouredHead_) {
+            g.setColour(headMarkSocket());
+            g.fillEllipse(dotBounds);
+            g.setColour(juce::Colours::white.withAlpha(0.45f));
+            g.fillEllipse(dotBounds.reduced(1.5f));
+        } else {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.4f));
+            g.fillEllipse(dotBounds);
+        }
 
         // Active state: bright cyan glow
         if (activity_ > 0.01f) {
@@ -472,7 +477,8 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
 
     // Register as ViewModeController listener
     ViewModeController::getInstance().addListener(this);
-    currentViewMode_ = ViewModeController::getInstance().getViewMode();
+    if (const auto mode = ViewModeController::getInstance().getViewMode(); showsTimeline(mode))
+        currentViewMode_ = mode;
 
     // Register as SelectionManager listener
     SelectionManager::getInstance().addListener(this);
@@ -600,6 +606,8 @@ void TrackHeadersPanel::timerCallback() {
 }
 
 void TrackHeadersPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profile*/) {
+    if (!showsTimeline(mode) || mode == currentViewMode_)
+        return;  // The arrangement is hidden in that mode; see MainView::viewModeChanged.
     currentViewMode_ = mode;
     tracksChanged();  // Rebuild with new visibility settings
 }
@@ -1019,7 +1027,13 @@ void TrackHeadersPanel::tracksChanged() {
 
     updateTrackHeaderLayout();
     updateHeaderSelectionColours();
+    namesAtBuild_.take();
     repaint();
+}
+
+void TrackHeadersPanel::rebuildIfRenamed() {
+    if (namesAtBuild_.isStale())
+        tracksChanged();
 }
 
 void TrackHeadersPanel::trackPropertyChanged(int trackId) {
@@ -1253,8 +1267,19 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
-    // Draw track headers and automation lane headers
+    // Draw track headers and automation lane headers, for the rows the repaint covers: a
+    // meter repaints a few pixels many times a second. A child's group strip reaches back
+    // across the row above, hence the previous row's top.
+    const auto clip = g.getClipBounds();
+    int rowTop = 0;
+    int previousRowTop = 0;
     for (size_t i = 0; i < trackHeaders.size(); ++i) {
+        const int rowBottom = rowTop + getTrackTotalHeight(static_cast<int>(i));
+        const bool inClip = rowBottom > clip.getY() && previousRowTop < clip.getBottom();
+        previousRowTop = std::exchange(rowTop, rowBottom);
+        if (!inClip)
+            continue;
+
         auto headerArea = getTrackHeaderArea(static_cast<int>(i));
         if (headerArea.intersects(getLocalBounds())) {
             paintTrackHeader(g, *trackHeaders[i], headerArea,
@@ -1409,7 +1434,7 @@ void TrackHeadersPanel::setGhostHeaders(const juce::StringArray& labels,
     repaint();
 }
 
-// Names read light on every head; a full-bar track colour turns them white. Values are
+// Names read light on every head; a full-bar head gives them its own name colour. Values are
 // JetBrains Mono.
 void TrackHeadersPanel::updateHeaderSelectionColours() {
     const auto& config = Config::getInstance();
@@ -1422,7 +1447,7 @@ void TrackHeadersPanel::updateHeaderSelectionColours() {
             fullBar && !header->isMaster && header->trackColour != juce::Colour(0xFF444444);
         header->nameLabel->setColour(juce::Label::textColourId,
                                      colouredHead
-                                         ? juce::Colours::white
+                                         ? trackHeadNameColour()
                                          : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         header->nameLabel->setColour(juce::Label::textWhenEditingColourId,
                                      ActiveTheme::getTextColour());
@@ -1430,7 +1455,8 @@ void TrackHeadersPanel::updateHeaderSelectionColours() {
                                      ActiveTheme::getColour(ActiveTheme::SURFACE));
         header->nameLabel->setColour(juce::Label::outlineWhenEditingColourId,
                                      ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-        static_cast<TrackNameLabel*>(header->nameLabel.get())->setTextShadow(colouredHead);
+        static_cast<TrackNameLabel*>(header->nameLabel.get())
+            ->setTextShadow(colouredHead && !ThemeManager::isLightTheme());
         static_cast<MidiActivityIndicator*>(header->midiIndicator.get())
             ->setOnColouredHead(colouredHead);
     }
@@ -2152,7 +2178,8 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     if (!header.isMaster) {
         const auto nameBandArea = bgArea.withHeight(nameBandHeight);
         if (fullBar && coloured) {
-            g.setColour(swatch);
+            g.setGradientFill(deriveTrackHeadGradient(
+                header.trackColour, shadeOf(trackShades_, header.trackId), nameBandArea.toFloat()));
             g.fillRect(nameBandArea);
             // Selection's light rim and underline draw over the children (paintOverChildren).
         } else if (isSelected) {

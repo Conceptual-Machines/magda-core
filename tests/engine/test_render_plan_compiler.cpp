@@ -14,6 +14,7 @@
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanDump.hpp"
 #include "plan/RenderPlan.hpp"
+#include "plan/TrackRouting.hpp"
 
 using namespace magda;
 using magda::engine::CompileOptions;
@@ -1756,6 +1757,26 @@ TEST_CASE("An unavailable hardware output is silent and diagnosed",
     }
 }
 
+TEST_CASE("A track routed nowhere feeds its sends and nothing else",
+          "[engine][plan][compiler][54]") {
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2, TrackType::Aux)};
+    tracks[1].auxBusIndex = 0;
+    tracks[0].sends.push_back(SendInfo{0, 1.0f, false, 2});
+    tracks[0].audioOutputDevice = magda::engine::kNoRoute;
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+
+    const auto inputs = opsWithRole(plan, OpRole::TrackAudioInput);
+    REQUIRE_FALSE(inputs.empty());
+    const auto masterInput = inputs.back();
+    REQUIRE(plan.ops[static_cast<std::size_t>(masterInput)].key.trackId == MASTER_TRACK_ID);
+    REQUIRE(plan.ops[static_cast<std::size_t>(masterInput)].inputs.size() == 1);
+    CHECK(plan.ops[static_cast<std::size_t>(inputOp(plan, masterInput, 0))].key.trackId == 2);
+    CHECK(opsWithRole(plan, OpRole::SendTap).size() == 1);
+}
+
 TEST_CASE("A send to a track that no longer exists is reported as such",
           "[engine][plan][compiler]") {
     std::vector<TrackInfo> tracks{makeTrack(1)};
@@ -3202,6 +3223,32 @@ TEST_CASE("A MIDI Out loop is refused for the one sender that closes it",
         return message.find("MIDI loop") != std::string::npos;
     });
     CHECK(refused == 1);
+}
+
+TEST_CASE("A track sent to and listening to the same track hears it once",
+          "[engine][plan][compiler][2209]") {
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[1].chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(9)));
+    tracks[0].midiOutputDevice = "track:2";
+    tracks[1].midiInputDevice = "track:1";
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+
+    CHECK(countRole(plan, OpRole::MidiOutRoute) == 1);
+    const auto inputGates = std::ranges::count_if(
+        opsWithRole(plan, OpRole::InputRouteGate), [&plan](magda::engine::OpId op) {
+            const auto& key = plan.ops[static_cast<std::size_t>(op)].key;
+            return key.trackId == 2 && key.index == 1;
+        });
+    CHECK(inputGates == 0);
+
+    // Without the MIDI Out, the input carries it.
+    tracks[0].midiOutputDevice.clear();
+    const auto listening = magda::engine::compileRenderPlan(tracks, makeMaster());
+    CHECK(countRole(listening, OpRole::MidiOutRoute) == 0);
+    CHECK(countRole(listening, OpRole::InputRouteGate) == 1);
 }
 
 TEST_CASE("A MIDI Out channel moves the plan's fingerprint", "[engine][plan][compiler][2209]") {

@@ -16,6 +16,11 @@ namespace magda {
  */
 enum class ViewMode { Live, Arrange, Mix, Master };
 
+/// Whether @p mode puts the timeline (MainView) on screen; Live and Mix have views of their own.
+constexpr bool showsTimeline(ViewMode mode) {
+    return mode == ViewMode::Arrange || mode == ViewMode::Master;
+}
+
 /**
  * @brief Audio engine optimization profile for each view mode
  *

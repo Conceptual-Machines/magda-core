@@ -4,6 +4,8 @@
 #pragma once
 
 #include <array>
+#include <atomic>
+#include <cmath>
 #include <memory>
 
 #include "core/ParameterUtils.hpp"
@@ -78,9 +80,25 @@ class MutableElementsPlugin : public MagdaDevice {
         };
     }
 
-    /// The space tail rings out well past note-off.
+    /// Past this the resonator is treated as sustaining: full Damping rings for most of a minute.
+    static constexpr double kMaxTailSeconds = 60.0;
+
+    /// Off the settings rather than a constant: from a quarter second to past 50 s (#2409).
     std::int64_t tailSamples() const override {
-        return static_cast<std::int64_t>(std::ceil(3.0 * sampleRate_));
+        return static_cast<std::int64_t>(
+            std::ceil(tailSeconds_.load(std::memory_order_relaxed) * sampleRate_));
+    }
+
+    /**
+     * @brief The tail after note-off those settings imply, in seconds.
+     *
+     * @p sustainedExciter is a bowed or blown note, which keeps exciting through its release.
+     */
+    static double tailSecondsFor(float damping, float space, bool sustainedExciter, float levelDb);
+
+    /// The output leg's band limit, set at prepare (#2409).
+    int latencySamples() const override {
+        return latencySamples_;
     }
 
     void prepare(const DevicePrepareContext& context) override;
@@ -99,6 +117,7 @@ class MutableElementsPlugin : public MagdaDevice {
     /// domain rather than a freshly built ParameterInfo: this runs per block on
     /// the audio thread, and a ParameterInfo carries strings that allocate.
     float displayValue(int index) const;
+    void updateTail();
 
     //==============================================================================
     // Pimpl: keeps the Mutable DSP headers (and -DTEST) out of this header so the
@@ -110,6 +129,10 @@ class MutableElementsPlugin : public MagdaDevice {
     std::array<ParameterUtils::ParameterDomain, kNumParams> domains_{};
 
     double sampleRate_ = 44100.0;
+    int latencySamples_ = 0;
+
+    /// setParameterValue writes it, tailSamples() reads it off the message thread.
+    std::atomic<double> tailSeconds_{0.0};
 
     /// Rendered here, then added into the host buffer (#2370): the DSP writes
     /// straight into these pointers, so it can't itself sum onto whatever the

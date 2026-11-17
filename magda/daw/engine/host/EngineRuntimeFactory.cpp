@@ -300,10 +300,12 @@ std::unique_ptr<engine::LevelTap> EngineRuntimeFactory::createMeter(const engine
     }
 }
 
-/// A pad's gate, for the pad's trigger light (#2669).
+/// A pad's gate, for the pad's trigger light (#2669), and the notes a track's
+/// note-triggered modifiers hear, for the model's copy of them (#3305).
 std::unique_ptr<engine::NoteOnTap> EngineRuntimeFactory::createNoteOnTap(const engine::OpKey& key) {
-    return key.role == engine::OpRole::PadNoteGate ? std::make_unique<engine::NoteOnTap>()
-                                                   : nullptr;
+    const bool watched =
+        key.role == engine::OpRole::PadNoteGate || key.role == engine::OpRole::ModulationTap;
+    return watched ? std::make_unique<engine::NoteOnTap>() : nullptr;
 }
 
 std::unique_ptr<engine::EngineAudioSource> EngineRuntimeFactory::createClipAudioSource(

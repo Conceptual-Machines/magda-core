@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <set>
+#include <vector>
 
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
@@ -838,13 +839,16 @@ void MainWindow::setupMenuCallbacks() {
         bool hasLoopRegion = engine->isLooping();
         const auto timeSelection = exportTimeSelection();
 
+        const auto& selectedTracks = SelectionManager::getInstance().getSelectedTracks();
+
         // Show export dialog
         ExportAudioDialog::showDialog(
             this,
             [this, engine, timeSelection](const ExportAudioDialog::Settings& settings) {
                 performExport(settings, engine, timeSelection);
             },
-            timeSelection.isValid(), hasLoopRegion);
+            timeSelection.isValid(), hasLoopRegion,
+            std::vector<TrackId>(selectedTracks.begin(), selectedTracks.end()));
     };
 
     callbacks.onExportMidi = [this, exportTimeSelection]() {

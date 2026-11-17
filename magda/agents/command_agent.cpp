@@ -15,6 +15,17 @@
 
 namespace magda {
 
+namespace {
+constexpr const char* kNotAnOnDeviceCommand =
+    "That is not one of the on-device commands. Editing operations work here (tracks, clips, "
+    "devices, notes); playback, mute/solo and questions do not. Use a keyboard shortcut, or "
+    "switch the Command provider to an LLM.";
+
+constexpr const char* kReplyWasNotACommand =
+    "The model replied with text instead of a command, so nothing was changed. The assistant "
+    "carries out edits (tracks, clips, devices, notes); it can't answer questions.";
+}  // namespace
+
 CommandAgent::CommandAgent(MagdaApi& api) : api_(api) {}
 CommandAgent::~CommandAgent() = default;
 
@@ -74,16 +85,8 @@ CommandAgent::GenerateResult CommandAgent::generateLocal(const std::string& mess
             DBG("MAGDA CommandAgent (fast_inference, encoder): " + juce::String(result.dslOutput));
             return result;
         }
-        // Empty is a DECISION, not a failure: the model has an explicit
-        // abstain class, so out-of-scope requests return nothing rather than
-        // being mapped onto the nearest command and executed. Say that, rather
-        // than reporting it as a malfunction.
-        // utf8-ok: result.error is std::string, so the UTF-8 bytes are kept verbatim.
-        result.error = "That is not one of the on-device commands. Editing "
-                       "operations work here (tracks, clips, devices, notes); "
-                       "playback, mute/solo and questions do not — use a "
-                       "keyboard shortcut, or switch the Command provider to an "
-                       "LLM.";
+        // Empty is a decision (the abstain class), not a malfunction.
+        result.error = kNotAnOnDeviceCommand;
         result.hasError = true;
         return result;
     }
@@ -104,7 +107,7 @@ CommandAgent::GenerateResult CommandAgent::generateLocal(const std::string& mess
         return result;
     }
     if (result.dslOutput.empty()) {
-        result.error = "Command model produced no output for this request.";
+        result.error = kNotAnOnDeviceCommand;
         result.hasError = true;
         return result;
     }
@@ -143,6 +146,14 @@ bool usesCFG(const Config::AgentLLMConfig& config) {
 /** Build an LLM client for the command agent. */
 std::unique_ptr<llm::LLMClient> createCommandClient(const Config::AgentLLMConfig& config) {
     return createLLMClient(config, "command");
+}
+
+/** Fail a reply with no DSL statement in it, rather than parsing prose (#3312). */
+void rejectProse(CommandAgent::GenerateResult& result) {
+    if (!dsl::containsStatement(result.dslOutput)) {
+        result.error = kReplyWasNotACommand;
+        result.hasError = true;
+    }
 }
 
 /** Build the LLM request, adding CFG grammar when supported. */
@@ -210,6 +221,7 @@ CommandAgent::GenerateResult CommandAgent::generate(const std::string& message) 
     DBG("MAGDA CommandAgent (" + client->getName() + "/" + client->getConfig().model + ", " +
         juce::String(response.wallSeconds, 2) + "s): " + juce::String(result.dslOutput));
 
+    rejectProse(result);
     return result;
 }
 
@@ -259,6 +271,7 @@ CommandAgent::GenerateResult CommandAgent::generateStreaming(const std::string& 
         result.dslOutput = extractDSL(response.text);
         DBG("MAGDA CommandAgent CFG (" + client->getName() + "/" + client->getConfig().model +
             ", " + juce::String(response.wallSeconds, 2) + "s): " + juce::String(result.dslOutput));
+        rejectProse(result);
         return result;
     }
 
@@ -283,6 +296,7 @@ CommandAgent::GenerateResult CommandAgent::generateStreaming(const std::string& 
     DBG("MAGDA CommandAgent stream (" + client->getName() + "/" + client->getConfig().model + ", " +
         juce::String(response.wallSeconds, 2) + "s): " + juce::String(result.dslOutput));
 
+    rejectProse(result);
     return result;
 }
 

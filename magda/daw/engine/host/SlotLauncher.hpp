@@ -75,13 +75,15 @@ class SlotLauncher {
     /** @brief Launch @p clipId, at its own quantization. */
     void launch(ClipId clipId);
 
-    /** @brief Stop @p clipId now, and give its track back to the arrangement. */
+    /** @brief Stop what @p clipId's track is playing, at the stopping clip's quantization (#3126).
+     */
     void stop(ClipId clipId);
 
     /** @brief Every slot of @p sceneIndex across @p trackIds, on one beat. */
     void launchScene(const std::vector<TrackId>& trackIds, int sceneIndex);
 
-    /** @brief Stop what @p trackId is playing, at the stopping clip's quantization. */
+    /** @brief Stop what @p trackId is playing, at the stopping clip's quantization.
+     *         A track already waiting on a quantized stop keeps waiting. */
     void stopTrack(TrackId trackId);
 
     /** @brief Stop every slot and return every track to its arrangement. */
@@ -134,6 +136,9 @@ class SlotLauncher {
     void forget();
 
   private:
+    /** @brief Stop @p clipId's track now, and give it back to the arrangement. */
+    void stopNow(ClipId clipId);
+
     /// The beat @p clip's launch is due on, or nothing for as soon as possible.
     std::optional<double> dueBeat(const ClipInfo& clip) const;
 
