@@ -273,7 +273,12 @@
     "bit_depth.24": "24位",
     "bit_depth.32_float": "32位浮点",
     "dither.off": "关",
-    "dither.shaped": "噪声整形"
+    "dither.shaped": "噪声整形",
+    "label.output": "输出：",
+    "option.mix": "混音",
+    "option.stems": "分轨（每条轨道一个文件）",
+    "toggle.track_fx": "轨道效果",
+    "toggle.selected_tracks": "仅所选轨道（{0}）"
   },
   "export_midi": {
     "label.midi_format": "{0}格式：",
@@ -338,7 +343,34 @@
   "footer": {
     "tooltip.session": "会话视图",
     "tooltip.arrangement": "混音视图",
-    "tooltip.mix": "混音视图"
+    "tooltip.mix": "混音视图",
+    "tooltip.model_downloading": "本地 LLM：正在下载，{0}",
+    "tooltip.model_checking": "本地 LLM：正在校验下载，{0}%",
+    "menu.cancel_download": "取消下载",
+    "menu.open_local_settings": "打开本地 LLM 设置"
+  },
+  "model_download": {
+    "button.download": "下载模型",
+    "button.cancel": "取消下载",
+    "button.resume": "继续下载",
+    "button.discard": "丢弃",
+    "status.connecting": "正在连接",
+    "status.stopping": "正在停止",
+    "status.progress": "{0} / {1}",
+    "status.rate": "{0}/秒",
+    "status.paused": "已暂停于 {0} / {1}",
+    "status.checking": "正在校验下载，{0}%",
+    "status.done": "下载完成",
+    "size.gb": "{0} GB",
+    "size.mb": "{0} MB",
+    "time.under_minute": "剩余不到 1 分钟",
+    "time.minutes": "剩余 {0} 分钟",
+    "time.hours": "剩余 {0} 小时 {1} 分钟",
+    "error.unreachable": "无法连接到下载服务器",
+    "error.network": "连接反复中断",
+    "error.disk": "无法写入模型文件",
+    "error.damaged": "下载的文件已损坏，已被删除",
+    "error.move": "无法将模型移动到目标位置"
   },
   "main_window": {
     "loading.initializing": "正在初始化",
@@ -371,7 +403,14 @@
     "error.no_midi_clips": "没有可导出的{0}片段。",
     "error.no_midi_notes": "没有包含音符的{0}片段可供导出。",
     "error.midi_write_failed": "写入{0}文件失败。",
-    "error.cannot_create_file": "无法创建输出文件："
+    "error.cannot_create_file": "无法创建输出文件：",
+    "progress.exporting_stems": "正在导出分轨",
+    "choose_stems_folder": "选择分轨的保存文件夹",
+    "alert.stems_success_prefix": "已导出 {0} 个分轨到：",
+    "alert.replace_title": "替换文件？",
+    "alert.replace_body": "此文件夹中已存在 {0} 个分轨。是否替换？",
+    "alert.replace_button": "替换",
+    "error.no_stems": "没有可导出的轨道：所有轨道均已静音或禁用。"
   },
   "mix_analysis": {
     "cleanup_failed": "混音分析后的清理失败。"
@@ -456,7 +495,6 @@
     "slider.default_total_length": "长度",
     "slider.default_view": "新项目视图",
     "slider.interval": "间隔",
-    "slider.render_ahead_time": "预读",
     "slider.capture_buffer": "捕获缓冲区",
     "slider.capture_length": "捕获时长",
     "toggle.enable_autosave": "启用自动保存",
@@ -472,7 +510,6 @@
     "toggle.autohide_arrangement_scrollbars": "自动隐藏主视图滚动条",
     "toggle.confirm_track_delete": "删除轨道前要求确认",
     "toggle.auto_monitor": "自动监听所选轨道",
-    "toggle.render_ahead": "提前于音频设备渲染播放",
     "toggle.capture": "保留你演奏的内容，以便之后捕获",
     "toggle.unload_plugins_on_freeze": "冻结时卸载插件以释放内存",
     "toggle.open_macros_on_select": "选择设备或机架时打开宏",
@@ -736,7 +773,7 @@
     "error.not_initialized_title": "音频设置",
     "error.not_initialized": "音频引擎未初始化，无法打开音频设置。",
     "crash_recovery.title": "已跳过音频驱动",
-    "crash_recovery.message": "MAGDA 上次在打开{0}时意外关闭，因此本次改用默认音频驱动启动。\n\n你可以在音频/MIDI 设置中重新选择驱动。",
+    "crash_recovery.message": "MAGDA 上次在打开{0}时意外关闭，因此改用默认音频驱动启动。\n\n可以在「设置 > 音频与 MIDI」中重新选择驱动。",
     "crash_recovery.default": "音频驱动",
     "section.device": "设备",
     "label.preview_output": "试听浏览器文件的输出",
