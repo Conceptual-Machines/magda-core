@@ -68,13 +68,12 @@ double dbBelowReference(double internalRate, double hostRate, double inHz, doubl
     return -10.0 * std::log10(energy / reference + 1.0e-30);
 }
 
-/// The leg's bulk delay in host samples: a 4 kHz half-cycle at a known internal time,
-/// correlated against the same half-cycle drawn at the host rate.
-double bulkDelaySamples(double internalRate, double hostRate) {
+/// A note's delay through the leg, in host samples: the DSP starts a 4 kHz half-cycle on the
+/// first sample it is asked for after host sample `at`, the way a note lands mid-block.
+double noteDelaySamples(double internalRate, double hostRate, int at) {
     mr::OutputLeg leg;
     leg.prepare(internalRate, hostRate);
 
-    constexpr double kAtSeconds = 0.01;
     constexpr double kWidthSeconds = 1.0 / 8000.0;
     const auto halfCycle = [](double t) {
         return (t >= 0.0 && t < kWidthSeconds)
@@ -82,21 +81,25 @@ double bulkDelaySamples(double internalRate, double hostRate) {
                    : 0.0;
     };
 
+    bool started = false;
     long long k = 0;
     const auto pull = [&](float& l, float& r) {
-        l = r = static_cast<float>(halfCycle(static_cast<double>(k++) / internalRate - kAtSeconds));
+        const double t = started ? static_cast<double>(k++) / internalRate : -1.0;
+        l = r = static_cast<float>(halfCycle(t));
     };
-    std::vector<float> out(static_cast<size_t>(0.03 * hostRate));
-    leg.render(out.data(), nullptr, static_cast<int>(out.size()), pull);
 
-    const int at = static_cast<int>(std::lround(kAtSeconds * hostRate));
+    std::vector<float> out(static_cast<size_t>(0.03 * hostRate));
+    leg.render(out.data(), nullptr, at, pull);
+    started = true;
+    leg.render(out.data() + at, nullptr, static_cast<int>(out.size()) - at, pull);
+
     const int width = static_cast<int>(std::ceil(kWidthSeconds * hostRate)) + 1;
     double best = -1.0e30;
     int bestLag = 0;
     for (int lag = 0; lag < static_cast<int>(0.005 * hostRate); ++lag) {
         double acc = 0.0;
         for (int i = 0; i < width; ++i)
-            acc += halfCycle(static_cast<double>(at + i) / hostRate - kAtSeconds) *
+            acc += halfCycle(static_cast<double>(i) / hostRate) *
                    out[static_cast<size_t>(at + i + lag)];
         if (acc > best) {
             best = acc;
@@ -106,6 +109,16 @@ double bulkDelaySamples(double internalRate, double hostRate) {
     return static_cast<double>(bestLag);
 }
 
+/// Where a note falls between DSP samples moves its delay by up to one; this is the mean over
+/// sixteen positions.
+double meanNoteDelaySamples(double internalRate, double hostRate) {
+    const int at = static_cast<int>(std::lround(0.01 * hostRate));
+    double sum = 0.0;
+    for (int offset = 0; offset < 16; ++offset)
+        sum += noteDelaySamples(internalRate, hostRate, at + offset);
+    return sum / 16.0;
+}
+
 constexpr double kHostRates[] = {22050.0, 32000.0, 44100.0,  48000.0,
                                  88200.0, 96000.0, 176400.0, 192000.0};
 
@@ -113,24 +126,25 @@ constexpr double kHostRates[] = {22050.0, 32000.0, 44100.0,  48000.0,
 
 TEST_CASE("Mutable output leg band-limits the images it makes rising to the host rate",
           "[mutable][resampler]") {
-    // The cubic alone leaves a 10 kHz tone's image from 32 kHz 18 dB down at 48 kHz (#2409).
+    // At least what the cubic and Butterworth measured before #3328: 130.7 and 68.3 dB.
     const double elements = dbBelowReference(kElementsRate, 48000.0, 10000.0, 22000.0);
     const double rings = dbBelowReference(kRingsRate, 96000.0, 15000.0, 33000.0);
     INFO("32k->48k: 10k image at 22k " << elements << " dB down; 48k->96k: 15k image at 33k "
                                        << rings << " dB down");
-    CHECK(elements > 60.0);
-    CHECK(rings > 60.0);
+    CHECK(elements > 130.0);
+    CHECK(rings > 68.0);
 }
 
 TEST_CASE("Mutable output leg band-limits what would fold falling to the host rate",
           "[mutable][resampler]") {
     // Rings at a 44.1 kHz host is a decimation, so its top 2 kHz folds unless it goes first.
+    // At least what the cubic and Butterworth measured before #3328: 105.9 and 59.1 dB.
     const double rings = dbBelowReference(kRingsRate, 44100.0, 23000.0, 21100.0);
     const double elements = dbBelowReference(kElementsRate, 22050.0, 13000.0, 9050.0);
     INFO("48k->44.1k: 23k folding to 21.1k " << rings << " dB down; 32k->22.05k: 13k folding to "
                                              << "9.05k " << elements << " dB down");
-    CHECK(rings > 50.0);
-    CHECK(elements > 50.0);
+    CHECK(rings > 105.0);
+    CHECK(elements > 59.0);
 }
 
 TEST_CASE("Mutable output leg keeps the passband", "[mutable][resampler]") {
@@ -140,7 +154,7 @@ TEST_CASE("Mutable output leg keeps the passband", "[mutable][resampler]") {
         for (const double hz : {1000.0, 5000.0, 10000.0}) {
             const double loss = dbBelowReference(internalRate, hostRate, hz, hz);
             INFO(internalRate << " -> " << hostRate << ": " << hz << " Hz down " << loss << " dB");
-            CHECK(loss < 2.0);
+            CHECK(loss < 0.1);
         }
     }
 }
@@ -154,7 +168,7 @@ TEST_CASE("Mutable output leg declares the delay it imposes", "[mutable][resampl
             mr::OutputLeg leg;
             leg.prepare(internalRate, hostRate);
             const double declared = leg.latencySeconds() * hostRate;
-            const double measured = bulkDelaySamples(internalRate, hostRate);
+            const double measured = meanNoteDelaySamples(internalRate, hostRate);
             INFO(internalRate << " -> " << hostRate << ": declared " << declared
                               << " samples, measured " << measured);
             CHECK(std::abs(measured - declared) <= 1.0);

@@ -311,14 +311,12 @@ TEST_CASE("Nimbus declares the priming delay it imposes on the dry path",
     //
     // Checked in seconds, the unit the declaration is in.
     for (double rate : {22050.0, 32000.0, 44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0}) {
-        const double declared = MutableCloudsPlugin::kLatencySeconds * rate;
+        const double declared = CloudsRig(rate).device.latencySamples();
         for (int blockSize : {16, 128, 512, 2048}) {
             const int measured = bulkDelaySamples(rate, blockSize);
-            const double errorSeconds = (measured - declared) / rate;
             INFO("rate " << rate << " block " << blockSize << ": declared " << declared
-                         << " samples, measured " << measured << ", out by " << errorSeconds * 1.0e6
-                         << " us");
-            CHECK(std::abs(errorSeconds) <= MutableCloudsPlugin::kLatencySpreadSeconds);
+                         << " samples, measured " << measured);
+            CHECK(std::abs(measured - declared) <= 1.0);
         }
     }
 }
@@ -335,28 +333,29 @@ TEST_CASE("Nimbus band-limits both crossings of its 32 kHz rate", "[nimbus][clou
 
     SECTION("what folds coming down to 32 kHz") {
         // Undertaken, an 18 kHz tone arrives at 14 kHz louder than it left, and
-        // 20 kHz lands at 12 kHz only 5 dB below a passband reference.
+        // 20 kHz lands at 12 kHz only 5 dB below a passband reference. At least what the cubic
+        // and Butterworth measured before #3328: 39.8 and 70.1 dB.
         const double fold18 = belowReference(spurEnergy(rate, 18000.0, 14000.0));
         const double fold20 = belowReference(spurEnergy(rate, 20000.0, 12000.0));
         INFO("18k->14k " << fold18 << " dB down, 20k->12k " << fold20 << " dB down");
-        CHECK(fold18 > 30.0);
-        CHECK(fold20 > 50.0);
+        CHECK(fold18 > 39.0);
+        CHECK(fold20 > 70.0);
     }
 
     SECTION("what images going back up") {
-        // The cubic alone leaves a 10 kHz tone's image 17 dB down.
+        // Unfiltered, a 10 kHz tone's image is 17 dB down. This reads at the measure's own floor,
+        // about 80 dB, before and after #3328.
         const double image = belowReference(spurEnergy(rate, 10000.0, 22000.0));
         INFO("10k image at 22k, " << image << " dB down");
-        CHECK(image > 60.0);
+        CHECK(image > 75.0);
     }
 
     SECTION("and the passband survives it") {
-        // The rolloff below the corner is the cubic interpolators', which the
-        // filters are not allowed to add meaningfully to.
+        // Flat to 10 kHz; the cubic it replaced took 1.5 dB there (#3328).
         for (double hz : {1000.0, 5000.0, 10000.0}) {
             const double loss = belowReference(spurEnergy(rate, hz, hz));
             INFO(hz << " Hz down " << loss << " dB");
-            CHECK(loss < 2.0);
+            CHECK(loss < 0.1);
         }
     }
 }

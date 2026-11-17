@@ -60,20 +60,6 @@ class MutableCloudsPlugin : public MagdaDevice, public GrainEnvelopeTelemetry {
     }
     static const char* xmlTypeName;
 
-    /// Output lag: the grain block, the placed output cushion and both filters.
-    /// Measured, not derived: the filters' group delay is not the analog
-    /// prototype's sum(1/Q)/w0, since the bilinear transform collapses it as
-    /// the corner nears Nyquist, and it is not one number across the band
-    /// anyway. In seconds, converted at the prepared rate; the dry path carries it too, since
-    /// Clouds mixes dry itself.
-    static constexpr double kLatencySeconds = 1145.9e-6;
-
-    /// How far the delay moves across 22.05 kHz to 192 kHz, which is the
-    /// measured quantity rather than a tolerance picked to pass a test. What is
-    /// left is the input guard holding a fixed sample count, a shrinking
-    /// duration as the rate climbs.
-    static constexpr double kLatencySpreadSeconds = 55.0e-6;
-
     /// Past this the device sustains rather than decays: feedback from 0.75
     /// recirculates indefinitely, and granular at full reverb rings for 32 s.
     static constexpr double kMaxTailSeconds = 40.0;
@@ -87,8 +73,10 @@ class MutableCloudsPlugin : public MagdaDevice, public GrainEnvelopeTelemetry {
         };
     }
 
+    /// The output cushion and both filters, at the prepared rate; the dry path carries it too,
+    /// since Clouds mixes dry itself.
     int latencySamples() const override {
-        return juce::roundToInt(kLatencySeconds * sampleRate_);
+        return latencySamples_;
     }
 
     /// Off the reverb, not a constant: the decay runs 60 ms to past 18 s across that parameter,
@@ -157,6 +145,7 @@ class MutableCloudsPlugin : public MagdaDevice, public GrainEnvelopeTelemetry {
     std::array<ParameterUtils::ParameterDomain, kNumParams> domains_{};
 
     double sampleRate_ = 44100.0;
+    int latencySamples_ = 0;
 
     /// setParameterValue writes it, getTailLength() reads it off the message
     /// thread.
