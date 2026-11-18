@@ -461,7 +461,7 @@ tape, `beat` follows the project tempo), `looping`, `sourceBpm` (refused unless 
 ends up in beat playback), `stretch` (`off`, `signalsmith`, `soundtouch`,
 `soundtouch_hq`), `reversed`, each fade's seconds and curve, `volumeDb` (the
 clip handle, clamped to -100..0 dB), `gainDb` (the inspector, clamped to
-0..24 dB), and `autoCrossfade`. The patch is validated whole before anything changes, runs as one
+0..24 dB), `autoCrossfade`, and `gainEnvelope`. The patch is validated whole before anything changes, runs as one
 undo step, and a patch that restates current values, after clamping, does not
 advance the revision.
 
@@ -481,7 +481,13 @@ tempo the file is interpreted at, 0 when it has none), `tempoFrom` (`none`,
 clip plays: from the second its first beat plays to the second its last does,
 cut at the file's end, or the loop region when it loops. A reversed clip plays
 the same stretch backwards. `autoCrossfade` says whether the clip fades its edge
-across an overlap with its neighbour instead of cutting.
+across an overlap with its neighbour instead of cutting. `gainEnvelope` is the
+clip's gain envelope (#3064): points of `sourceSeconds` (a position in the
+file, so the envelope moves with the audio), `gainDb` (-60, which is silence,
+to +6 dB), and `curve` (`linear`, `bezier`, `step`, `hard_corner`). A write
+replaces the whole envelope, clamps each level into that range and sorts the
+points, and an empty list clears it. Restating the current points keeps the
+curve handles drawn in the editor, which the API does not carry.
 
 `clips.setCrossfade` takes two audio clips that touch or overlap on one
 arrangement track, in either order, and a `startBeat` and `endBeat`: the

@@ -600,6 +600,11 @@ ClipDto makeClipDto(const ClipInfo& clip, const TempoMap* tempo) {
         audio.fadeInCurve = fadeCurveName(event->fadeInType);
         audio.fadeOutCurve = fadeCurveName(event->fadeOutType);
         audio.autoCrossfade = clip.autoCrossfade;
+        for (const auto& point : event->gainEnvelope.points)
+            audio.gainEnvelope.push_back(
+                {point.beatPosition,
+                 std::max(gain_envelope::kMinDb, gain_envelope::positionToDb(point.value)),
+                 curveName(point.curveType)});
         dto.audio = std::move(audio);
     }
     return dto;

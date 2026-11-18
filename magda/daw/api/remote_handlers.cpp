@@ -5098,6 +5098,14 @@ std::optional<int> stretchModeFor(const juce::String& name) {
     return std::nullopt;
 }
 
+/// Equal as the remote API reads them, so a restated envelope keeps handles it cannot write.
+bool sameGainShape(const ClipGainEnvelope& left, const ClipGainEnvelope& right) {
+    return std::ranges::equal(left.points, right.points, [](const auto& a, const auto& b) {
+        return std::abs(a.beatPosition - b.beatPosition) < 1e-9 &&
+               std::abs(a.value - b.value) < 1e-9 && a.curveType == b.curveType;
+    });
+}
+
 std::optional<int> fadeCurveFor(const juce::String& name) {
     if (name == "linear")
         return static_cast<int>(FadeCurve::Linear);
@@ -5216,6 +5224,20 @@ HandlerResult clipsUpdateAudio(MagdaApi& api, const juce::var& input, const Requ
                 api, clipId, juce::String("Set Clip Auto Crossfade"),
                 [enabled](auto& manager, ClipId id) { manager.setAutoCrossfade(id, enabled); });
         });
+    if (has(input, "gainEnvelope")) {
+        ClipGainEnvelope envelope;
+        for (const auto& item : *input["gainEnvelope"].getArray()) {
+            sdk::AutomationPoint point;
+            point.beatPosition = readDouble(item, "sourceSeconds");
+            point.value = gain_envelope::dbToPosition(readDouble(item, "gainDb"));
+            point.curveType =
+                parseCurve(item["curve"].toString()).value_or(AutomationCurveType::Linear);
+            envelope.points.push_back(point);
+        }
+        std::ranges::stable_sort(envelope.points, {}, &sdk::AutomationPoint::beatPosition);
+        if (!sameGainShape(envelope, now()->gainEnvelope))
+            run([&] { runCommand<SetClipGainEnvelopeCommand>(api, clipId, envelope); });
+    }
 
     const auto* updated = api.clips().getClip(clipId);
     if (updated == nullptr)

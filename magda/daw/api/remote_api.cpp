@@ -511,12 +511,22 @@ const juce::var& clipSchema() {
                         "fadeOutSeconds":{"type":"number","minimum":0},
                         "fadeInCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]},
                         "fadeOutCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]},
-                        "autoCrossfade":{"type":"boolean"}
+                        "autoCrossfade":{"type":"boolean"},
+                        "gainEnvelope":{"type":"array","items":{
+                            "type":"object",
+                            "properties":{
+                                "sourceSeconds":{"type":"number","minimum":0},
+                                "gainDb":{"type":"number","minimum":-60,"maximum":6},
+                                "curve":{"type":"string","enum":["linear","bezier","step","hard_corner"]}
+                            },
+                            "required":["sourceSeconds","gainDb","curve"],
+                            "additionalProperties":false
+                        }}
                     },
                     "required":["playback","looping","tempo","tempoFrom","speedRatio","volumeDb",
                                 "gainDb","source","sourceStartSeconds","sourceLengthSeconds",
                                 "fadeInSeconds","fadeOutSeconds","fadeInCurve","fadeOutCurve",
-                                "autoCrossfade"],
+                                "autoCrossfade","gainEnvelope"],
                     "additionalProperties":false
                 }
             },
@@ -2030,6 +2040,15 @@ juce::var toJson(const ClipDto& dto) {
         audio->setProperty("fadeInCurve", dto.audio->fadeInCurve);
         audio->setProperty("fadeOutCurve", dto.audio->fadeOutCurve);
         audio->setProperty("autoCrossfade", dto.audio->autoCrossfade);
+        juce::Array<juce::var> gainPoints;
+        for (const auto& point : dto.audio->gainEnvelope) {
+            auto* entry = new juce::DynamicObject();
+            entry->setProperty("sourceSeconds", point.sourceSeconds);
+            entry->setProperty("gainDb", point.gainDb);
+            entry->setProperty("curve", point.curve);
+            gainPoints.add(juce::var(entry));
+        }
+        audio->setProperty("gainEnvelope", gainPoints);
         object->setProperty("audio", juce::var(audio));
     } else {
         object->setProperty("audio", juce::var());
@@ -2612,6 +2631,11 @@ std::optional<ClipDto> clipFromJson(const juce::var& json, Error& error) {
         decoded.fadeInCurve = audio["fadeInCurve"].toString();
         decoded.fadeOutCurve = audio["fadeOutCurve"].toString();
         decoded.autoCrossfade = static_cast<bool>(audio["autoCrossfade"]);
+        if (const auto* points = audio["gainEnvelope"].getArray())
+            for (const auto& point : *points)
+                decoded.gainEnvelope.push_back({static_cast<double>(point["sourceSeconds"]),
+                                                static_cast<double>(point["gainDb"]),
+                                                point["curve"].toString()});
         dto.audio = std::move(decoded);
     }
     return dto;
@@ -3669,7 +3693,7 @@ OperationRegistry::OperationRegistry() {
         clipSchema());
     add("clips.updateAudio",
         "Update an audio clip's playback mode, looping, source tempo, stretch, reverse, fades, "
-        "volume, gain, and auto crossfade",
+        "volume, gain, auto crossfade, and gain envelope",
         OperationAccess::Write, &handlers::clipsUpdateAudio, operationInputSchema(R"json({
             "type":"object",
             "properties":{
@@ -3685,7 +3709,17 @@ OperationRegistry::OperationRegistry() {
                 "fadeOutCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]},
                 "volumeDb":{"type":"number"},
                 "gainDb":{"type":"number"},
-                "autoCrossfade":{"type":"boolean"}
+                "autoCrossfade":{"type":"boolean"},
+                "gainEnvelope":{"type":"array","items":{
+                    "type":"object",
+                    "properties":{
+                        "sourceSeconds":{"type":"number","minimum":0},
+                        "gainDb":{"type":"number"},
+                        "curve":{"type":"string","enum":["linear","bezier","step","hard_corner"]}
+                    },
+                    "required":["sourceSeconds","gainDb"],
+                    "additionalProperties":false
+                }}
             },
             "required":["clipId"],"additionalProperties":false
         })json"),

@@ -260,6 +260,15 @@ struct ClipSourceDto {
     bool operator==(const ClipSourceDto&) const = default;
 };
 
+/** A point on an audio clip's gain envelope (#3064), pinned to a position in its file. */
+struct ClipGainPointDto {
+    double sourceSeconds = 0.0;
+    double gainDb = 0.0;  // -60 is silence
+    juce::String curve = "linear";
+
+    bool operator==(const ClipGainPointDto&) const = default;
+};
+
 /** How an audio clip plays: its tempo (#3060), level, fades and source (#3338). */
 struct ClipAudioDto {
     juce::String playback;  // "free" | "beat"
@@ -278,6 +287,7 @@ struct ClipAudioDto {
     juce::String fadeInCurve = "linear";  // "linear" | "convex" | "concave" | "s_curve"
     juce::String fadeOutCurve = "linear";
     bool autoCrossfade = false;
+    std::vector<ClipGainPointDto> gainEnvelope;
 
     bool operator==(const ClipAudioDto&) const = default;
 };

@@ -1213,7 +1213,7 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
         ClipAudioDto{"beat",   true,      120.0, "project",
                      1.0,      -6.0,      3.5,   ClipSourceDto{"/media/voice.wav", 48000.0, 90.5},
                      12.25,    4.75,      0.1,   0.2,
-                     "convex", "s_curve", true};
+                     "convex", "s_curve", true,  {{0.0, -60.0, "linear"}, {1.5, 3.0, "step"}}};
     requireRoundTrip(audioClip, clipFromJson);
     audioClip.audio->source.reset();
     requireRoundTrip(audioClip, clipFromJson);

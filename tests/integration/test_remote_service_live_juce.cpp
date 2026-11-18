@@ -1330,6 +1330,38 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
                 expectWithinAbsoluteError(clip->gainDB, 3.0f, 1e-6f);
             }
 
+            // A gain envelope is replaced whole, sorted, with -60 dB as silence (#3064).
+            const auto point = [](double seconds, double db, const char* curve) {
+                return object({{"sourceSeconds", seconds}, {"gainDb", db}, {"curve", curve}});
+            };
+            const auto envelope =
+                object({{"clipId", clipId},
+                        {"gainEnvelope", juce::var(juce::Array<juce::var>{
+                                             point(1.5, 3.0, "step"), point(0.5, -6.0, "linear"),
+                                             point(0.0, -100.0, "linear")})}});
+            const auto shaped = fixture.run("clips.updateAudio", envelope);
+            expect(shaped.ok);
+            const auto* points = shaped.result["audio"]["gainEnvelope"].getArray();
+            expect(points != nullptr && points->size() == 3);
+            if (points != nullptr && points->size() == 3) {
+                expectEquals(static_cast<double>(points->getReference(0)["gainDb"]), -60.0);
+                expectWithinAbsoluteError(static_cast<double>(points->getReference(1)["gainDb"]),
+                                          -6.0, 1e-9);
+                expectWithinAbsoluteError(
+                    static_cast<double>(points->getReference(2)["sourceSeconds"]), 1.5, 1e-9);
+                expect(points->getReference(2)["curve"].toString() == "step");
+            }
+            const auto shapedRevision = fixture.service.currentRevision();
+            expect(fixture.run("clips.updateAudio", envelope).ok);
+            expect(fixture.service.currentRevision() == shapedRevision,
+                   "Restating the envelope changes nothing");
+            const auto cleared =
+                fixture.run("clips.updateAudio",
+                            object({{"clipId", clipId},
+                                    {"gainEnvelope", juce::var(juce::Array<juce::var>{})}}));
+            expect(cleared.ok);
+            expect(cleared.result["audio"]["gainEnvelope"].getArray()->isEmpty());
+
             // Trimming the head moves where the clip reads in its file.
             expect(fixture
                        .run("clips.resize",

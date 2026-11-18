@@ -5419,6 +5419,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -5436,7 +5468,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
@@ -14341,6 +14374,38 @@
                   },
                   "autoCrossfade": {
                     "type": "boolean"
+                  },
+                  "gainEnvelope": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "sourceSeconds": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "gainDb": {
+                          "type": "number",
+                          "minimum": -60,
+                          "maximum": 6
+                        },
+                        "curve": {
+                          "type": "string",
+                          "enum": [
+                            "linear",
+                            "bezier",
+                            "step",
+                            "hard_corner"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "sourceSeconds",
+                        "gainDb",
+                        "curve"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -14358,7 +14423,8 @@
                   "fadeOutSeconds",
                   "fadeInCurve",
                   "fadeOutCurve",
-                  "autoCrossfade"
+                  "autoCrossfade",
+                  "gainEnvelope"
                 ],
                 "additionalProperties": false
               }
@@ -14854,6 +14920,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -14871,7 +14969,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
@@ -15657,6 +15756,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -15674,7 +15805,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
@@ -16565,6 +16697,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -16582,7 +16746,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
@@ -17272,6 +17437,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -17289,7 +17486,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
@@ -17947,6 +18145,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -17964,7 +18194,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
@@ -18473,6 +18704,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -18490,7 +18753,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
@@ -19112,6 +19376,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -19129,7 +19425,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
@@ -19644,6 +19941,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -19661,7 +19990,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
@@ -20223,6 +20553,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -20240,7 +20602,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
@@ -20758,6 +21121,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -20775,7 +21170,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
@@ -20835,7 +21231,7 @@
     },
     {
       "name": "clips.updateAudio",
-      "summary": "Update an audio clip's playback mode, looping, source tempo, stretch, reverse, fades, volume, gain, and auto crossfade",
+      "summary": "Update an audio clip's playback mode, looping, source tempo, stretch, reverse, fades, volume, gain, auto crossfade, and gain envelope",
       "paramStructure": "by-name",
       "params": [
         {
@@ -20961,6 +21357,41 @@
           "required": false,
           "schema": {
             "type": "boolean"
+          }
+        },
+        {
+          "name": "gainEnvelope",
+          "required": false,
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sourceSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "gainDb": {
+                  "type": "number"
+                },
+                "curve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "bezier",
+                    "step",
+                    "hard_corner"
+                  ],
+                  "maxLength": 16384
+                }
+              },
+              "required": [
+                "sourceSeconds",
+                "gainDb"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 4096
           }
         }
       ],
@@ -21386,6 +21817,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -21403,7 +21866,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
@@ -21925,6 +22389,38 @@
                   },
                   "autoCrossfade": {
                     "type": "boolean"
+                  },
+                  "gainEnvelope": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "sourceSeconds": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "gainDb": {
+                          "type": "number",
+                          "minimum": -60,
+                          "maximum": 6
+                        },
+                        "curve": {
+                          "type": "string",
+                          "enum": [
+                            "linear",
+                            "bezier",
+                            "step",
+                            "hard_corner"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "sourceSeconds",
+                        "gainDb",
+                        "curve"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -21942,7 +22438,8 @@
                   "fadeOutSeconds",
                   "fadeInCurve",
                   "fadeOutCurve",
-                  "autoCrossfade"
+                  "autoCrossfade",
+                  "gainEnvelope"
                 ],
                 "additionalProperties": false
               }
@@ -22447,6 +22944,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -22464,7 +22993,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
@@ -22994,6 +23524,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -23011,7 +23573,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
@@ -23528,6 +24091,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -23545,7 +24140,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
@@ -42864,6 +43460,38 @@
                 },
                 "autoCrossfade": {
                   "type": "boolean"
+                },
+                "gainEnvelope": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sourceSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "gainDb": {
+                        "type": "number",
+                        "minimum": -60,
+                        "maximum": 6
+                      },
+                      "curve": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "bezier",
+                          "step",
+                          "hard_corner"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sourceSeconds",
+                      "gainDb",
+                      "curve"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -42881,7 +43509,8 @@
                 "fadeOutSeconds",
                 "fadeInCurve",
                 "fadeOutCurve",
-                "autoCrossfade"
+                "autoCrossfade",
+                "gainEnvelope"
               ],
               "additionalProperties": false
             }
