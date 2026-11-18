@@ -94,13 +94,23 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job,
     /// the callback's across the pool like process().
     bool processSide(int side, std::uint64_t sequence, const PlanValues& values,
                      const BlockInfo& block, juce::AudioBuffer<float>& output,
-                     const std::function<bool()>& underClaim = {}, bool whole = false) {
-        return core_.processSide(side, sequence, values, block, output, underClaim, whole);
+                     const std::function<bool()>& underClaim = {}) {
+        return core_.processSide(side, sequence, values, block, output, underClaim);
     }
 
     /// @copydoc PlanExecutor::setRenderAheadDepth
     void setRenderAheadDepth(int blocks) {
         core_.setRenderAheadDepth(blocks);
+    }
+
+    /// @copydoc PlanExecutor::setAheadState
+    void setAheadState(PlanExecutor::AheadState* state) {
+        core_.setAheadState(state);
+    }
+
+    /// @copydoc PlanExecutor::withAheadClaim
+    template <typename Fn> void withAheadClaim(Fn&& fn) {
+        core_.withAheadClaim(std::forward<Fn>(fn));
     }
 
     /// Threads a block is spread across.

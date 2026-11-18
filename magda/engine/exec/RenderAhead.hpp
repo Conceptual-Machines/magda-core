@@ -25,6 +25,7 @@
 
 namespace magda::engine {
 
+class AheadLaunches;
 class ParallelPlanExecutor;
 struct ClipSnapshot;
 struct ClipStreamTable;
@@ -54,6 +55,9 @@ class RenderAhead final : private juce::Thread {
 
         /// Tracks whose clips the ahead side renders, sorted: the streams it cues.
         std::vector<TrackId> tracks;
+
+        /// The handles its session tracks play from, or null (#3316). Kept alive by @ref owner.
+        AheadLaunches* launches = nullptr;
     };
 
     explicit RenderAhead(bool runInBackground = true);
@@ -72,6 +76,13 @@ class RenderAhead final : private juce::Thread {
     void setTransport(std::shared_ptr<const TransportSnapshot> transport);
     void setClips(std::shared_ptr<const ClipSnapshot> clips);
     void setStreamFeed(const ClipStreamFeed* streams);
+
+    /// Run @p fn between rounds, so nothing renders through the epoch meanwhile. Not on the
+    /// audio thread.
+    template <typename Fn> void whileIdle(Fn&& fn) {
+        const std::lock_guard<std::mutex> round(rendering_);
+        fn();
+    }
 
     /**
      * @brief The callback has rendered @p epoch, advanced @p core, and will number its next

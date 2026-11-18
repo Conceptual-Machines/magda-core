@@ -310,16 +310,9 @@ inline std::optional<double> queuedHandBack(const LaunchHandleTable* handles, Tr
  * decides, exactly as it is before the store has published a table.
  */
 inline void advanceTrackSections(const TrackSectionTable* sections, const ClipSnapshot* clips,
-                                 LaunchHandleFeed* handles, const BlockInfo& block) {
+                                 const LaunchHandleTable* table, const BlockInfo& block) {
     if (sections == nullptr)
         return;
-
-    const LaunchHandleTable* table = nullptr;
-    std::optional<LaunchHandleFeed::Reader> published;
-    if (handles != nullptr) {
-        published.emplace(*handles);
-        table = published->get();
-    }
 
     for (const auto& entry : sections->entries) {
         const auto* track = clips != nullptr ? clips->find(entry.trackId) : nullptr;
@@ -332,6 +325,18 @@ inline void advanceTrackSections(const TrackSectionTable* sections, const ClipSn
                                         ? std::nullopt
                                         : queuedHandBack(table, entry.trackId);
     }
+}
+
+/// @copydoc advanceTrackSections, against the table @p handles has live.
+inline void advanceTrackSections(const TrackSectionTable* sections, const ClipSnapshot* clips,
+                                 LaunchHandleFeed* handles, const BlockInfo& block) {
+    if (handles == nullptr) {
+        advanceTrackSections(sections, clips, static_cast<const LaunchHandleTable*>(nullptr),
+                             block);
+        return;
+    }
+    const LaunchHandleFeed::Reader published(*handles);
+    advanceTrackSections(sections, clips, published.get(), block);
 }
 
 /**

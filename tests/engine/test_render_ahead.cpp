@@ -369,9 +369,9 @@ std::shared_ptr<const magda::engine::ClipSnapshot> snapshotWithSlot(TrackId trac
 
 }  // namespace
 
-TEST_CASE("A launch on a track rendered ahead is heard from the callback",
-          "[engine][session][1898]") {
-    // Until the plan moves the track to the callback, the callback renders its blocks itself.
+TEST_CASE("A slot added to a track rendered ahead launches from the ahead side",
+          "[engine][session][1898][3316]") {
+    // Its first slot arrives after the plan, and the ahead side's copies take it on (#3316).
     LauncherFactory factory;
     EngineSession session(factory);
     factory.handles = &session.launchHandleFeed();
@@ -388,7 +388,6 @@ TEST_CASE("A launch on a track rendered ahead is heard from the callback",
                          std::move(values))
                 .published);
     session.publishTransport(rolling(0.0));
-    session.publishClips(snapshotWithSlot(1));
 
     juce::AudioBuffer<float> output(2, kBlockSize);
     for (int callback = 0; callback < 8; ++callback) {
@@ -397,20 +396,26 @@ TEST_CASE("A launch on a track rendered ahead is heard from the callback",
         CHECK(output.getSample(0, 0) == 0.0f);
     }
     REQUIRE(session.renderedAheadThrough() > session.nextBlock());
+    session.publishClips(snapshotWithSlot(1));
 
+    // As soon as possible is the end of what was already rendered ahead.
     {
         magda::engine::LaunchRequestQueue::Gesture gesture(session.launchRequests());
         gesture.play(magda::engine::SlotKey{1, 0});
     }
-    for (int callback = 0; callback < 8; ++callback) {
+    int firstHeard = -1;
+    for (int callback = 0; callback < 16; ++callback) {
         session.process(kBlockSize, output);
-        session.renderAheadOnce();
+        CHECK(session.renderAheadOnce() > 0);
         INFO("callback " << callback);
-        CHECK(output.getSample(0, 0) == 1.0f);
+        if (firstHeard >= 0)
+            CHECK(output.getSample(0, 0) == 1.0f);
+        else if (output.getSample(0, 0) == 1.0f)
+            firstHeard = callback;
     }
-    CHECK(session.renderAheadDiscards() >= 1);
-    // And nothing more ahead until a plan moves the track: one thread renders its sources.
-    CHECK(session.renderAheadOnce() == 0);
+    CHECK(firstHeard >= 3);
+    CHECK(firstHeard <= 5);
+    CHECK(session.renderAheadDiscards() == 0);
 }
 
 TEST_CASE("A callback that finds the ahead thread mid-block takes the block over",

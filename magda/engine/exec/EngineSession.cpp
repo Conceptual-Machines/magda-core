@@ -53,23 +53,18 @@ constexpr auto kRenderAheadDrainLimit = std::chrono::milliseconds(250);
 
 }  // namespace
 
-bool EngineSession::playsSession(std::span<const TrackId> tracks, const BlockInfo& block) {
-    const LaunchHandleFeed::Reader handles(handles_);
-    for (const auto track : tracks) {
-        if (const auto* hold = clips_.holdFor(track, block);
-            hold != nullptr && (hold->from.value != 0 || hold->until.value != block.numSamples ||
-                                hold->gained || hold->lost || hold->heldAtEnd))
-            return true;
-        if (!handles)
-            continue;
-        const auto [first, last] = handles->rangeFor(track);
-        for (auto entry = first; entry != last; ++entry)
-            if (entry->handle != nullptr &&
-                (entry->handle->blockStatus().soundingAtStart ||
-                 entry->handle->blockStatus().playingAtEnd() || entry->handle->holdsSection()))
-                return true;
-    }
-    return false;
+AheadRequests EngineSession::aheadRequests(const PreparedRender& render, const BlockInfo& block,
+                                           int callbackSamples) const {
+    if (renderAhead_ == nullptr || render.launches == nullptr)
+        return {};
+    const auto perSample =
+        block.numSamples > 0 ? block.monotonicBeats.length() / static_cast<double>(block.numSamples)
+                             : 0.0;
+    return {.slots = render.launches.get(),
+            .safeBeat = block.monotonicBeats.start +
+                        (perSample * static_cast<double>((renderAheadDepth_ + 1) *
+                                                         std::max(callbackSamples, 0))),
+            .renderedAhead = block.playing && !block.started};
 }
 
 void EngineSession::setRenderAhead(int depth, bool inBackground) {
@@ -96,7 +91,8 @@ void EngineSession::handRenderAheadEpoch() {
     renderAhead_->setEpoch({.owner = live_,
                             .executor = &live_->executor,
                             .id = live_->epoch,
-                            .tracks = live_->executor.reference().aheadTracks()});
+                            .tracks = live_->executor.reference().aheadTracks(),
+                            .launches = live_->launches.get()});
 }
 
 EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> plan,
@@ -158,6 +154,15 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
             "resolved against a different plan, or against this one before it was whole. "
             "It is not published, because it would have rendered at unity");
         return {false, std::move(messages)};
+    }
+
+    // The epoch's first block renders whole, which seeds them (AheadLaunches).
+    if (renderAhead_ != nullptr) {
+        static const LaunchHandleTable kNoHandles;
+        prepared->launches = std::make_unique<AheadLaunches>(
+            handleTable_ != nullptr ? *handleTable_ : kNoHandles,
+            prepared->executor.reference().aheadTracks(), handles_, clips_);
+        prepared->executor.setAheadState(prepared->launches.get());
     }
 
     prepared->outputChannels = std::max(1, context.numChannels);
@@ -396,7 +401,15 @@ void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
     // A null snapshot publishes an empty table rather than skipping, or the
     // previous one would keep handles for slots the engine no longer knows.
     static const ClipSnapshot kNothing;
-    store_.publishHandles(clips != nullptr ? *clips : kNothing, handles_, requests_, &retired_);
+    handleTable_ =
+        store_.publishHandles(clips != nullptr ? *clips : kNothing, handles_, requests_, &retired_);
+
+    // A slot of a track rendered ahead came, went or changed hands: its copies follow before the
+    // snapshot naming it goes live, with neither side inside them (#3316).
+    if (live_ != nullptr && live_->launches != nullptr && handleTable_ != nullptr)
+        if (auto reshape = live_->launches->reshapeFor(*handleTable_))
+            renderAhead_->whileIdle(
+                [&] { live_->executor.withAheadClaim([&] { live_->launches->adopt(*reshape); }); });
 
     if (renderAhead_ != nullptr)
         renderAhead_->setClips(clips);
@@ -536,9 +549,11 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
                                   .timelineBeat = callbackEnd.beat,
                                   .monotonicBeat = callbackEnd.monotonicBeat};
         // A launch from stopped is due at once; held for the phase, it is due on the downbeat.
-        if (!segment.waitingForPhase)
+        if (!segment.waitingForPhase) {
+            const auto ahead = aheadRequests(**render, segment.block, numSamples);
             advanceLaunchHandles(handles_, requests_, segment.block, &runs_, clips_.live(),
-                                 &boundary);
+                                 &boundary, ahead.slots != nullptr ? &ahead : nullptr);
+        }
 
         if (transport->punch.recordingRequested && afterPunch && takes)
             for (const auto& entry : *takes.get())
@@ -606,8 +621,7 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
             voices_->announceHandBacks(clips_.sections(), segment.block);
 
         if (renderAhead_ != nullptr)
-            (*render)->executor.processSide(1, blockSequence_++, table, segment.block, piece, {},
-                                            playsSession(renderedAhead, segment.block));
+            (*render)->executor.processSide(1, blockSequence_++, table, segment.block, piece);
         else
             (*render)->executor.process(table, segment.block, piece);
 

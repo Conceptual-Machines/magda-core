@@ -66,6 +66,10 @@ struct LaunchRequest {
     /// table when it is applied: a slot emptied and refilled in between must
     /// not launch the clip that replaced the one the user clicked.
     std::uint64_t incarnation = 0;
+
+    /// The quantize grid @ref position lies on, in beats, or zero for none. A
+    /// launch rendered ahead too late for its beat moves to a later one (#3316).
+    double gridBeats = 0.0;
 };
 
 /**
@@ -112,8 +116,12 @@ class LaunchRequestQueue {
          * @param monotonicBeat When to start, or nothing for as soon as
          *        possible.
          */
-        void play(const SlotKey& key, std::optional<double> monotonicBeat = {}) {
-            queue_.push(LaunchRequest{key, LaunchRequest::Kind::play, monotonicBeat, {}});
+        void play(const SlotKey& key, std::optional<double> monotonicBeat = {},
+                  double gridBeats = 0.0) {
+            queue_.push(LaunchRequest{.key = key,
+                                      .kind = LaunchRequest::Kind::play,
+                                      .position = monotonicBeat,
+                                      .gridBeats = gridBeats});
         }
 
         /**
@@ -123,8 +131,12 @@ class LaunchRequestQueue {
          *        possible.
          */
         void playSynced(const SlotKey& key, const SlotKey& with,
-                        std::optional<double> monotonicBeat = {}) {
-            queue_.push(LaunchRequest{key, LaunchRequest::Kind::play, monotonicBeat, with});
+                        std::optional<double> monotonicBeat = {}, double gridBeats = 0.0) {
+            queue_.push(LaunchRequest{.key = key,
+                                      .kind = LaunchRequest::Kind::play,
+                                      .position = monotonicBeat,
+                                      .syncTo = with,
+                                      .gridBeats = gridBeats});
         }
 
         /**
@@ -132,14 +144,21 @@ class LaunchRequestQueue {
          * @param monotonicBeat When to stop, or nothing for as soon as
          *        possible.
          */
-        void stop(const SlotKey& key, std::optional<double> monotonicBeat = {}) {
-            queue_.push(LaunchRequest{key, LaunchRequest::Kind::stop, monotonicBeat, {}});
+        void stop(const SlotKey& key, std::optional<double> monotonicBeat = {},
+                  double gridBeats = 0.0) {
+            queue_.push(LaunchRequest{.key = key,
+                                      .kind = LaunchRequest::Kind::stop,
+                                      .position = monotonicBeat,
+                                      .gridBeats = gridBeats});
         }
 
         /// @brief Stop @p key and give its track back to the arrangement (#2302).
-        void backToArrangement(const SlotKey& key, std::optional<double> monotonicBeat = {}) {
-            queue_.push(
-                LaunchRequest{key, LaunchRequest::Kind::backToArrangement, monotonicBeat, {}});
+        void backToArrangement(const SlotKey& key, std::optional<double> monotonicBeat = {},
+                               double gridBeats = 0.0) {
+            queue_.push(LaunchRequest{.key = key,
+                                      .kind = LaunchRequest::Kind::backToArrangement,
+                                      .position = monotonicBeat,
+                                      .gridBeats = gridBeats});
         }
 
         /**
@@ -147,7 +166,8 @@ class LaunchRequestQueue {
          * @param beats The interval, or nothing to stop looping.
          */
         void setLooping(const SlotKey& key, std::optional<double> beats) {
-            queue_.push(LaunchRequest{key, LaunchRequest::Kind::loop, beats, {}});
+            queue_.push(
+                LaunchRequest{.key = key, .kind = LaunchRequest::Kind::loop, .position = beats});
         }
 
         /**
@@ -162,12 +182,12 @@ class LaunchRequestQueue {
          */
         template <typename Keys>
         void playScene(const SlotKey& leader, const Keys& followers,
-                       std::optional<double> monotonicBeat = {}) {
-            play(leader, monotonicBeat);
+                       std::optional<double> monotonicBeat = {}, double gridBeats = 0.0) {
+            play(leader, monotonicBeat, gridBeats);
 
             for (const auto& follower : followers)
                 if (!(follower == leader))
-                    playSynced(follower, leader, monotonicBeat);
+                    playSynced(follower, leader, monotonicBeat, gridBeats);
         }
 
       private:
@@ -182,11 +202,23 @@ class LaunchRequestQueue {
      * @param fn Called once per request. Must not allocate or block.
      */
     template <typename Fn> void drain(const Fn& fn) {
-        const auto end = written_.load(std::memory_order_acquire);
+        drain(committed(), fn);
+    }
 
+    /// How far the writer has committed, so @ref peek and @ref drain agree on one end.
+    std::uint64_t committed() const {
+        return written_.load(std::memory_order_acquire);
+    }
+
+    /// Read what is committed up to @p end without consuming it. Audio thread.
+    template <typename Fn> void peek(std::uint64_t end, const Fn& fn) const {
         for (auto at = read_; at != end; ++at)
             fn(ring_[static_cast<std::size_t>(at % kCapacity)]);
+    }
 
+    /// Read and consume what is committed up to @p end. Audio thread.
+    template <typename Fn> void drain(std::uint64_t end, const Fn& fn) {
+        peek(end, fn);
         read_ = end;
         consumed_.store(read_, std::memory_order_release);
     }

@@ -16,6 +16,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "exec/BandSplitter.hpp"
@@ -302,11 +303,10 @@ class PlanExecutor {
      * callback's values cannot split (handoffMisses).
      */
     /// @p underClaim runs on the ahead side once it owns the block, before anything renders;
-    /// false abandons the block. @p whole makes the callback render this block and every later one
-    /// itself, and the ahead side stop.
+    /// false abandons the block.
     bool processSide(int side, std::uint64_t sequence, const PlanValues& values,
                      const BlockInfo& block, juce::AudioBuffer<float>& output,
-                     const std::function<bool()>& underClaim = {}, bool whole = false);
+                     const std::function<bool()>& underClaim = {});
 
     /// What renders the callback's side of processSide across threads (ParallelPlanExecutor).
     class CallbackRenderer {
@@ -323,6 +323,30 @@ class PlanExecutor {
     /// Null renders the callback's side here, one op after another.
     void setCallbackRenderer(CallbackRenderer* renderer) {
         callbackRenderer_ = renderer;
+    }
+
+    /** @brief What the ahead side keeps beside its ops, and the callback resyncs (#3316). */
+    class AheadState {
+      public:
+        virtual ~AheadState() = default;
+        /// The ahead side, holding the claim, is about to render @p block split.
+        virtual void beginAheadBlock(const BlockInfo& block) = 0;
+        /// The callback, holding the claim, has rendered a block whole.
+        virtual void renderedWhole() = 0;
+    };
+
+    /// Off the audio thread, before either side renders; null for none.
+    void setAheadState(AheadState* state) {
+        aheadState_ = state;
+    }
+
+    /// Run @p fn holding the ahead side's claim, so the callback is not inside the ahead state.
+    /// Off the audio thread, with the ahead side idle: the claim is held only as long as @p fn.
+    template <typename Fn> void withAheadClaim(Fn&& fn) {
+        while (!handoffs_.claimForWriter())
+            std::this_thread::yield();
+        fn();
+        handoffs_.releaseClaim();
     }
 
     /// 1 for an op the callback runs, 0 for one that may be rendered ahead.
@@ -895,6 +919,7 @@ class PlanExecutor {
     juce::AudioBuffer<float> aheadOutput_;
     int renderAheadDepth_ = 1;
     CallbackRenderer* callbackRenderer_ = nullptr;
+    AheadState* aheadState_ = nullptr;
 
     /// The block the ahead side is rendering, while it is: a Handoff op writes into its entry.
     std::optional<std::uint64_t> aheadBlock_;
