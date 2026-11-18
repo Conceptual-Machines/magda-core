@@ -99,6 +99,9 @@ HandlerResult clipsGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsCreateMidi(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsLoadSample(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsUpdateAudio(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult clipsSetCrossfade(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult clipsSplit(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult clipsJoin(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsAddMidiNote(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsListMidiEvents(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsAddMidiEvents(MagdaApi&, const juce::var&, const RequestContext&);
@@ -134,6 +137,7 @@ HandlerResult devicesSetBypassed(MagdaApi&, const juce::var&, const RequestConte
 HandlerResult devicesSetInsert(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesListParameters(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesSetParameter(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult devicesSetParameters(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesSetParameterConfig(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesOpenEditor(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult modsList(MagdaApi&, const juce::var&, const RequestContext&);

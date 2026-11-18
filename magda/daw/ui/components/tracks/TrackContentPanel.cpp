@@ -2541,11 +2541,9 @@ bool TrackContentPanel::handleToolMouseDown(const juce::MouseEvent& event) {
         }
     }
     if (nextId != INVALID_CLIP_ID) {
-        auto cmd = std::make_unique<JoinClipsCommand>(clipId, nextId, bpm);
-        if (cmd->canExecute()) {
-            UndoManager::getInstance().executeCommand(std::move(cmd));
-            SelectionManager::getInstance().selectClip(clipId);
-        }
+        const auto joined = joinClipsInApp({clipId, nextId}, audioEngine_, bpm);
+        if (joined != INVALID_CLIP_ID)
+            SelectionManager::getInstance().selectClip(joined);
     }
     return true;
 }

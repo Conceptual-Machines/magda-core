@@ -459,9 +459,11 @@ audio is refused before anything is created.
 `clips.updateAudio` patches an audio clip: `playback` (`free` plays the file as
 tape, `beat` follows the project tempo), `looping`, `sourceBpm` (refused unless the clip
 ends up in beat playback), `stretch` (`off`, `signalsmith`, `soundtouch`,
-`soundtouch_hq`), `reversed`, and each fade's seconds and curve. The patch is
-validated whole before anything changes, runs as one undo step, and a patch
-that restates current values does not advance the revision.
+`soundtouch_hq`), `reversed`, each fade's seconds and curve, `volumeDb` (the
+clip handle, clamped to -100..0 dB), `gainDb` (the inspector, clamped to
+0..24 dB), `autoCrossfade`, and `gainEnvelope`. The patch is validated whole before anything changes, runs as one
+undo step, and a patch that restates current values, after clamping, does not
+advance the revision.
 
 Only beat playback loops (#3060). `looping: true` on a free clip puts it in beat
 playback first, as the LOOP button does: a file with no tempo takes the one it
@@ -471,7 +473,49 @@ which always loops, refuses either way out.
 
 Every clip reports `audio`, null for MIDI: `playback`, `looping`, `tempo` (the
 tempo the file is interpreted at, 0 when it has none), `tempoFrom` (`none`,
-`fileMetadata`, `analysis`, `user`, `project`), and `speedRatio`.
+`fileMetadata`, `analysis`, `user`, `project`), `speedRatio`, `volumeDb`,
+`gainDb`, the fades under the names `clips.updateAudio` takes, and its file
+(#3338). `source` is the file's absolute `path`, `sampleRate`, and
+`lengthSeconds` (0 when it cannot be read), or null when the clip has no file.
+`sourceStartSeconds` and `sourceLengthSeconds` are the stretch of that file the
+clip plays: from the second its first beat plays to the second its last does,
+cut at the file's end, or the loop region when it loops. A reversed clip plays
+the same stretch backwards. `autoCrossfade` says whether the clip fades its edge
+across an overlap with its neighbour instead of cutting. `gainEnvelope` is the
+clip's gain envelope (#3064): points of `sourceSeconds` (a position in the
+file, so the envelope moves with the audio), `gainDb` (-60, which is silence,
+to +6 dB), and `curve` (`linear`, `bezier`, `step`, `hard_corner`). A write
+replaces the whole envelope, clamps each level into that range and sorts the
+points, and an empty list clears it. Restating the current points keeps the
+curve handles drawn in the editor, which the API does not carry.
+
+`clips.setCrossfade` takes two audio clips that touch or overlap on one
+arrangement track, in either order, and a `startBeat` and `endBeat`: the
+overlap the crossfade should cover. It moves the left clip's end and the right
+clip's start there, as dragging the crossfade does, clamped so neither clip
+swallows the other or runs out of file, and turns on both clips' crossfade and
+play-through. Equal beats butt the clips and remove the crossfade. It returns
+both clips in timeline order. Clips that do not meet are refused before
+anything changes, and restating the current overlap does not advance the
+revision. A crossfade is read from the two clips' `startBeat` and
+`lengthBeats`.
+
+`clips.split` cuts an arrangement clip at one or more `beats`, each strictly
+inside it, and returns the pieces in timeline order, the original clip first.
+`clips.join` takes two or more arrangement clips on one track, of one type, each
+starting where the one before ends, in any order, and returns the joined clip,
+which keeps the first clip's id. Both run as one undo step and refuse before
+anything changes (#3345). An audio join lengthens the first clip when every
+clip carries on the one before in the same file: the same file read on, at the
+same level, playback and gain envelope, with no fade at the seam. The joined
+clip ends with the last clip's fade-out. Any other audio join renders the clips
+into one new file, as Render Time Selection does: the clips only, without track
+or master effects, each part's level, fades and envelope baked in. That join
+returns a job, as `tracks.freeze` does, whose result is the joined clip playing
+the new file; one undo puts the originals back. It is refused while another
+clip plays under the span, and a clip changed during the render fails the job
+with nothing joined. Glue and Join Clips in the app render the same way, behind
+a progress window.
 
 `clips.resize` takes `lengthBeats` and an `edge` of `start` or `end`. All three
 operations are edit-scoped and commit as one undo action. A move that restates
@@ -486,8 +530,13 @@ source/destination plan and preserves allocated clip IDs.
 ### Automation lane writes
 
 `automation.setPoints` replaces the complete point set on an absolute lane as
-one undoable mutation. Input points contain beat position, normalized value,
-and curve type; point IDs are allocated by MAGDA and returned only in the lane
+one undoable mutation. Input points contain beat position, a value, and curve
+type. The value is either a normalized `value` or a `realValue` in the lane
+target's units (#3348); a `realValue` outside the target's range is refused, as
+is a point with both or neither. Lanes report the target's `unit`, `minValue`,
+`maxValue`, and `scale`, and every point on a lane or automation clip reports
+its `realValue` beside `value`. `automation.addPoint` and
+`automation.updateClip` take points the same way; point IDs are allocated by MAGDA and returned only in the lane
 projection. Repeating the same curve is a revision-neutral no-op. Clip-based
 lanes reject this operation because their points belong to automation clips.
 
@@ -696,7 +745,9 @@ there is no permission that reveals them.
 
 DTO fields are allow-listed. In particular, the remote API does not expose:
 
-- project, audio-source, MIDI-source, plugin, render, or cache file paths;
+- project, MIDI-source, plugin, render, or cache file paths. The exception is
+  an audio clip's own file, which `clips.get` and `clips.list` report so a
+  client can read what the clip plays (#3338);
 - physical audio/MIDI device identifiers (routing discovery exposes opaque
   hashes plus logical `track:N`, `master`, `default`, `all`, and contextual
   `none:*` tokens instead);

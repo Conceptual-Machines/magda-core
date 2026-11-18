@@ -19,6 +19,7 @@ namespace magda {
 // Forward declarations
 class AudioEngine;
 class TempoMap;
+struct OfflineRenderRequest;
 
 /**
  * @brief Inclusive-start, exclusive-end arrangement range in musical beats.
@@ -410,6 +411,10 @@ class JoinClipsCommand : public SnapshotCommand<JoinClipsState> {
 
     bool canExecute() const override;
 
+    /// Whether lengthening @p left over @p right plays what @p right played (#3345): the same file
+    /// read on, at the same level and playback, with no fade at the seam.
+    static bool keepsAudio(const ClipInfo& left, const ClipInfo& right, double bpm);
+
   protected:
     JoinClipsState captureState() override;
     void restoreState(const JoinClipsState& state) override;
@@ -421,6 +426,49 @@ class JoinClipsCommand : public SnapshotCommand<JoinClipsState> {
     ClipId rightClipId_;
     double tempo_;
 };
+
+/**
+ * @brief Replaces joined clips with one clip on the file they were rendered to (#3345).
+ *
+ * Undo puts the originals back. The rendered file stays, so a redo needs no render.
+ */
+class ReplaceWithRenderedClipCommand : public UndoableCommand {
+  public:
+    ReplaceWithRenderedClipCommand(std::vector<ClipId> clipIds, juce::File rendered);
+
+    juce::String getDescription() const override {
+        return "Join Clips";
+    }
+
+    void execute() override;
+    void undo() override;
+
+    ClipId getJoinedClipId() const {
+        return joinedId_;
+    }
+
+    /// Whether only @p clipIds sound across their span, so rendering it renders just them.
+    static bool spanHoldsOnly(const std::vector<ClipId>& clipIds);
+
+    /// The render that joins @p clipIds into a new file, clips only as Render Time Selection
+    /// renders them. False when one is gone.
+    static bool fillRender(OfflineRenderRequest& request, const std::vector<ClipId>& clipIds);
+
+  private:
+    std::vector<ClipId> clipIds_;
+    juce::File rendered_;
+    std::vector<ClipInfo> originals_;
+    ClipId joinedId_ = INVALID_CLIP_ID;
+};
+
+/**
+ * @brief Joins clips as Glue and Join Clips do (#3345).
+ *
+ * Lengthens the first where every clip carries on the one before in one file, and otherwise
+ * renders them into a new file behind a progress window. INVALID_CLIP_ID when they do not meet
+ * or the render does not finish.
+ */
+ClipId joinClipsInApp(std::vector<ClipId> clipIds, AudioEngine* engine, double bpm);
 
 /**
  * @brief Command for stretching a clip (time-stretch)
@@ -490,6 +538,11 @@ class SetCrossfadeCommand : public UndoableCommand {
         return "Adjust Crossfade";
     }
 
+    /// Whether the last execute() found the pair crossfade-capable.
+    bool succeeded() const {
+        return succeeded_;
+    }
+
     void execute() override;
     void undo() override;
 
@@ -514,6 +567,7 @@ class SetCrossfadeCommand : public UndoableCommand {
     ClipInfo leftBefore_;
     ClipInfo rightBefore_;
     bool captured_ = false;
+    bool succeeded_ = false;
 };
 
 /**

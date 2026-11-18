@@ -24,6 +24,7 @@
 #include "core/ClipOcclusion.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPlacementPolicy.hpp"
+#include "core/ClipSourceMap.hpp"
 #include "core/Config.hpp"
 #include "core/ControlTarget.hpp"
 #include "core/DrumGridPads.hpp"
@@ -978,6 +979,186 @@ bool JoinClipsCommand::canExecute() const {
     return std::abs(left->getTimelineEnd(bpm) - right->getTimelineStart(bpm)) <= 0.001;
 }
 
+bool JoinClipsCommand::keepsAudio(const ClipInfo& left, const ClipInfo& right, double bpm) {
+    if (!left.isAudio() || !right.isAudio())
+        return left.isMidi() && right.isMidi();
+    const auto* a = left.primaryEvent();
+    const auto* b = right.primaryEvent();
+    if (a == nullptr || b == nullptr || a->sourceId != b->sourceId)
+        return false;
+    const bool samePlayback = a->autoTempo == b->autoTempo && a->interpBpm == b->interpBpm &&
+                              a->speedRatio == b->speedRatio &&
+                              a->timeStretchMode == b->timeStretchMode && !a->warpEnabled &&
+                              !b->warpEnabled && a->pitchChange == b->pitchChange &&
+                              a->transpose == b->transpose && !a->reversed && !b->reversed &&
+                              a->gainDB == b->gainDB && a->gainEnvelope == b->gainEnvelope;
+    const bool sameLevel =
+        left.volumeDB == right.volumeDB && left.gainDB == right.gainDB && left.pan == right.pan;
+    if (!samePlayback || !sameLevel || left.loopEnabled || right.loopEnabled ||
+        a->fadeOutSeconds > 0.0 || b->fadeInSeconds > 0.0)
+        return false;
+
+    const auto rate = a->sourceSampleRate();
+    const auto leftMap = ClipSourceMap::of(left, bpm, rate);
+    const auto rightMap = ClipSourceMap::of(right, bpm, rate);
+    if (!leftMap || !rightMap)
+        return false;
+    return std::abs(leftMap->sourceSecondsAt(left.placement.lengthBeats) -
+                    rightMap->sourceSecondsAt(0.0)) <= 1.0 / rate;
+}
+
+ReplaceWithRenderedClipCommand::ReplaceWithRenderedClipCommand(std::vector<ClipId> clipIds,
+                                                               juce::File rendered)
+    : clipIds_(std::move(clipIds)), rendered_(std::move(rendered)) {}
+
+void ReplaceWithRenderedClipCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    originals_.clear();
+    for (const auto id : clipIds_)
+        if (const auto* clip = clipManager.getClip(id))
+            originals_.push_back(*clip);
+    if (originals_.empty() || !rendered_.existsAsFile())
+        return;
+    std::ranges::sort(originals_, {},
+                      [](const ClipInfo& clip) { return clip.placement.startBeat; });
+
+    const auto& first = originals_.front();
+    double endBeat = first.placement.endBeat();
+    for (const auto& clip : originals_)
+        endBeat = std::max(endBeat, clip.placement.endBeat());
+    for (const auto& clip : originals_)
+        clipManager.deleteClip(clip.id);
+    joinedId_ = clipManager.createAudioClipBeats(first.trackId, first.placement.startBeat,
+                                                 endBeat - first.placement.startBeat,
+                                                 rendered_.getFullPathName());
+    if (auto* joined = clipManager.getClip(joinedId_)) {
+        joined->name = first.name;
+        joined->colour = first.colour;
+    }
+    clipManager.forceNotifyClipsChanged();
+}
+
+void ReplaceWithRenderedClipCommand::undo() {
+    auto& clipManager = ClipManager::getInstance();
+    if (joinedId_ != INVALID_CLIP_ID) {
+        clipManager.deleteClip(joinedId_);
+        joinedId_ = INVALID_CLIP_ID;
+    }
+    for (const auto& clip : originals_)
+        clipManager.restoreClip(clip);
+    clipManager.forceNotifyClipsChanged();
+}
+
+namespace {
+
+/// The earliest of @p clipIds and the latest beat any of them reaches; null when one is gone.
+std::pair<const ClipInfo*, double> joinSpan(const std::vector<ClipId>& clipIds) {
+    const ClipInfo* first = nullptr;
+    double endBeat = 0.0;
+    for (const auto id : clipIds) {
+        const auto* clip = ClipManager::getInstance().getClip(id);
+        if (clip == nullptr)
+            return {nullptr, 0.0};
+        if (first == nullptr || clip->placement.startBeat < first->placement.startBeat)
+            first = clip;
+        endBeat = std::max(endBeat, clip->placement.endBeat());
+    }
+    return {first, endBeat};
+}
+
+}  // namespace
+
+bool ReplaceWithRenderedClipCommand::spanHoldsOnly(const std::vector<ClipId>& clipIds) {
+    const auto [first, endBeat] = joinSpan(clipIds);
+    if (first == nullptr)
+        return false;
+    auto& clipManager = ClipManager::getInstance();
+    for (const auto id : clipManager.getClipsOnTrack(first->trackId, ClipView::Arrangement)) {
+        if (std::ranges::find(clipIds, id) != clipIds.end())
+            continue;
+        const auto* other = clipManager.getClip(id);
+        if (other != nullptr && other->placement.startBeat < endBeat &&
+            other->placement.endBeat() > first->placement.startBeat)
+            return false;
+    }
+    return true;
+}
+
+bool ReplaceWithRenderedClipCommand::fillRender(OfflineRenderRequest& request,
+                                                const std::vector<ClipId>& clipIds) {
+    const auto [first, endBeat] = joinSpan(clipIds);
+    if (first == nullptr || first->primaryEvent() == nullptr)
+        return false;
+
+    auto rendersDir = ProjectManager::getInstance().getRendersDirectory();
+    if (rendersDir == juce::File())
+        rendersDir = juce::File(first->primaryEvent()->sourceFilePath())
+                         .getParentDirectory()
+                         .getChildFile("renders");
+    rendersDir.createDirectory();
+    const auto* track = TrackManager::getInstance().getTrack(first->trackId);
+    const auto trackName = track != nullptr ? track->name : juce::String("Track");
+    request.destination = rendersDir.getNonexistentChildFile(
+        expandRenderPattern(first->name, trackName), ".wav", false);
+
+    const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
+    request.bitDepth = project.renderBitDepth;
+    request.sampleRate = project.sampleRate;
+    request.usePlugins = false;
+    request.useMasterPlugins = false;
+    request.useTrackEffects = false;
+    request.range = {{first->placement.startBeat}, {endBeat}};
+    request.trackIds = {first->trackId};
+    return true;
+}
+
+ClipId joinClipsInApp(std::vector<ClipId> clipIds, AudioEngine* engine, double bpm) {
+    auto& clipManager = ClipManager::getInstance();
+    if (clipIds.size() < 2 ||
+        std::ranges::any_of(clipIds, [&](ClipId id) { return clipManager.getClip(id) == nullptr; }))
+        return INVALID_CLIP_ID;
+    std::ranges::sort(clipIds, {}, [&clipManager](ClipId id) {
+        return clipManager.getClip(id)->placement.startBeat;
+    });
+
+    bool keepsAudio = true;
+    for (size_t i = 1; i < clipIds.size(); ++i) {
+        if (!JoinClipsCommand(clipIds[i - 1], clipIds[i], bpm).canExecute())
+            return INVALID_CLIP_ID;
+        keepsAudio =
+            keepsAudio && JoinClipsCommand::keepsAudio(*clipManager.getClip(clipIds[i - 1]),
+                                                       *clipManager.getClip(clipIds[i]), bpm);
+    }
+
+    auto& undo = UndoManager::getInstance();
+    if (keepsAudio) {
+        undo.beginCompoundOperation("Join Clips");
+        for (size_t i = 1; i < clipIds.size(); ++i)
+            undo.executeCommand(
+                std::make_unique<JoinClipsCommand>(clipIds.front(), clipIds[i], bpm));
+        undo.endCompoundOperation();
+        return clipIds.front();
+    }
+
+    OfflineRenderRequest request;
+    if (engine == nullptr || !engine->hasActiveEdit() ||
+        !ReplaceWithRenderedClipCommand::spanHoldsOnly(clipIds) ||
+        !ReplaceWithRenderedClipCommand::fillRender(request, clipIds))
+        return INVALID_CLIP_ID;
+    auto session = engine->createOfflineRenderSession(engine->isPlaying());
+    if (!session)
+        return INVALID_CLIP_ID;
+    RenderProgressWindow progress("Joining clips...", session->createTask(request));
+    if (!progress.runThread() || !progress.wasSuccessful()) {
+        request.destination.deleteFile();
+        return INVALID_CLIP_ID;
+    }
+    auto command = std::make_unique<ReplaceWithRenderedClipCommand>(clipIds, request.destination);
+    auto* raw = command.get();
+    undo.executeCommand(std::move(command));
+    return raw->getJoinedClipId();
+}
+
 JoinClipsState JoinClipsCommand::captureState() {
     auto& clipManager = ClipManager::getInstance();
     JoinClipsState state;
@@ -1072,13 +1253,20 @@ void JoinClipsCommand::performAction() {
         left->loopLengthBeats = 0.0;
         left->midiOffset = 0.0;
         left->midiTrimOffset = 0.0;
-    } else if (left->isAudio()) {
-        // Audio join: extend left clip length to cover both clips
-        // (offset and speedRatio remain from left clip)
+    } else if (auto* event = left->primaryEvent()) {
+        // The left clip's read carries on over the right one; the joined end is the right's.
+        if (const auto* tail = right->primaryEvent()) {
+            event->fadeOutSeconds = tail->fadeOutSeconds;
+            event->fadeOutType = tail->fadeOutType;
+            event->fadeOutBehaviour = tail->fadeOutBehaviour;
+        }
     }
 
     // Extend left clip length
     left->setPlacementBeats(leftStartBeats, joinedLengthBeats);
+    // A non-looped event's region is exactly what it plays, as splitClipAtBeat leaves each half.
+    if (auto* event = left->primaryEvent(); event != nullptr && !left->loopEnabled)
+        event->setLoopLengthSeconds(event->timelineToSource(left->getTimelineLength(bpm)));
 
     // Delete right clip
     clipManager.deleteClip(rightClipId_);
@@ -1182,8 +1370,8 @@ SetCrossfadeCommand::SetCrossfadeCommand(ClipId leftId, ClipId rightId, double s
 void SetCrossfadeCommand::execute() {
     if (!captured_)
         return;
-    ClipManager::getInstance().setCrossfadeRegionBeats(leftId_, rightId_, startBeat_, endBeat_,
-                                                       tempo_);
+    succeeded_ = ClipManager::getInstance().setCrossfadeRegionBeats(leftId_, rightId_, startBeat_,
+                                                                    endBeat_, tempo_);
 }
 
 void SetCrossfadeCommand::undo() {

@@ -492,9 +492,41 @@ const juce::var& clipSchema() {
                         "tempo":{"type":"number","minimum":0},
                         "tempoFrom":{"type":"string",
                             "enum":["none","fileMetadata","analysis","user","project"]},
-                        "speedRatio":{"type":"number","minimum":0}
+                        "speedRatio":{"type":"number","minimum":0},
+                        "volumeDb":{"type":"number","minimum":-100,"maximum":0},
+                        "gainDb":{"type":"number","minimum":0,"maximum":24},
+                        "source":{
+                            "type":["object","null"],
+                            "properties":{
+                                "path":{"type":"string"},
+                                "sampleRate":{"type":"number","minimum":0},
+                                "lengthSeconds":{"type":"number","minimum":0}
+                            },
+                            "required":["path","sampleRate","lengthSeconds"],
+                            "additionalProperties":false
+                        },
+                        "sourceStartSeconds":{"type":"number","minimum":0},
+                        "sourceLengthSeconds":{"type":"number","minimum":0},
+                        "fadeInSeconds":{"type":"number","minimum":0},
+                        "fadeOutSeconds":{"type":"number","minimum":0},
+                        "fadeInCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]},
+                        "fadeOutCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]},
+                        "autoCrossfade":{"type":"boolean"},
+                        "gainEnvelope":{"type":"array","items":{
+                            "type":"object",
+                            "properties":{
+                                "sourceSeconds":{"type":"number","minimum":0},
+                                "gainDb":{"type":"number","minimum":-60,"maximum":6},
+                                "curve":{"type":"string","enum":["linear","bezier","step","hard_corner"]}
+                            },
+                            "required":["sourceSeconds","gainDb","curve"],
+                            "additionalProperties":false
+                        }}
                     },
-                    "required":["playback","looping","tempo","tempoFrom","speedRatio"],
+                    "required":["playback","looping","tempo","tempoFrom","speedRatio","volumeDb",
+                                "gainDb","source","sourceStartSeconds","sourceLengthSeconds",
+                                "fadeInSeconds","fadeOutSeconds","fadeInCurve","fadeOutCurve",
+                                "autoCrossfade","gainEnvelope"],
                     "additionalProperties":false
                 }
             },
@@ -517,6 +549,19 @@ const juce::var& clipSchema() {
             .getDynamicObject()
             ->setProperty("items", midiEventSchema());
         return schema;
+    }();
+    return value;
+}
+
+const juce::var& remoteJobSchema();
+
+/// A clip written at once, or the job that writes it after a render (#3345).
+const juce::var& clipOrJobSchema() {
+    static const auto value = [] {
+        auto* object = new juce::DynamicObject();
+        object->setProperty("type", "object");
+        object->setProperty("oneOf", juce::Array<juce::var>{clipSchema(), remoteJobSchema()});
+        return juce::var(object);
     }();
     return value;
 }
@@ -1220,9 +1265,10 @@ const juce::var& automationPointSchema() {
             "id":{"type":"integer","minimum":0},
             "beatPosition":{"type":"number","minimum":0},
             "value":{"type":"number","minimum":0,"maximum":1},
-            "curve":{"type":"string","enum":["linear","bezier","step","hard_corner"]}
+            "curve":{"type":"string","enum":["linear","bezier","step","hard_corner"]},
+            "realValue":{"type":"number"}
         },
-        "required":["id","beatPosition","value","curve"],
+        "required":["id","beatPosition","value","curve","realValue"],
         "additionalProperties":false
     })json");
     return value;
@@ -1234,9 +1280,10 @@ const juce::var& automationPointInputSchema() {
         "properties":{
             "beatPosition":{"type":"number","minimum":0},
             "value":{"type":"number","minimum":0,"maximum":1},
+            "realValue":{"type":"number"},
             "curve":{"type":"string","enum":["linear","bezier","step","hard_corner"]}
         },
-        "required":["beatPosition","value","curve"],
+        "required":["beatPosition","curve"],
         "additionalProperties":false
     })json");
     return value;
@@ -1252,9 +1299,14 @@ const juce::var& automationLaneSchema() {
                 "name":{"type":"string"},
                 "target":{},
                 "points":{"type":"array","maxItems":100000},
-                "clipIds":{"type":"array","items":{"type":"integer","minimum":0}}
+                "clipIds":{"type":"array","items":{"type":"integer","minimum":0}},
+                "unit":{"type":"string"},
+                "minValue":{"type":"number"},
+                "maxValue":{"type":"number"},
+                "scale":{"type":"string","enum":["linear","logarithmic","exponential","discrete","boolean","fader_db"]}
             },
-            "required":["id","type","name","target","points","clipIds"],
+            "required":["id","type","name","target","points","clipIds","unit","minValue",
+                        "maxValue","scale"],
             "additionalProperties":false
         })json");
         auto* properties = schema["properties"].getDynamicObject();
@@ -1990,6 +2042,33 @@ juce::var toJson(const ClipDto& dto) {
         audio->setProperty("tempo", dto.audio->tempo);
         audio->setProperty("tempoFrom", dto.audio->tempoFrom);
         audio->setProperty("speedRatio", dto.audio->speedRatio);
+        audio->setProperty("volumeDb", dto.audio->volumeDb);
+        audio->setProperty("gainDb", dto.audio->gainDb);
+        if (const auto& source = dto.audio->source) {
+            auto* file = new juce::DynamicObject();
+            file->setProperty("path", source->path);
+            file->setProperty("sampleRate", source->sampleRate);
+            file->setProperty("lengthSeconds", source->lengthSeconds);
+            audio->setProperty("source", juce::var(file));
+        } else {
+            audio->setProperty("source", juce::var());
+        }
+        audio->setProperty("sourceStartSeconds", dto.audio->sourceStartSeconds);
+        audio->setProperty("sourceLengthSeconds", dto.audio->sourceLengthSeconds);
+        audio->setProperty("fadeInSeconds", dto.audio->fadeInSeconds);
+        audio->setProperty("fadeOutSeconds", dto.audio->fadeOutSeconds);
+        audio->setProperty("fadeInCurve", dto.audio->fadeInCurve);
+        audio->setProperty("fadeOutCurve", dto.audio->fadeOutCurve);
+        audio->setProperty("autoCrossfade", dto.audio->autoCrossfade);
+        juce::Array<juce::var> gainPoints;
+        for (const auto& point : dto.audio->gainEnvelope) {
+            auto* entry = new juce::DynamicObject();
+            entry->setProperty("sourceSeconds", point.sourceSeconds);
+            entry->setProperty("gainDb", point.gainDb);
+            entry->setProperty("curve", point.curve);
+            gainPoints.add(juce::var(entry));
+        }
+        audio->setProperty("gainEnvelope", gainPoints);
         object->setProperty("audio", juce::var(audio));
     } else {
         object->setProperty("audio", juce::var());
@@ -2276,6 +2355,7 @@ juce::var toJson(const AutomationPointDto& dto) {
     object->setProperty("beatPosition", dto.beatPosition);
     object->setProperty("value", dto.value);
     object->setProperty("curve", dto.curve);
+    object->setProperty("realValue", dto.realValue);
     return object;
 }
 
@@ -2320,6 +2400,10 @@ juce::var toJson(const AutomationLaneDto& dto) {
         points.add(toJson(point));
     object->setProperty("points", points);
     object->setProperty("clipIds", integerArray(dto.clipIds));
+    object->setProperty("unit", dto.unit);
+    object->setProperty("minValue", dto.minValue);
+    object->setProperty("maxValue", dto.maxValue);
+    object->setProperty("scale", PluginParameterConfigStore::scaleToString(dto.scale));
     return object;
 }
 
@@ -2553,9 +2637,31 @@ std::optional<ClipDto> clipFromJson(const juce::var& json, Error& error) {
         }
     }
     if (const auto& audio = json["audio"]; audio.isObject()) {
-        dto.audio = ClipAudioDto{audio["playback"].toString(), static_cast<bool>(audio["looping"]),
-                                 static_cast<double>(audio["tempo"]), audio["tempoFrom"].toString(),
-                                 static_cast<double>(audio["speedRatio"])};
+        ClipAudioDto decoded;
+        decoded.playback = audio["playback"].toString();
+        decoded.looping = static_cast<bool>(audio["looping"]);
+        decoded.tempo = static_cast<double>(audio["tempo"]);
+        decoded.tempoFrom = audio["tempoFrom"].toString();
+        decoded.speedRatio = static_cast<double>(audio["speedRatio"]);
+        decoded.volumeDb = static_cast<double>(audio["volumeDb"]);
+        decoded.gainDb = static_cast<double>(audio["gainDb"]);
+        if (const auto& source = audio["source"]; source.isObject())
+            decoded.source =
+                ClipSourceDto{source["path"].toString(), static_cast<double>(source["sampleRate"]),
+                              static_cast<double>(source["lengthSeconds"])};
+        decoded.sourceStartSeconds = static_cast<double>(audio["sourceStartSeconds"]);
+        decoded.sourceLengthSeconds = static_cast<double>(audio["sourceLengthSeconds"]);
+        decoded.fadeInSeconds = static_cast<double>(audio["fadeInSeconds"]);
+        decoded.fadeOutSeconds = static_cast<double>(audio["fadeOutSeconds"]);
+        decoded.fadeInCurve = audio["fadeInCurve"].toString();
+        decoded.fadeOutCurve = audio["fadeOutCurve"].toString();
+        decoded.autoCrossfade = static_cast<bool>(audio["autoCrossfade"]);
+        if (const auto* points = audio["gainEnvelope"].getArray())
+            for (const auto& point : *points)
+                decoded.gainEnvelope.push_back({static_cast<double>(point["sourceSeconds"]),
+                                                static_cast<double>(point["gainDb"]),
+                                                point["curve"].toString()});
+        dto.audio = std::move(decoded);
     }
     return dto;
 }
@@ -2818,9 +2924,14 @@ std::optional<AutomationLaneDto> automationLaneFromJson(const juce::var& json, E
         point.beatPosition = static_cast<double>(item["beatPosition"]);
         point.value = static_cast<double>(item["value"]);
         point.curve = item["curve"].toString();
+        point.realValue = static_cast<double>(item["realValue"]);
         dto.points.push_back(std::move(point));
     }
     dto.clipIds = readIntegerArray<AutomationClipId>(json["clipIds"]);
+    dto.unit = json["unit"].toString();
+    dto.minValue = static_cast<double>(json["minValue"]);
+    dto.maxValue = static_cast<double>(json["maxValue"]);
+    dto.scale = PluginParameterConfigStore::scaleFromString(json["scale"].toString());
     return dto;
 }
 
@@ -2838,7 +2949,8 @@ std::optional<AutomationClipDto> automationClipFromJson(const juce::var& json, E
     dto.loopLengthBeats = static_cast<double>(json["loopLengthBeats"]);
     for (const auto& item : *json["points"].getArray()) {
         dto.points.push_back({readInt(item, "id"), static_cast<double>(item["beatPosition"]),
-                              static_cast<double>(item["value"]), item["curve"].toString()});
+                              static_cast<double>(item["value"]), item["curve"].toString(),
+                              static_cast<double>(item["realValue"])});
     }
     return dto;
 }
@@ -3586,6 +3698,29 @@ OperationRegistry::OperationRegistry() {
             "required":["clipId","lengthBeats","edge"],"additionalProperties":false
         })json"),
         clipSchema());
+    add("clips.split",
+        "Split an arrangement clip at one or more beats inside it; returns the pieces in "
+        "timeline order",
+        OperationAccess::Write, &handlers::clipsSplit, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "beats":{"type":"array","minItems":1,"items":{"type":"number","minimum":0}}
+            },
+            "required":["clipId","beats"],"additionalProperties":false
+        })json"),
+        arraySchema(clipSchema()));
+    add("clips.join",
+        "Join arrangement clips on one track, each starting where the one before ends, into the "
+        "first",
+        OperationAccess::Write, &handlers::clipsJoin, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipIds":{"type":"array","minItems":2,"items":{"type":"integer","minimum":0}}
+            },
+            "required":["clipIds"],"additionalProperties":false
+        })json"),
+        clipOrJobSchema());
     add("clips.duplicate", "Duplicate a clip to an arrangement position or session slot",
         OperationAccess::Write, &handlers::clipsDuplicate, operationInputSchema(R"json({
             "type":"object",
@@ -3611,7 +3746,8 @@ OperationRegistry::OperationRegistry() {
         })json"),
         clipSchema());
     add("clips.updateAudio",
-        "Update an audio clip's playback mode, looping, source tempo, stretch, reverse, and fades",
+        "Update an audio clip's playback mode, looping, source tempo, stretch, reverse, fades, "
+        "volume, gain, auto crossfade, and gain envelope",
         OperationAccess::Write, &handlers::clipsUpdateAudio, operationInputSchema(R"json({
             "type":"object",
             "properties":{
@@ -3624,11 +3760,39 @@ OperationRegistry::OperationRegistry() {
                 "fadeInSeconds":{"type":"number","minimum":0,"maximum":600},
                 "fadeOutSeconds":{"type":"number","minimum":0,"maximum":600},
                 "fadeInCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]},
-                "fadeOutCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]}
+                "fadeOutCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]},
+                "volumeDb":{"type":"number"},
+                "gainDb":{"type":"number"},
+                "autoCrossfade":{"type":"boolean"},
+                "gainEnvelope":{"type":"array","items":{
+                    "type":"object",
+                    "properties":{
+                        "sourceSeconds":{"type":"number","minimum":0},
+                        "gainDb":{"type":"number"},
+                        "curve":{"type":"string","enum":["linear","bezier","step","hard_corner"]}
+                    },
+                    "required":["sourceSeconds","gainDb"],
+                    "additionalProperties":false
+                }}
             },
             "required":["clipId"],"additionalProperties":false
         })json"),
         clipSchema());
+    add("clips.setCrossfade",
+        "Set the crossfade between two audio clips that meet on a track, as the overlap from "
+        "startBeat to endBeat; equal beats remove it",
+        OperationAccess::Write, &handlers::clipsSetCrossfade, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "leftClipId":{"type":"integer","minimum":0},
+                "rightClipId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0},
+                "endBeat":{"type":"number","minimum":0}
+            },
+            "required":["leftClipId","rightClipId","startBeat","endBeat"],
+            "additionalProperties":false
+        })json"),
+        arraySchema(clipSchema()));
     add("clips.transpose", "Transpose every note in a MIDI clip by semitones",
         OperationAccess::Write, &handlers::clipsTranspose, operationInputSchema(R"json({
             "type":"object",
@@ -3877,6 +4041,30 @@ OperationRegistry::OperationRegistry() {
         deviceParameterSchema());
     operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
         "devicePath", devicePathSchema());
+    add("devices.setParameters",
+        "Set several device parameters in real units, checked as a whole so all or none are "
+        "written",
+        OperationAccess::Write, &handlers::devicesSetParameters, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "writes":{"type":"array","minItems":1,"items":{
+                    "type":"object",
+                    "properties":{
+                        "devicePath":{},
+                        "parameterIndex":{"type":"integer","minimum":0},
+                        "value":{"type":"number"}
+                    },
+                    "required":["devicePath","parameterIndex","value"],
+                    "additionalProperties":false
+                }}
+            },
+            "required":["writes"],"additionalProperties":false
+        })json"),
+        arraySchema(deviceParameterSchema()));
+    operations_.back()
+        .inputSchema["properties"]["writes"]["items"]["properties"]
+        .getDynamicObject()
+        ->setProperty("devicePath", devicePathSchema());
     add("devices.setParameterConfig",
         "Update a device's saved parameter customization: the visible / mini-mixer / AI-agent "
         "selections and the per-plugin AI prompt",
@@ -4376,9 +4564,10 @@ OperationRegistry::OperationRegistry() {
                 "laneId":{"type":"integer","minimum":0},
                 "beatPosition":{"type":"number","minimum":0},
                 "value":{"type":"number","minimum":0,"maximum":1},
+                "realValue":{"type":"number"},
                 "curve":{"type":"string","enum":["linear","bezier","step","hard_corner"]}
             },
-            "required":["laneId","beatPosition","value","curve"],
+            "required":["laneId","beatPosition","curve"],
             "additionalProperties":false
         })json"),
         automationLaneSchema());
@@ -4656,6 +4845,9 @@ OperationRegistry::OperationRegistry() {
         {"clips.createMidi", Scope::Edit},
         {"clips.loadSample", Scope::Edit},
         {"clips.updateAudio", Scope::Edit},
+        {"clips.setCrossfade", Scope::Edit},
+        {"clips.split", Scope::Edit},
+        {"clips.join", Scope::Edit},
         {"clips.addMidiNote", Scope::Edit},
         {"clips.addMidiEvents", Scope::Edit},
         {"clips.updateMidiEvents", Scope::Edit},
@@ -4695,6 +4887,7 @@ OperationRegistry::OperationRegistry() {
         {"devices.setBypassed", Scope::Edit},
         {"devices.setInsert", Scope::Edit},
         {"devices.setParameter", Scope::Edit},
+        {"devices.setParameters", Scope::Edit},
         {"devices.setParameterConfig", Scope::Edit},
         {"mods.create", Scope::Edit},
         {"mods.update", Scope::Edit},
