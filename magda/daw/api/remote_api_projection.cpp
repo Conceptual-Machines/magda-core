@@ -8,6 +8,7 @@
 #include "../audio/DeviceParameterList.hpp"
 #include "../core/AutomationInfo.hpp"
 #include "../core/ClipInfo.hpp"
+#include "../core/ClipSourceMap.hpp"
 #include "../core/DeviceInfo.hpp"
 #include "../core/DrumGridPads.hpp"
 #include "../core/PadChannels.hpp"
@@ -15,6 +16,7 @@
 #include "../core/PluginParameterConfigStore.hpp"
 #include "../core/RackInfo.hpp"
 #include "../core/ReferenceImpact.hpp"
+#include "../core/TempoMap.hpp"
 #include "../core/TrackInfo.hpp"
 #include "../project/ProjectInfo.hpp"
 #include "automation_api.hpp"
@@ -496,9 +498,67 @@ juce::String tempoFromName(Provenance from) {
     return "none";
 }
 
+juce::String fadeCurveName(int type) {
+    switch (static_cast<FadeCurve>(type)) {
+        case FadeCurve::Convex:
+            return "convex";
+        case FadeCurve::Concave:
+            return "concave";
+        case FadeCurve::SCurve:
+            return "s_curve";
+        case FadeCurve::Linear:
+            break;
+    }
+    return "linear";
+}
+
+/// The one tempo that times the clip's whole window, so a free clip reads right across a change.
+double clipBpm(const ClipInfo& clip, const TempoMap* tempo) {
+    if (tempo == nullptr)
+        return 0.0;
+    const auto start = clip.placement.startBeat;
+    const auto seconds = tempo->beatToTime(clip.placement.endBeat()) - tempo->beatToTime(start);
+    return seconds > 0.0 ? clip.placement.lengthBeats * 60.0 / seconds : tempo->bpmAt(start);
+}
+
+struct SourceRead {
+    double start = 0.0;
+    double length = 0.0;
+};
+
+/// The stretch of its file @p clip plays, in source seconds: the loop region when looping.
+SourceRead sourceReadOf(const ClipInfo& clip, const AudioEvent& event, double bpm) {
+    if (event.reversed) {
+        // The same stretch, played backwards.
+        auto forward = clip;
+        forward.primaryEvent()->reversed = false;
+        return sourceReadOf(forward, *forward.primaryEvent(), bpm);
+    }
+    const auto map = ClipSourceMap::of(clip, bpm, event.sourceSampleRate());
+    if (!map)
+        return {event.anchorSeconds(), 0.0};
+
+    double start = event.loopStartSeconds();
+    double end = start + map->loopSourceSeconds();
+    if (map->loopSourceSeconds() <= 0.0) {
+        const auto from = std::max(0.0, map->eventStartBeat());
+        const auto to = std::min(clip.placement.lengthBeats, map->eventEndBeat());
+        if (!(to > from))
+            return {event.anchorSeconds(), 0.0};
+        start = map->sourceSecondsAt(from);
+        end = map->sourceSecondsAt(to);
+    }
+    start = std::max(0.0, start);
+    if (const auto duration = event.sourceDurationSeconds(); duration > 0.0) {
+        start = std::min(start, duration);
+        end = std::min(end, duration);
+    }
+    return {start, std::max(0.0, end - start)};
+}
+
 }  // namespace
 
-ClipDto makeClipDto(const ClipInfo& clip) {
+ClipDto makeClipDto(const ClipInfo& clip, const TempoMap* tempo) {
     ClipDto dto;
     dto.id = clip.id;
     dto.trackId = clip.trackId;
@@ -520,10 +580,28 @@ ClipDto makeClipDto(const ClipInfo& clip) {
     for (const auto& note : clip.midiNotes)
         dto.notes.push_back({note.noteNumber, note.velocity, note.startBeat, note.lengthBeats});
     dto.midiEvents = makeMidiEventDtos(clip);
-    if (const auto* event = clip.primaryEvent())
-        dto.audio =
-            ClipAudioDto{event->autoTempo ? "beat" : "free", clip.loopEnabled, event->interpBpm,
-                         tempoFromName(event->bpmFrom), event->speedRatio};
+    if (const auto* event = clip.primaryEvent()) {
+        ClipAudioDto audio;
+        audio.playback = event->autoTempo ? "beat" : "free";
+        audio.looping = clip.loopEnabled;
+        audio.tempo = event->interpBpm;
+        audio.tempoFrom = tempoFromName(event->bpmFrom);
+        audio.speedRatio = event->speedRatio;
+        audio.volumeDb = clip.volumeDB;
+        audio.gainDb = clip.gainDB;
+        if (const auto* source = event->source())
+            audio.source =
+                ClipSourceDto{source->filePath, source->sampleRate, source->durationSeconds};
+        const auto read = sourceReadOf(clip, *event, clipBpm(clip, tempo));
+        audio.sourceStartSeconds = read.start;
+        audio.sourceLengthSeconds = read.length;
+        audio.fadeInSeconds = event->fadeInSeconds;
+        audio.fadeOutSeconds = event->fadeOutSeconds;
+        audio.fadeInCurve = fadeCurveName(event->fadeInType);
+        audio.fadeOutCurve = fadeCurveName(event->fadeOutType);
+        audio.autoCrossfade = clip.autoCrossfade;
+        dto.audio = std::move(audio);
+    }
     return dto;
 }
 

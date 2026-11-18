@@ -298,7 +298,8 @@ does not expose internal filesystem or engine objects through job results.
 - External plugin parameter writes and modulation links are restricted to
   parameters the user enabled for AI/agent control.
 - File-taking operations use absolute paths on the computer running MAGDA.
-  Reads avoid exposing media paths, plugin state, or native engine objects.
+  Reads avoid exposing plugin state or native engine objects. The one path a
+  read reports is an audio clip's own file, so a client can open what it plays.
 - A device id is not globally unique. Address devices and nested racks with the
   complete `devicePath` returned by `devices.list`.
 

@@ -490,6 +490,11 @@ class SetCrossfadeCommand : public UndoableCommand {
         return "Adjust Crossfade";
     }
 
+    /// Whether the last execute() found the pair crossfade-capable.
+    bool succeeded() const {
+        return succeeded_;
+    }
+
     void execute() override;
     void undo() override;
 
@@ -514,6 +519,7 @@ class SetCrossfadeCommand : public UndoableCommand {
     ClipInfo leftBefore_;
     ClipInfo rightBefore_;
     bool captured_ = false;
+    bool succeeded_ = false;
 };
 
 /**

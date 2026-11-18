@@ -5347,6 +5347,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -5354,7 +5426,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }
@@ -14187,6 +14269,78 @@
                   "speedRatio": {
                     "type": "number",
                     "minimum": 0
+                  },
+                  "volumeDb": {
+                    "type": "number",
+                    "minimum": -100,
+                    "maximum": 0
+                  },
+                  "gainDb": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 24
+                  },
+                  "source": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string"
+                      },
+                      "sampleRate": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "lengthSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "sampleRate",
+                      "lengthSeconds"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "sourceStartSeconds": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "sourceLengthSeconds": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "fadeInSeconds": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "fadeOutSeconds": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "fadeInCurve": {
+                    "type": "string",
+                    "enum": [
+                      "linear",
+                      "convex",
+                      "concave",
+                      "s_curve"
+                    ]
+                  },
+                  "fadeOutCurve": {
+                    "type": "string",
+                    "enum": [
+                      "linear",
+                      "convex",
+                      "concave",
+                      "s_curve"
+                    ]
+                  },
+                  "autoCrossfade": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -14194,7 +14348,17 @@
                   "looping",
                   "tempo",
                   "tempoFrom",
-                  "speedRatio"
+                  "speedRatio",
+                  "volumeDb",
+                  "gainDb",
+                  "source",
+                  "sourceStartSeconds",
+                  "sourceLengthSeconds",
+                  "fadeInSeconds",
+                  "fadeOutSeconds",
+                  "fadeInCurve",
+                  "fadeOutCurve",
+                  "autoCrossfade"
                 ],
                 "additionalProperties": false
               }
@@ -14618,6 +14782,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -14625,7 +14861,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }
@@ -15339,6 +15585,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -15346,7 +15664,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }
@@ -16165,6 +16493,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -16172,7 +16572,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }
@@ -16790,6 +17200,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -16797,7 +17279,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }
@@ -17383,6 +17875,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -17390,7 +17954,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }
@@ -17827,6 +18401,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -17834,7 +18480,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }
@@ -18384,6 +19040,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -18391,7 +19119,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }
@@ -18834,6 +19572,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -18841,7 +19651,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }
@@ -19331,6 +20151,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -19338,7 +20230,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }
@@ -19784,6 +20686,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -19791,7 +20765,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }
@@ -19851,7 +20835,7 @@
     },
     {
       "name": "clips.updateAudio",
-      "summary": "Update an audio clip's playback mode, looping, source tempo, stretch, reverse, and fades",
+      "summary": "Update an audio clip's playback mode, looping, source tempo, stretch, reverse, fades, volume, gain, and auto crossfade",
       "paramStructure": "by-name",
       "params": [
         {
@@ -19956,6 +20940,27 @@
               "s_curve"
             ],
             "maxLength": 16384
+          }
+        },
+        {
+          "name": "volumeDb",
+          "required": false,
+          "schema": {
+            "type": "number"
+          }
+        },
+        {
+          "name": "gainDb",
+          "required": false,
+          "schema": {
+            "type": "number"
+          }
+        },
+        {
+          "name": "autoCrossfade",
+          "required": false,
+          "schema": {
+            "type": "boolean"
           }
         }
       ],
@@ -20309,6 +21314,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -20316,7 +21393,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }
@@ -20342,6 +21429,546 @@
             "audio"
           ],
           "additionalProperties": false
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/validation_failed"
+        },
+        {
+          "$ref": "#/components/errors/internal_error"
+        },
+        {
+          "$ref": "#/components/errors/not_found"
+        },
+        {
+          "$ref": "#/components/errors/conflict"
+        },
+        {
+          "$ref": "#/components/errors/timeout"
+        },
+        {
+          "$ref": "#/components/errors/cancelled"
+        },
+        {
+          "$ref": "#/components/errors/too_many_requests"
+        },
+        {
+          "$ref": "#/components/errors/permission_denied"
+        }
+      ],
+      "x-access": "write",
+      "x-required-scope": "edit",
+      "x-transport-scoped": false
+    },
+    {
+      "name": "clips.setCrossfade",
+      "summary": "Set the crossfade between two audio clips that meet on a track, as the overlap from startBeat to endBeat; equal beats remove it",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "leftClipId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        },
+        {
+          "name": "rightClipId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        },
+        {
+          "name": "startBeat",
+          "required": true,
+          "schema": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        {
+          "name": "endBeat",
+          "required": true,
+          "schema": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              },
+              "trackId": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "audio",
+                  "midi"
+                ]
+              },
+              "view": {
+                "type": "string",
+                "enum": [
+                  "arrangement",
+                  "session"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "colourArgb": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "startBeat": {
+                "type": "number",
+                "minimum": 0
+              },
+              "lengthBeats": {
+                "type": "number",
+                "minimum": 0
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "sceneIndex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 2147483647
+              },
+              "launchMode": {
+                "type": "string",
+                "enum": [
+                  "trigger",
+                  "toggle"
+                ]
+              },
+              "launchQuantize": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "8_bars",
+                  "4_bars",
+                  "2_bars",
+                  "1_bar",
+                  "1/2",
+                  "1/4",
+                  "1/8",
+                  "1/16"
+                ]
+              },
+              "followAction": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "next",
+                  "previous",
+                  "random",
+                  "stop",
+                  "again"
+                ]
+              },
+              "followActionDelayBeats": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000000
+              },
+              "followActionLoopCount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100000
+              },
+              "notes": {
+                "type": "array",
+                "maxItems": 100000,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "note": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127
+                    },
+                    "velocity": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127
+                    },
+                    "startBeat": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthBeats": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "note",
+                    "velocity",
+                    "startBeat",
+                    "lengthBeats"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "midiEvents": {
+                "type": "array",
+                "maxItems": 100000,
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 2147483647
+                        },
+                        "type": {
+                          "type": "string",
+                          "const": "note"
+                        },
+                        "note": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 127
+                        },
+                        "velocity": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 127
+                        },
+                        "beat": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "lengthBeats": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "keyswitch": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "type",
+                        "note",
+                        "velocity",
+                        "beat",
+                        "lengthBeats",
+                        "keyswitch"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 2147483647
+                        },
+                        "type": {
+                          "type": "string",
+                          "const": "controlChange"
+                        },
+                        "controller": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 127
+                        },
+                        "value": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 127
+                        },
+                        "beat": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "type",
+                        "controller",
+                        "value",
+                        "beat"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 2147483647
+                        },
+                        "type": {
+                          "type": "string",
+                          "const": "pitchBend"
+                        },
+                        "value": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 16383
+                        },
+                        "beat": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "type",
+                        "value",
+                        "beat"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 2147483647
+                        },
+                        "type": {
+                          "type": "string",
+                          "const": "channelPressure"
+                        },
+                        "value": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 127
+                        },
+                        "beat": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "type",
+                        "value",
+                        "beat"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 2147483647
+                        },
+                        "type": {
+                          "type": "string",
+                          "const": "polyAftertouch"
+                        },
+                        "note": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 127
+                        },
+                        "value": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 127
+                        },
+                        "beat": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "type",
+                        "note",
+                        "value",
+                        "beat"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "audio": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "playback": {
+                    "type": "string",
+                    "enum": [
+                      "free",
+                      "beat"
+                    ]
+                  },
+                  "looping": {
+                    "type": "boolean"
+                  },
+                  "tempo": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "tempoFrom": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "fileMetadata",
+                      "analysis",
+                      "user",
+                      "project"
+                    ]
+                  },
+                  "speedRatio": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "volumeDb": {
+                    "type": "number",
+                    "minimum": -100,
+                    "maximum": 0
+                  },
+                  "gainDb": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 24
+                  },
+                  "source": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string"
+                      },
+                      "sampleRate": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "lengthSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "sampleRate",
+                      "lengthSeconds"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "sourceStartSeconds": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "sourceLengthSeconds": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "fadeInSeconds": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "fadeOutSeconds": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "fadeInCurve": {
+                    "type": "string",
+                    "enum": [
+                      "linear",
+                      "convex",
+                      "concave",
+                      "s_curve"
+                    ]
+                  },
+                  "fadeOutCurve": {
+                    "type": "string",
+                    "enum": [
+                      "linear",
+                      "convex",
+                      "concave",
+                      "s_curve"
+                    ]
+                  },
+                  "autoCrossfade": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "playback",
+                  "looping",
+                  "tempo",
+                  "tempoFrom",
+                  "speedRatio",
+                  "volumeDb",
+                  "gainDb",
+                  "source",
+                  "sourceStartSeconds",
+                  "sourceLengthSeconds",
+                  "fadeInSeconds",
+                  "fadeOutSeconds",
+                  "fadeInCurve",
+                  "fadeOutCurve",
+                  "autoCrossfade"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "id",
+              "trackId",
+              "type",
+              "view",
+              "name",
+              "colourArgb",
+              "startBeat",
+              "lengthBeats",
+              "enabled",
+              "sceneIndex",
+              "launchMode",
+              "launchQuantize",
+              "followAction",
+              "followActionDelayBeats",
+              "followActionLoopCount",
+              "notes",
+              "midiEvents",
+              "audio"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "errors": [
@@ -20748,6 +22375,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -20755,7 +22454,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }
@@ -21213,6 +22922,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -21220,7 +23001,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }
@@ -21665,6 +23456,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -21672,7 +23535,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }
@@ -40919,6 +42792,78 @@
                 "speedRatio": {
                   "type": "number",
                   "minimum": 0
+                },
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 0
+                },
+                "gainDb": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 24
+                },
+                "source": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sampleRate": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "lengthSeconds": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sampleRate",
+                    "lengthSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "sourceStartSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sourceLengthSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeOutSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "fadeInCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "fadeOutCurve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "convex",
+                    "concave",
+                    "s_curve"
+                  ]
+                },
+                "autoCrossfade": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -40926,7 +42871,17 @@
                 "looping",
                 "tempo",
                 "tempoFrom",
-                "speedRatio"
+                "speedRatio",
+                "volumeDb",
+                "gainDb",
+                "source",
+                "sourceStartSeconds",
+                "sourceLengthSeconds",
+                "fadeInSeconds",
+                "fadeOutSeconds",
+                "fadeInCurve",
+                "fadeOutCurve",
+                "autoCrossfade"
               ],
               "additionalProperties": false
             }

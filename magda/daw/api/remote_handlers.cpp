@@ -84,6 +84,10 @@ bool readBool(const juce::var& input, const char* key, bool fallback = false) {
     return has(input, key) ? static_cast<bool>(input[key]) : fallback;
 }
 
+juce::var clipJson(MagdaApi& api, const ClipInfo& clip) {
+    return toJson(makeClipDto(clip, api.project().tempoMap()));
+}
+
 std::optional<juce::File> resolveAbsolutePath(const juce::String& path, Error& error) {
     // Constructing juce::File from a relative path asserts in debug builds, so
     // this check must remain before any juce::File construction.
@@ -509,7 +513,7 @@ HandlerResult midiEventStateResult(MagdaApi& api, ClipId clipId) {
     const auto* updated = api.clips().getClip(clipId);
     if (updated == nullptr)
         return notFound("clip", clipId);
-    return HandlerResult::ok(toJson(makeClipDto(*updated)));
+    return HandlerResult::ok(clipJson(api, *updated));
 }
 
 // ---------------------------------------------------------------------------
@@ -2072,7 +2076,7 @@ HandlerResult chordTrackSendToTrack(MagdaApi& api, const juce::var& input, const
     const auto* created = api.clips().getClip(createdId);
     if (created == nullptr)
         return notFound("clip", createdId);
-    return HandlerResult::ok(toJson(makeClipDto(*created)));
+    return HandlerResult::ok(clipJson(api, *created));
 }
 
 HandlerResult tracksCreateFromPreset(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -2558,7 +2562,7 @@ HandlerResult clipsList(MagdaApi& api, const juce::var& input, const RequestCont
             const auto* clip = api.clips().getClip(clipId);
             if (clip == nullptr)
                 continue;
-            const auto dto = makeClipDto(*clip);
+            const auto dto = makeClipDto(*clip, api.project().tempoMap());
             if (viewFilter.isNotEmpty() && dto.view != viewFilter)
                 continue;
             items.push_back(toJson(dto));
@@ -2572,7 +2576,7 @@ HandlerResult clipsGet(MagdaApi& api, const juce::var& input, const RequestConte
     const auto* clip = api.clips().getClip(clipId);
     if (clip == nullptr)
         return notFound("clip", clipId);
-    return HandlerResult::ok(toJson(makeClipDto(*clip)));
+    return HandlerResult::ok(clipJson(api, *clip));
 }
 
 HandlerResult clipsCreateMidi(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -2697,7 +2701,7 @@ HandlerResult clipsAddMidiNote(MagdaApi& api, const juce::var& input, const Requ
     const auto* clip = api.clips().getClip(clipId);
     if (clip == nullptr)
         return notFound("clip", clipId);
-    return HandlerResult::ok(toJson(makeClipDto(*clip)));
+    return HandlerResult::ok(clipJson(api, *clip));
 }
 
 HandlerResult clipsListMidiEvents(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -2768,7 +2772,7 @@ HandlerResult clipsUpdateMidiEvents(MagdaApi& api, const juce::var& input, const
     for (const auto& event : updates)
         updateMidiEvent(after, event);
     if (after == before)
-        return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+        return HandlerResult::unchanged(clipJson(api, *clip));
 
     const auto succeeded = runCommandAndRead<SetMidiEventStateCommand>(
         api, [](const SetMidiEventStateCommand& command) { return command.succeeded(); }, clipId,
@@ -2798,7 +2802,7 @@ HandlerResult clipsReplaceMidiEvents(MagdaApi& api, const juce::var& input, cons
         appendMidiEvent(after, event, after.nextEventId++);
     }
     if (after == before)
-        return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+        return HandlerResult::unchanged(clipJson(api, *clip));
 
     const auto succeeded = runCommandAndRead<SetMidiEventStateCommand>(
         api, [](const SetMidiEventStateCommand& command) { return command.succeeded(); }, clipId,
@@ -2876,7 +2880,7 @@ HandlerResult clipsMove(MagdaApi& api, const juce::var& input, const RequestCont
             return HandlerResult::fail(ErrorCode::Conflict,
                                        "legacy unassigned session clip cannot be moved");
         if (source.trackId == destination.trackId && source.sceneIndex == destination.sceneIndex)
-            return HandlerResult::unchanged(toJson(makeClipDto(source)));
+            return HandlerResult::unchanged(clipJson(api, source));
 
         const auto occupant =
             api.session().getClipInSlot(destination.trackId, destination.sceneIndex);
@@ -2921,7 +2925,7 @@ HandlerResult clipsMove(MagdaApi& api, const juce::var& input, const RequestCont
         const bool moveTrack = source.trackId != destination.trackId;
         const bool moveTime = source.placement.startBeat != destination.startBeat;
         if (!moveTrack && !moveTime)
-            return HandlerResult::unchanged(toJson(makeClipDto(source)));
+            return HandlerResult::unchanged(clipJson(api, source));
         const auto moved = runCommandAndRead<AtomicClipPlacementCommand>(
             api, [](const AtomicClipPlacementCommand& command) { return command.resultClipId(); },
             [clipId, destination](ClipManager& clips) {
@@ -2939,7 +2943,7 @@ HandlerResult clipsMove(MagdaApi& api, const juce::var& input, const RequestCont
     const auto* updated = api.clips().getClip(clipId);
     if (updated == nullptr)
         return notFound("clip", clipId);
-    return HandlerResult::ok(toJson(makeClipDto(*updated)));
+    return HandlerResult::ok(clipJson(api, *updated));
 }
 
 HandlerResult clipsResize(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -2950,7 +2954,7 @@ HandlerResult clipsResize(MagdaApi& api, const juce::var& input, const RequestCo
 
     const auto lengthBeats = readDouble(input, "lengthBeats");
     if (clip->placement.lengthBeats == lengthBeats)
-        return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+        return HandlerResult::unchanged(clipJson(api, *clip));
 
     const bool fromStart = input["edge"].toString() == "start";
     const auto resized = runCommandAndRead<ResizeClipCommand>(
@@ -2962,7 +2966,7 @@ HandlerResult clipsResize(MagdaApi& api, const juce::var& input, const RequestCo
     const auto* updated = api.clips().getClip(clipId);
     if (updated == nullptr)
         return notFound("clip", clipId);
-    return HandlerResult::ok(toJson(makeClipDto(*updated)));
+    return HandlerResult::ok(clipJson(api, *updated));
 }
 
 HandlerResult clipsDuplicate(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -3019,7 +3023,7 @@ HandlerResult clipsDuplicate(MagdaApi& api, const juce::var& input, const Reques
     const auto* duplicate = api.clips().getClip(duplicateId);
     if (duplicate == nullptr)
         return notFound("clip", duplicateId);
-    return HandlerResult::ok(toJson(makeClipDto(*duplicate)));
+    return HandlerResult::ok(clipJson(api, *duplicate));
 }
 
 // ===========================================================================
@@ -4517,11 +4521,11 @@ HandlerResult sessionUpdateClipSettings(MagdaApi& api, const juce::var& input,
     if (has(input, "followActionLoopCount"))
         after.followActionLoopCount = readInt(input, "followActionLoopCount");
     if (after == before)
-        return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+        return HandlerResult::unchanged(clipJson(api, *clip));
 
     runCommand<SessionClipLaunchSettingsCommand>(api, api.session(), clipId, before, after);
     const auto* updated = api.clips().getClip(clipId);
-    return HandlerResult::ok(toJson(makeClipDto(updated != nullptr ? *updated : *clip)));
+    return HandlerResult::ok(clipJson(api, updated != nullptr ? *updated : *clip));
 }
 
 HandlerResult sessionReturnToArrangement(MagdaApi& api, const juce::var& input,
@@ -5075,7 +5079,7 @@ HandlerResult clipsUpdate(MagdaApi& api, const juce::var& input, const RequestCo
     const auto* updated = api.clips().getClip(clipId);
     if (updated == nullptr)
         return notFound("clip", clipId);
-    auto payload = toJson(makeClipDto(*updated));
+    auto payload = clipJson(api, *updated);
     return mutated ? HandlerResult::ok(std::move(payload))
                    : HandlerResult::unchanged(std::move(payload));
 }
@@ -5190,13 +5194,89 @@ HandlerResult clipsUpdateAudio(MagdaApi& api, const juce::var& input, const Requ
         run([&] { runCommand<SetClipFadeInTypeCommand>(api, clipId, *fadeInCurve); });
     if (*fadeOutCurve != now()->fadeOutType)
         run([&] { runCommand<SetClipFadeOutTypeCommand>(api, clipId, *fadeOutCurve); });
+    // Clamped before comparing, so restating an out-of-range value is a no-op.
+    const auto clampedDb = [&input](const char* key, float lo, float hi) {
+        return static_cast<float>(juce::jlimit<double>(lo, hi, readDouble(input, key)));
+    };
+    if (has(input, "volumeDb")) {
+        const auto volume = clampedDb("volumeDb", ClipInfo::kMinVolumeDB, ClipInfo::kMaxVolumeDB);
+        if (api.clips().getClip(clipId)->volumeDB != volume)
+            run([&] { runCommand<SetClipVolumeDBCommand>(api, clipId, volume); });
+    }
+    if (has(input, "gainDb")) {
+        const auto gain = clampedDb("gainDb", ClipInfo::kMinGainDB, ClipInfo::kMaxGainDB);
+        if (api.clips().getClip(clipId)->gainDB != gain)
+            run([&] { runCommand<SetClipGainDBCommand>(api, clipId, gain); });
+    }
+    if (has(input, "autoCrossfade") &&
+        api.clips().getClip(clipId)->autoCrossfade != readBool(input, "autoCrossfade"))
+        run([&] {
+            const bool enabled = readBool(input, "autoCrossfade");
+            runCommand<SetClipPropertyCommand>(
+                api, clipId, juce::String("Set Clip Auto Crossfade"),
+                [enabled](auto& manager, ClipId id) { manager.setAutoCrossfade(id, enabled); });
+        });
 
     const auto* updated = api.clips().getClip(clipId);
     if (updated == nullptr)
         return notFound("clip", clipId);
-    auto payload = toJson(makeClipDto(*updated));
+    auto payload = clipJson(api, *updated);
     return mutated ? HandlerResult::ok(std::move(payload))
                    : HandlerResult::unchanged(std::move(payload));
+}
+
+HandlerResult clipsSetCrossfade(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto* left = api.clips().getClip(static_cast<ClipId>(readInt(input, "leftClipId")));
+    const auto* right = api.clips().getClip(static_cast<ClipId>(readInt(input, "rightClipId")));
+    if (left == nullptr)
+        return notFound("clip", static_cast<ClipId>(readInt(input, "leftClipId")));
+    if (right == nullptr)
+        return notFound("clip", static_cast<ClipId>(readInt(input, "rightClipId")));
+    const auto startBeat = readDouble(input, "startBeat");
+    const auto endBeat = readDouble(input, "endBeat");
+    if (endBeat < startBeat)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "endBeat is before startBeat");
+    if (right->placement.startBeat < left->placement.startBeat)
+        std::swap(left, right);
+
+    // The pairs ClipManager::setCrossfadeRegionBeats edits, refused here so a refusal leaves no
+    // undo step. The tolerance is findCrossfadeNeighbour's.
+    constexpr double kJointToleranceBeats = 1e-4;
+    const auto leftEnd = left->placement.endBeat();
+    const auto rightStart = right->placement.startBeat;
+    const bool meets =
+        left != right && left->trackId == right->trackId && left->isAudio() && right->isAudio() &&
+        left->view == ClipView::Arrangement && right->view == ClipView::Arrangement &&
+        rightStart > left->placement.startBeat && leftEnd >= rightStart - kJointToleranceBeats &&
+        leftEnd < right->placement.endBeat();
+    if (!meets)
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "a crossfade needs two audio clips that meet on one "
+                                   "arrangement track");
+
+    const auto leftId = left->id;
+    const auto rightId = right->id;
+    const auto pair = [&api, leftId, rightId] {
+        std::vector<juce::var> items;
+        for (const auto id : {leftId, rightId})
+            if (const auto* clip = api.clips().getClip(id))
+                items.push_back(clipJson(api, *clip));
+        return toJsonArray(items);
+    };
+    const bool fading = left->autoCrossfade && right->autoCrossfade && left->overlapPlaysBoth &&
+                        right->overlapPlaysBoth;
+    if (std::abs(startBeat - rightStart) < 1e-9 && std::abs(endBeat - leftEnd) < 1e-9 &&
+        (startBeat == endBeat || fading))
+        return HandlerResult::unchanged(pair());
+
+    const auto* tempo = api.project().tempoMap();
+    const double bpm = tempo != nullptr ? tempo->bpmAt(left->placement.startBeat) : 0.0;
+    const bool succeeded = runCommandAndRead<SetCrossfadeCommand>(
+        api, [](const SetCrossfadeCommand& command) { return command.succeeded(); }, leftId,
+        rightId, startBeat, endBeat, bpm);
+    if (!succeeded)
+        return HandlerResult::fail(ErrorCode::Conflict, "the clips cannot crossfade there");
+    return HandlerResult::ok(pair());
 }
 
 HandlerResult clipsTranspose(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -5206,14 +5286,14 @@ HandlerResult clipsTranspose(MagdaApi& api, const juce::var& input, const Reques
     if (clip == nullptr)
         return failure;
     if (clip->midiNotes.empty())
-        return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+        return HandlerResult::unchanged(clipJson(api, *clip));
 
     if (!api.clips().transposeMidiClip(clipId, static_cast<int>(input["semitones"])))
         return HandlerResult::fail(ErrorCode::Conflict, "transpose was rejected");
     const auto* updated = api.clips().getClip(clipId);
     if (updated == nullptr)
         return notFound("clip", clipId);
-    return HandlerResult::ok(toJson(makeClipDto(*updated)));
+    return HandlerResult::ok(clipJson(api, *updated));
 }
 
 HandlerResult clipsQuantize(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -5228,7 +5308,7 @@ HandlerResult clipsQuantize(MagdaApi& api, const juce::var& input, const Request
     if (!indices)
         return HandlerResult::fail(ErrorCode::ValidationFailed, indexError);
     if (indices->empty())
-        return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+        return HandlerResult::unchanged(clipJson(api, *clip));
 
     auto mode = MidiNoteQuantizeMode::StartAndLength;
     if (has(input, "mode")) {
@@ -5245,7 +5325,7 @@ HandlerResult clipsQuantize(MagdaApi& api, const juce::var& input, const Request
     const auto* updated = api.clips().getClip(clipId);
     if (updated == nullptr)
         return notFound("clip", clipId);
-    return HandlerResult::ok(toJson(makeClipDto(*updated)));
+    return HandlerResult::ok(clipJson(api, *updated));
 }
 
 HandlerResult clipsSliceNotes(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -5260,14 +5340,14 @@ HandlerResult clipsSliceNotes(MagdaApi& api, const juce::var& input, const Reque
     if (!indices)
         return HandlerResult::fail(ErrorCode::ValidationFailed, indexError);
     if (indices->empty())
-        return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+        return HandlerResult::unchanged(clipJson(api, *clip));
 
     if (!api.clips().sliceMidiNotes(clipId, *indices, static_cast<int>(input["subdivisions"])))
         return HandlerResult::fail(ErrorCode::Conflict, "slice was rejected");
     const auto* updated = api.clips().getClip(clipId);
     if (updated == nullptr)
         return notFound("clip", clipId);
-    return HandlerResult::ok(toJson(makeClipDto(*updated)));
+    return HandlerResult::ok(clipJson(api, *updated));
 }
 
 // ===========================================================================

@@ -1189,6 +1189,10 @@ struct ClipInfo {
     double lengthBeats = 4.0;  // Transitional mirror of placement.lengthBeats
 
     // Per-Clip Mix
+    static constexpr float kMinVolumeDB = -100.0f;
+    static constexpr float kMaxVolumeDB = 0.0f;
+    static constexpr float kMinGainDB = 0.0f;
+    static constexpr float kMaxGainDB = 24.0f;
     float volumeDB = 0.0f;  // Volume: -inf to 0 dB (clip handle)
     float gainDB = 0.0f;    // Gain: 0 to +24 dB (inspector only)
     float pan = 0.0f;       // -1.0 to 1.0

@@ -492,9 +492,31 @@ const juce::var& clipSchema() {
                         "tempo":{"type":"number","minimum":0},
                         "tempoFrom":{"type":"string",
                             "enum":["none","fileMetadata","analysis","user","project"]},
-                        "speedRatio":{"type":"number","minimum":0}
+                        "speedRatio":{"type":"number","minimum":0},
+                        "volumeDb":{"type":"number","minimum":-100,"maximum":0},
+                        "gainDb":{"type":"number","minimum":0,"maximum":24},
+                        "source":{
+                            "type":["object","null"],
+                            "properties":{
+                                "path":{"type":"string"},
+                                "sampleRate":{"type":"number","minimum":0},
+                                "lengthSeconds":{"type":"number","minimum":0}
+                            },
+                            "required":["path","sampleRate","lengthSeconds"],
+                            "additionalProperties":false
+                        },
+                        "sourceStartSeconds":{"type":"number","minimum":0},
+                        "sourceLengthSeconds":{"type":"number","minimum":0},
+                        "fadeInSeconds":{"type":"number","minimum":0},
+                        "fadeOutSeconds":{"type":"number","minimum":0},
+                        "fadeInCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]},
+                        "fadeOutCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]},
+                        "autoCrossfade":{"type":"boolean"}
                     },
-                    "required":["playback","looping","tempo","tempoFrom","speedRatio"],
+                    "required":["playback","looping","tempo","tempoFrom","speedRatio","volumeDb",
+                                "gainDb","source","sourceStartSeconds","sourceLengthSeconds",
+                                "fadeInSeconds","fadeOutSeconds","fadeInCurve","fadeOutCurve",
+                                "autoCrossfade"],
                     "additionalProperties":false
                 }
             },
@@ -1990,6 +2012,24 @@ juce::var toJson(const ClipDto& dto) {
         audio->setProperty("tempo", dto.audio->tempo);
         audio->setProperty("tempoFrom", dto.audio->tempoFrom);
         audio->setProperty("speedRatio", dto.audio->speedRatio);
+        audio->setProperty("volumeDb", dto.audio->volumeDb);
+        audio->setProperty("gainDb", dto.audio->gainDb);
+        if (const auto& source = dto.audio->source) {
+            auto* file = new juce::DynamicObject();
+            file->setProperty("path", source->path);
+            file->setProperty("sampleRate", source->sampleRate);
+            file->setProperty("lengthSeconds", source->lengthSeconds);
+            audio->setProperty("source", juce::var(file));
+        } else {
+            audio->setProperty("source", juce::var());
+        }
+        audio->setProperty("sourceStartSeconds", dto.audio->sourceStartSeconds);
+        audio->setProperty("sourceLengthSeconds", dto.audio->sourceLengthSeconds);
+        audio->setProperty("fadeInSeconds", dto.audio->fadeInSeconds);
+        audio->setProperty("fadeOutSeconds", dto.audio->fadeOutSeconds);
+        audio->setProperty("fadeInCurve", dto.audio->fadeInCurve);
+        audio->setProperty("fadeOutCurve", dto.audio->fadeOutCurve);
+        audio->setProperty("autoCrossfade", dto.audio->autoCrossfade);
         object->setProperty("audio", juce::var(audio));
     } else {
         object->setProperty("audio", juce::var());
@@ -2553,9 +2593,26 @@ std::optional<ClipDto> clipFromJson(const juce::var& json, Error& error) {
         }
     }
     if (const auto& audio = json["audio"]; audio.isObject()) {
-        dto.audio = ClipAudioDto{audio["playback"].toString(), static_cast<bool>(audio["looping"]),
-                                 static_cast<double>(audio["tempo"]), audio["tempoFrom"].toString(),
-                                 static_cast<double>(audio["speedRatio"])};
+        ClipAudioDto decoded;
+        decoded.playback = audio["playback"].toString();
+        decoded.looping = static_cast<bool>(audio["looping"]);
+        decoded.tempo = static_cast<double>(audio["tempo"]);
+        decoded.tempoFrom = audio["tempoFrom"].toString();
+        decoded.speedRatio = static_cast<double>(audio["speedRatio"]);
+        decoded.volumeDb = static_cast<double>(audio["volumeDb"]);
+        decoded.gainDb = static_cast<double>(audio["gainDb"]);
+        if (const auto& source = audio["source"]; source.isObject())
+            decoded.source =
+                ClipSourceDto{source["path"].toString(), static_cast<double>(source["sampleRate"]),
+                              static_cast<double>(source["lengthSeconds"])};
+        decoded.sourceStartSeconds = static_cast<double>(audio["sourceStartSeconds"]);
+        decoded.sourceLengthSeconds = static_cast<double>(audio["sourceLengthSeconds"]);
+        decoded.fadeInSeconds = static_cast<double>(audio["fadeInSeconds"]);
+        decoded.fadeOutSeconds = static_cast<double>(audio["fadeOutSeconds"]);
+        decoded.fadeInCurve = audio["fadeInCurve"].toString();
+        decoded.fadeOutCurve = audio["fadeOutCurve"].toString();
+        decoded.autoCrossfade = static_cast<bool>(audio["autoCrossfade"]);
+        dto.audio = std::move(decoded);
     }
     return dto;
 }
@@ -3611,7 +3668,8 @@ OperationRegistry::OperationRegistry() {
         })json"),
         clipSchema());
     add("clips.updateAudio",
-        "Update an audio clip's playback mode, looping, source tempo, stretch, reverse, and fades",
+        "Update an audio clip's playback mode, looping, source tempo, stretch, reverse, fades, "
+        "volume, gain, and auto crossfade",
         OperationAccess::Write, &handlers::clipsUpdateAudio, operationInputSchema(R"json({
             "type":"object",
             "properties":{
@@ -3624,11 +3682,29 @@ OperationRegistry::OperationRegistry() {
                 "fadeInSeconds":{"type":"number","minimum":0,"maximum":600},
                 "fadeOutSeconds":{"type":"number","minimum":0,"maximum":600},
                 "fadeInCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]},
-                "fadeOutCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]}
+                "fadeOutCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]},
+                "volumeDb":{"type":"number"},
+                "gainDb":{"type":"number"},
+                "autoCrossfade":{"type":"boolean"}
             },
             "required":["clipId"],"additionalProperties":false
         })json"),
         clipSchema());
+    add("clips.setCrossfade",
+        "Set the crossfade between two audio clips that meet on a track, as the overlap from "
+        "startBeat to endBeat; equal beats remove it",
+        OperationAccess::Write, &handlers::clipsSetCrossfade, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "leftClipId":{"type":"integer","minimum":0},
+                "rightClipId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0},
+                "endBeat":{"type":"number","minimum":0}
+            },
+            "required":["leftClipId","rightClipId","startBeat","endBeat"],
+            "additionalProperties":false
+        })json"),
+        arraySchema(clipSchema()));
     add("clips.transpose", "Transpose every note in a MIDI clip by semitones",
         OperationAccess::Write, &handlers::clipsTranspose, operationInputSchema(R"json({
             "type":"object",
@@ -4656,6 +4732,7 @@ OperationRegistry::OperationRegistry() {
         {"clips.createMidi", Scope::Edit},
         {"clips.loadSample", Scope::Edit},
         {"clips.updateAudio", Scope::Edit},
+        {"clips.setCrossfade", Scope::Edit},
         {"clips.addMidiNote", Scope::Edit},
         {"clips.addMidiEvents", Scope::Edit},
         {"clips.updateMidiEvents", Scope::Edit},

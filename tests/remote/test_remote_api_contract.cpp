@@ -1209,7 +1209,13 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
     auto audioClip = clip;
     audioClip.type = "audio";
     audioClip.notes.clear();
-    audioClip.audio = ClipAudioDto{"beat", true, 120.0, "project", 1.0};
+    audioClip.audio =
+        ClipAudioDto{"beat",   true,      120.0, "project",
+                     1.0,      -6.0,      3.5,   ClipSourceDto{"/media/voice.wav", 48000.0, 90.5},
+                     12.25,    4.75,      0.1,   0.2,
+                     "convex", "s_curve", true};
+    requireRoundTrip(audioClip, clipFromJson);
+    audioClip.audio->source.reset();
     requireRoundTrip(audioClip, clipFromJson);
 
     requireRoundTrip(MidiEventDto{1, "note", 36, 110, 0, 0, 0.0, 0.25, true}, midiEventFromJson);
@@ -1396,15 +1402,16 @@ TEST_CASE("Remote projections expose only allow-listed state",
     const auto projectJson =
         juce::JSON::toString(toJson(makeProjectDto(api.project_.info, true, false, false)));
     const auto trackJson = juce::JSON::toString(toJson(makeTrackDto(api.tracks_.tracks.front())));
-    const auto clipJson = juce::JSON::toString(toJson(makeClipDto(api.clips_.clips.at(40))));
+    const auto clipJson =
+        juce::JSON::toString(toJson(makeClipDto(api.clips_.clips.at(40), nullptr)));
     const auto graph = makeDeviceGraphDto(api.tracks_.tracks);
     const auto graphJson = juce::JSON::toString(toJson(graph));
 
     REQUIRE_FALSE(projectJson.containsIgnoreCase("file"));
     REQUIRE_FALSE(projectJson.contains("secret"));
     REQUIRE_FALSE(trackJson.contains("/dev/private-input"));
-    REQUIRE_FALSE(clipJson.containsIgnoreCase("source"));
-    REQUIRE_FALSE(clipJson.contains("private"));
+    // An audio clip's own file is the one path a read reports (#3338).
+    REQUIRE(clipJson.contains("/Users/private/source.wav"));
     REQUIRE_FALSE(graphJson.contains("fileOrIdentifier"));
     REQUIRE_FALSE(graphJson.contains("pluginState"));
     REQUIRE_FALSE(graphJson.contains("aiConversation"));

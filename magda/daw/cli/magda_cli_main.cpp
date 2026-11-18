@@ -119,8 +119,8 @@ std::optional<magda::TrackType> parseTrackType(const juce::String& text) {
     return std::nullopt;
 }
 
-juce::var clipToJson(const magda::ClipInfo& clip) {
-    return magda::remote::toJson(magda::remote::makeClipDto(clip));
+juce::var clipToJson(magda::MagdaApi& api, const magda::ClipInfo& clip) {
+    return magda::remote::toJson(magda::remote::makeClipDto(clip, api.project().tempoMap()));
 }
 
 juce::var trackToJson(magda::MagdaApi& api, const magda::TrackInfo& track) {
@@ -130,7 +130,7 @@ juce::var trackToJson(magda::MagdaApi& api, const magda::TrackInfo& track) {
     juce::Array<juce::var> clips;
     for (auto clipId : api.clips().getClipsOnTrack(track.id)) {
         if (auto* clip = api.clips().getClip(clipId))
-            clips.add(clipToJson(*clip));
+            clips.add(clipToJson(api, *clip));
     }
     obj->setProperty("clips", clips);
     return value;

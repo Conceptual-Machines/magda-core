@@ -459,9 +459,11 @@ audio is refused before anything is created.
 `clips.updateAudio` patches an audio clip: `playback` (`free` plays the file as
 tape, `beat` follows the project tempo), `looping`, `sourceBpm` (refused unless the clip
 ends up in beat playback), `stretch` (`off`, `signalsmith`, `soundtouch`,
-`soundtouch_hq`), `reversed`, and each fade's seconds and curve. The patch is
-validated whole before anything changes, runs as one undo step, and a patch
-that restates current values does not advance the revision.
+`soundtouch_hq`), `reversed`, each fade's seconds and curve, `volumeDb` (the
+clip handle, clamped to -100..0 dB), `gainDb` (the inspector, clamped to
+0..24 dB), and `autoCrossfade`. The patch is validated whole before anything changes, runs as one
+undo step, and a patch that restates current values, after clamping, does not
+advance the revision.
 
 Only beat playback loops (#3060). `looping: true` on a free clip puts it in beat
 playback first, as the LOOP button does: a file with no tempo takes the one it
@@ -471,7 +473,26 @@ which always loops, refuses either way out.
 
 Every clip reports `audio`, null for MIDI: `playback`, `looping`, `tempo` (the
 tempo the file is interpreted at, 0 when it has none), `tempoFrom` (`none`,
-`fileMetadata`, `analysis`, `user`, `project`), and `speedRatio`.
+`fileMetadata`, `analysis`, `user`, `project`), `speedRatio`, `volumeDb`,
+`gainDb`, the fades under the names `clips.updateAudio` takes, and its file
+(#3338). `source` is the file's absolute `path`, `sampleRate`, and
+`lengthSeconds` (0 when it cannot be read), or null when the clip has no file.
+`sourceStartSeconds` and `sourceLengthSeconds` are the stretch of that file the
+clip plays: from the second its first beat plays to the second its last does,
+cut at the file's end, or the loop region when it loops. A reversed clip plays
+the same stretch backwards. `autoCrossfade` says whether the clip fades its edge
+across an overlap with its neighbour instead of cutting.
+
+`clips.setCrossfade` takes two audio clips that touch or overlap on one
+arrangement track, in either order, and a `startBeat` and `endBeat`: the
+overlap the crossfade should cover. It moves the left clip's end and the right
+clip's start there, as dragging the crossfade does, clamped so neither clip
+swallows the other or runs out of file, and turns on both clips' crossfade and
+play-through. Equal beats butt the clips and remove the crossfade. It returns
+both clips in timeline order. Clips that do not meet are refused before
+anything changes, and restating the current overlap does not advance the
+revision. A crossfade is read from the two clips' `startBeat` and
+`lengthBeats`.
 
 `clips.resize` takes `lengthBeats` and an `edge` of `start` or `end`. All three
 operations are edit-scoped and commit as one undo action. A move that restates
@@ -696,7 +717,9 @@ there is no permission that reveals them.
 
 DTO fields are allow-listed. In particular, the remote API does not expose:
 
-- project, audio-source, MIDI-source, plugin, render, or cache file paths;
+- project, MIDI-source, plugin, render, or cache file paths. The exception is
+  an audio clip's own file, which `clips.get` and `clips.list` report so a
+  client can read what the clip plays (#3338);
 - physical audio/MIDI device identifiers (routing discovery exposes opaque
   hashes plus logical `track:N`, `master`, `default`, `all`, and contextual
   `none:*` tokens instead);

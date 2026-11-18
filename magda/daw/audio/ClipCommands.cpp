@@ -1182,8 +1182,8 @@ SetCrossfadeCommand::SetCrossfadeCommand(ClipId leftId, ClipId rightId, double s
 void SetCrossfadeCommand::execute() {
     if (!captured_)
         return;
-    ClipManager::getInstance().setCrossfadeRegionBeats(leftId_, rightId_, startBeat_, endBeat_,
-                                                       tempo_);
+    succeeded_ = ClipManager::getInstance().setCrossfadeRegionBeats(leftId_, rightId_, startBeat_,
+                                                                    endBeat_, tempo_);
 }
 
 void SetCrossfadeCommand::undo() {

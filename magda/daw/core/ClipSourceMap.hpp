@@ -38,6 +38,11 @@ class ClipSourceMap {
         return eventEnd_;
     }
 
+    /// Source seconds one loop pass reads; 0 when the clip does not loop.
+    double loopSourceSeconds() const {
+        return loopSourceLength_;
+    }
+
   private:
     AudioEvent event_;
     double eventStart_ = 0.0;
