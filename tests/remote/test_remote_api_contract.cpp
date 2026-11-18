@@ -1209,7 +1209,13 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
     auto audioClip = clip;
     audioClip.type = "audio";
     audioClip.notes.clear();
-    audioClip.audio = ClipAudioDto{"beat", true, 120.0, "project", 1.0};
+    audioClip.audio =
+        ClipAudioDto{"beat",   true,      120.0, "project",
+                     1.0,      -6.0,      3.5,   ClipSourceDto{"/media/voice.wav", 48000.0, 90.5},
+                     12.25,    4.75,      0.1,   0.2,
+                     "convex", "s_curve", true,  {{0.0, -60.0, "linear"}, {1.5, 3.0, "step"}}};
+    requireRoundTrip(audioClip, clipFromJson);
+    audioClip.audio->source.reset();
     requireRoundTrip(audioClip, clipFromJson);
 
     requireRoundTrip(MidiEventDto{1, "note", 36, 110, 0, 0, 0.0, 0.25, true}, midiEventFromJson);
@@ -1396,15 +1402,16 @@ TEST_CASE("Remote projections expose only allow-listed state",
     const auto projectJson =
         juce::JSON::toString(toJson(makeProjectDto(api.project_.info, true, false, false)));
     const auto trackJson = juce::JSON::toString(toJson(makeTrackDto(api.tracks_.tracks.front())));
-    const auto clipJson = juce::JSON::toString(toJson(makeClipDto(api.clips_.clips.at(40))));
+    const auto clipJson =
+        juce::JSON::toString(toJson(makeClipDto(api.clips_.clips.at(40), nullptr)));
     const auto graph = makeDeviceGraphDto(api.tracks_.tracks);
     const auto graphJson = juce::JSON::toString(toJson(graph));
 
     REQUIRE_FALSE(projectJson.containsIgnoreCase("file"));
     REQUIRE_FALSE(projectJson.contains("secret"));
     REQUIRE_FALSE(trackJson.contains("/dev/private-input"));
-    REQUIRE_FALSE(clipJson.containsIgnoreCase("source"));
-    REQUIRE_FALSE(clipJson.contains("private"));
+    // An audio clip's own file is the one path a read reports (#3338).
+    REQUIRE(clipJson.contains("/Users/private/source.wav"));
     REQUIRE_FALSE(graphJson.contains("fileOrIdentifier"));
     REQUIRE_FALSE(graphJson.contains("pluginState"));
     REQUIRE_FALSE(graphJson.contains("aiConversation"));
@@ -1959,11 +1966,17 @@ TEST_CASE("Remote session and automation projections use MagdaApi values",
     REQUIRE(dto.target.devicePath->trackId == 1);
     REQUIRE(dto.points.size() == 2);
     REQUIRE(dto.points[1].curve == "step");
+    // Pan reads in its own range, so centre is 0 (#3348).
+    REQUIRE(dto.minValue == -1.0);
+    REQUIRE(dto.maxValue == 1.0);
+    REQUIRE(std::abs(dto.points[0].realValue) < 1e-6);
 
     lane.target = AutomationTarget::trackVolume(MASTER_TRACK_ID);
     const auto masterDto = makeAutomationLaneDto(lane);
     REQUIRE(masterDto.target.devicePath.has_value());
     REQUIRE(masterDto.target.devicePath->trackId == MASTER_TRACK_ID);
+    REQUIRE(masterDto.scale == ParameterScale::FaderDB);
+    REQUIRE(std::abs(masterDto.points[1].realValue) < 1e-4);
     const auto* operation = OperationRegistry::instance().find("automation.getLane");
     REQUIRE(operation != nullptr);
     REQUIRE(validateJson(toJson(masterDto), operation->outputSchema).empty());

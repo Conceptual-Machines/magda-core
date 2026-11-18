@@ -1540,6 +1540,48 @@ TEST_CASE("devices.setParameter rejects an out-of-range value rather than clampi
     REQUIRE(api.devices_.parameterWrites.empty());
 }
 
+TEST_CASE("devices.setParameters writes every parameter or none (#3347)",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto filter = ChainNodePath::topLevelDevice(1, 5);
+    const auto second = ChainNodePath::topLevelDevice(2, 6);
+    api.devices_.devices[filter] = makeFilterDevice();
+    auto other = makeFilterDevice();
+    other.id = 6;
+    other.aiSoundDesignerParameters = {0, 1};
+    api.devices_.devices[second] = other;
+    RemoteApiService service(api);
+
+    const auto write = [](const ChainNodePath& path, int index, double value) {
+        auto item = pathInput(path);
+        item.getDynamicObject()->setProperty("parameterIndex", index);
+        item.getDynamicObject()->setProperty("value", value);
+        return item;
+    };
+    const auto writes = [](juce::Array<juce::var> items) {
+        return object({{"writes", juce::var(items)}});
+    };
+
+    const auto response =
+        run(service, "devices.setParameters",
+            writes({write(filter, 0, 1200.0), write(second, 0, 400.0), write(second, 1, 50.0)}));
+    REQUIRE(response.ok);
+    const auto* results = response.result.getArray();
+    REQUIRE(results != nullptr);
+    REQUIRE(results->size() == 3);
+    REQUIRE(static_cast<double>((*results)[2]["currentValue"]) == 50.0);
+    REQUIRE(api.devices_.parameterWrites.size() == 3);
+
+    // The second write is out of range, so the first is not written either.
+    const auto refused = run(service, "devices.setParameters",
+                             writes({write(filter, 0, 900.0), write(second, 1, 500.0)}));
+    REQUIRE_FALSE(refused.ok);
+    REQUIRE(errorCodeOf(refused) == "validation_failed");
+    REQUIRE(refused.error.message.startsWith("writes[1]: "));
+    REQUIRE(api.devices_.parameterWrites.size() == 3);
+}
+
 TEST_CASE("devices.openEditor opens the editor without burning a revision",
           "[remote][service][devices]") {
     const MessageThreadRelaxation relaxation;

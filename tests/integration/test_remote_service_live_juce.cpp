@@ -10,6 +10,7 @@
 
 #include "RemoteTestScopes.hpp"
 #include "magda/daw/api/magda_api_live.hpp"
+#include "magda/daw/api/remote_engine_jobs.hpp"
 #include "magda/daw/api/remote_model_bridge.hpp"
 #include "magda/daw/api/remote_service.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
@@ -94,6 +95,39 @@ juce::File writeSample(const juce::File& file, double seconds) {
     writer->writeFromAudioSampleBuffer(buffer, 0, buffer.getNumSamples());
     return file;
 }
+
+/// Renders by writing a sample of the range's length, at once, so a render job finishes inline.
+class SampleWritingEngineJobs final : public EngineJobSource {
+  public:
+    EngineJobStartStatus renderRange(OfflineRenderRequest request,
+                                     std::shared_ptr<std::atomic_bool>, ProgressCallback,
+                                     CompletionCallback onComplete) override {
+        lastRequest = request;
+        writeSample(request.destination,
+                    (request.range.end.value - request.range.start.value) * 60.0 / 120.0);
+        if (onComplete)
+            onComplete({EngineJobResultStatus::Succeeded});
+        return EngineJobStartStatus::Started;
+    }
+    EngineJobStartStatus freezeTrack(TrackId, std::shared_ptr<std::atomic_bool>, ProgressCallback,
+                                     CompletionCallback, juce::String&) override {
+        return EngineJobStartStatus::Unavailable;
+    }
+    EngineJobStartStatus startMasterCapture(const juce::String&, const juce::String&,
+                                            const MasterCaptureRequest&) override {
+        return EngineJobStartStatus::Unavailable;
+    }
+    MasterCaptureResult stopMasterCapture(const juce::String&) override {
+        return {false, "unsupported"};
+    }
+    void cancelMasterCapture(const juce::String&) override {}
+    MasterCaptureSnapshot masterCaptureStatus() const override {
+        return {};
+    }
+    void shutdown() override {}
+
+    OfflineRenderRequest lastRequest;
+};
 
 SceneId sceneIdAt(int index) {
     return ProjectManager::getInstance()
@@ -1272,6 +1306,362 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             dir.deleteRecursively();
         }
 
+        beginTest("An audio clip reads its level, fades and source, and takes volume and gain "
+                  "(#3338)");
+        {
+            Fixture fixture;
+            FlatTempoMap tempo(120.0);
+            fixture.api.setProjectTempoMap([&tempo] { return &tempo; });
+            const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                 .getChildFile("magda-clip-level-test");
+            dir.createDirectory();
+            const auto sample = writeSample(dir.getChildFile("voice.wav"), 2.0);
+            const auto trackId = static_cast<int>(
+                fixture.run("tracks.create", object({{"name", "Voice"}, {"type", "audio"}}))
+                    .result["id"]);
+            const auto clipId = static_cast<int>(
+                fixture
+                    .run("clips.loadSample",
+                         object({{"samplePath", sample.getFullPathName()},
+                                 {"placement", arrangementDestination(trackId, 0.0)}}))
+                    .result["id"]);
+
+            const auto set =
+                fixture.run("clips.updateAudio", object({{"clipId", clipId},
+                                                         {"volumeDb", -6.0},
+                                                         {"gainDb", 3.0},
+                                                         {"fadeInSeconds", 0.25},
+                                                         {"fadeOutCurve", "concave"}}));
+            expect(set.ok);
+            const auto read = fixture.run("clips.get", object({{"clipId", clipId}}));
+            expect(read.ok);
+            const auto audio = read.result["audio"];
+            expectWithinAbsoluteError(static_cast<double>(audio["volumeDb"]), -6.0, 1e-6);
+            expectWithinAbsoluteError(static_cast<double>(audio["gainDb"]), 3.0, 1e-6);
+            expectWithinAbsoluteError(static_cast<double>(audio["fadeInSeconds"]), 0.25, 1e-9);
+            expect(audio["fadeInCurve"].toString() == "linear");
+            expect(audio["fadeOutCurve"].toString() == "concave");
+
+            const auto revision = fixture.service.currentRevision();
+            const auto clamped =
+                fixture.run("clips.updateAudio",
+                            object({{"clipId", clipId}, {"volumeDb", 12.0}, {"gainDb", 40.0}}));
+            expect(clamped.ok);
+            expectEquals(static_cast<double>(clamped.result["audio"]["volumeDb"]), 0.0);
+            expectEquals(static_cast<double>(clamped.result["audio"]["gainDb"]), 24.0);
+            expect(fixture.service.currentRevision() == revision + 1);
+            expect(fixture
+                       .run("clips.updateAudio",
+                            object({{"clipId", clipId}, {"volumeDb", 3.0}, {"gainDb", 99.0}}))
+                       .ok);
+            expect(fixture.service.currentRevision() == revision + 1,
+                   "A value that clamps to the current one changes nothing");
+            expect(UndoManager::getInstance().undo());
+            const auto* clip = ClipManager::getInstance().getClip(static_cast<ClipId>(clipId));
+            expect(clip != nullptr);
+            if (clip != nullptr) {
+                expectWithinAbsoluteError(clip->volumeDB, -6.0f, 1e-6f);
+                expectWithinAbsoluteError(clip->gainDB, 3.0f, 1e-6f);
+            }
+
+            // A gain envelope is replaced whole, sorted, with -60 dB as silence (#3064).
+            const auto point = [](double seconds, double db, const char* curve) {
+                return object({{"sourceSeconds", seconds}, {"gainDb", db}, {"curve", curve}});
+            };
+            const auto envelope =
+                object({{"clipId", clipId},
+                        {"gainEnvelope", juce::var(juce::Array<juce::var>{
+                                             point(1.5, 3.0, "step"), point(0.5, -6.0, "linear"),
+                                             point(0.0, -100.0, "linear")})}});
+            const auto shaped = fixture.run("clips.updateAudio", envelope);
+            expect(shaped.ok);
+            const auto* points = shaped.result["audio"]["gainEnvelope"].getArray();
+            expect(points != nullptr && points->size() == 3);
+            if (points != nullptr && points->size() == 3) {
+                expectEquals(static_cast<double>(points->getReference(0)["gainDb"]), -60.0);
+                expectWithinAbsoluteError(static_cast<double>(points->getReference(1)["gainDb"]),
+                                          -6.0, 1e-9);
+                expectWithinAbsoluteError(
+                    static_cast<double>(points->getReference(2)["sourceSeconds"]), 1.5, 1e-9);
+                expect(points->getReference(2)["curve"].toString() == "step");
+            }
+            const auto shapedRevision = fixture.service.currentRevision();
+            expect(fixture.run("clips.updateAudio", envelope).ok);
+            expect(fixture.service.currentRevision() == shapedRevision,
+                   "Restating the envelope changes nothing");
+            const auto cleared =
+                fixture.run("clips.updateAudio",
+                            object({{"clipId", clipId},
+                                    {"gainEnvelope", juce::var(juce::Array<juce::var>{})}}));
+            expect(cleared.ok);
+            expect(cleared.result["audio"]["gainEnvelope"].getArray()->isEmpty());
+
+            // Trimming the head moves where the clip reads in its file.
+            expect(fixture
+                       .run("clips.resize",
+                            object({{"clipId", clipId}, {"lengthBeats", 2.0}, {"edge", "start"}}))
+                       .ok);
+            const auto trimmed = fixture.run("clips.get", object({{"clipId", clipId}}));
+            expect(trimmed.ok);
+            const auto& source = trimmed.result["audio"]["source"];
+            const auto* resized = ClipManager::getInstance().getClip(static_cast<ClipId>(clipId));
+            const auto* event = resized != nullptr ? resized->primaryEvent() : nullptr;
+            expect(event != nullptr);
+            if (event != nullptr) {
+                expect(source["path"].toString() == event->sourceFilePath());
+                expect(juce::File(source["path"].toString()) == sample);
+                expectWithinAbsoluteError(static_cast<double>(source["sampleRate"]), 48000.0, 1e-9);
+                expectWithinAbsoluteError(static_cast<double>(source["lengthSeconds"]), 2.0, 1e-6);
+                const auto& trimmedAudio = trimmed.result["audio"];
+                expectWithinAbsoluteError(static_cast<double>(trimmedAudio["sourceStartSeconds"]),
+                                          event->anchorSeconds(), 1e-9);
+                expectWithinAbsoluteError(static_cast<double>(trimmedAudio["sourceStartSeconds"]),
+                                          1.0, 1e-6);
+                expectWithinAbsoluteError(static_cast<double>(trimmedAudio["sourceLengthSeconds"]),
+                                          1.0, 1e-6);
+            }
+            dir.deleteRecursively();
+        }
+
+        beginTest("An audio clip splits at several beats and joins back as one undo step each "
+                  "(#3345)");
+        {
+            Fixture fixture;
+            FlatTempoMap tempo(120.0);
+            fixture.api.setProjectTempoMap([&tempo] { return &tempo; });
+            const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                 .getChildFile("magda-split-join-test");
+            dir.createDirectory();
+            const auto sample = writeSample(dir.getChildFile("voice.wav"), 2.0);
+            const auto trackId = static_cast<int>(
+                fixture.run("tracks.create", object({{"name", "Voice"}, {"type", "audio"}}))
+                    .result["id"]);
+            const auto clipId = static_cast<int>(
+                fixture
+                    .run("clips.loadSample",
+                         object({{"samplePath", sample.getFullPathName()},
+                                 {"placement", arrangementDestination(trackId, 0.0)}}))
+                    .result["id"]);
+
+            const auto beats = juce::var(juce::Array<juce::var>{3.0, 1.0, 3.0});
+            const auto split =
+                fixture.run("clips.split", object({{"clipId", clipId}, {"beats", beats}}));
+            expect(split.ok);
+            const auto* pieces = split.result.getArray();
+            expect(pieces != nullptr && pieces->size() == 3);
+            if (pieces != nullptr && pieces->size() == 3) {
+                expectEquals(static_cast<int>(pieces->getReference(0)["id"]), clipId);
+                const double starts[] = {0.0, 0.5, 1.5};
+                for (int i = 0; i < 3; ++i)
+                    expectWithinAbsoluteError(
+                        static_cast<double>(pieces->getReference(i)["audio"]["sourceStartSeconds"]),
+                        starts[i], 1e-6);
+            }
+            expect(UndoManager::getInstance().undo());
+            expectEquals(static_cast<int>(ClipManager::getInstance()
+                                              .getClipsOnTrack(static_cast<TrackId>(trackId),
+                                                               ClipView::Arrangement)
+                                              .size()),
+                         1);
+            // A redo would split again under new ids, so split through the API to know them.
+            const auto again =
+                fixture.run("clips.split", object({{"clipId", clipId}, {"beats", beats}}));
+            juce::Array<juce::var> pieceIds;
+            if (const auto* items = again.result.getArray())
+                for (const auto& item : *items)
+                    pieceIds.add(item["id"]);
+            expect(pieceIds.size() == 3);
+
+            const auto before = fixture.service.currentRevision();
+            const auto onEdge = fixture.run(
+                "clips.split",
+                object({{"clipId", clipId}, {"beats", juce::var(juce::Array<juce::var>{1.0})}}));
+            expect(!onEdge.ok && onEdge.error.code == ErrorCode::ValidationFailed);
+            expect(fixture.service.currentRevision() == before);
+
+            // The last piece's fade-out ends the joined clip.
+            expect(fixture
+                       .run("clips.updateAudio",
+                            object({{"clipId", pieceIds[2]}, {"fadeOutSeconds", 0.1}}))
+                       .ok);
+            juce::Array<juce::var> shuffled{pieceIds[2], pieceIds[0], pieceIds[1]};
+            const auto joined =
+                fixture.run("clips.join", object({{"clipIds", juce::var(shuffled)}}));
+            expect(joined.ok);
+            expectEquals(static_cast<int>(joined.result["id"]), clipId);
+            expectWithinAbsoluteError(static_cast<double>(joined.result["lengthBeats"]), 4.0, 1e-6);
+            expectWithinAbsoluteError(
+                static_cast<double>(joined.result["audio"]["sourceLengthSeconds"]), 2.0, 1e-6);
+            expectWithinAbsoluteError(static_cast<double>(joined.result["audio"]["fadeOutSeconds"]),
+                                      0.1, 1e-9);
+            if (const auto* clip = ClipManager::getInstance().getClip(static_cast<ClipId>(clipId)))
+                expectWithinAbsoluteError(clip->primaryEvent()->loopLengthSeconds(), 2.0, 1e-4);
+
+            expect(UndoManager::getInstance().undo());
+            expectEquals(static_cast<int>(ClipManager::getInstance()
+                                              .getClipsOnTrack(static_cast<TrackId>(trackId),
+                                                               ClipView::Arrangement)
+                                              .size()),
+                         3);
+            const auto apart = fixture.run(
+                "clips.join",
+                object({{"clipIds", juce::var(juce::Array<juce::var>{pieceIds[0], pieceIds[2]})}}));
+            expect(!apart.ok && apart.error.code == ErrorCode::Conflict);
+            dir.deleteRecursively();
+        }
+
+        beginTest("Clips from different files join through a render job (#3345)");
+        {
+            Fixture fixture;
+            FlatTempoMap tempo(120.0);
+            fixture.api.setProjectTempoMap([&tempo] { return &tempo; });
+            const auto engine = std::make_shared<SampleWritingEngineJobs>();
+            fixture.service.setEngineJobSource(engine);
+            const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                 .getChildFile("magda-render-join-test");
+            dir.createDirectory();
+            const auto trackId = static_cast<int>(
+                fixture.run("tracks.create", object({{"name", "Voice"}, {"type", "audio"}}))
+                    .result["id"]);
+            const auto load = [&](const char* name, double beat) {
+                const auto sample = writeSample(dir.getChildFile(name), 1.0);
+                return static_cast<int>(
+                    fixture
+                        .run("clips.loadSample",
+                             object({{"samplePath", sample.getFullPathName()},
+                                     {"placement", arrangementDestination(trackId, beat)}}))
+                        .result["id"]);
+            };
+            const auto leftId = load("first.wav", 0.0);
+            const auto rightId = load("second.wav", 2.0);
+
+            auto owner = fullyGrantedContext();
+            owner.clientId = "join-client";
+            const auto joined = fixture.run(
+                "clips.join",
+                object({{"clipIds", juce::var(juce::Array<juce::var>{rightId, leftId})}}), owner);
+            expect(joined.ok, joined.error.message);
+            expect(joined.result["kind"].toString() == "clips.join");
+            expect(joined.result["state"].toString() == "completed");
+            const auto& clip = joined.result["result"];
+            expectWithinAbsoluteError(static_cast<double>(clip["startBeat"]), 0.0, 1e-9);
+            expectWithinAbsoluteError(static_cast<double>(clip["lengthBeats"]), 4.0, 1e-6);
+            const juce::File rendered(clip["audio"]["source"]["path"].toString());
+            expect(rendered == engine->lastRequest.destination && rendered.existsAsFile());
+            expect(!engine->lastRequest.usePlugins && !engine->lastRequest.useTrackEffects &&
+                   !engine->lastRequest.useMasterPlugins);
+            expect(engine->lastRequest.trackIds ==
+                   std::vector<TrackId>{static_cast<TrackId>(trackId)});
+            expectWithinAbsoluteError(engine->lastRequest.range.end.value, 4.0, 1e-9);
+
+            const auto clipsOnTrack = [trackId] {
+                return static_cast<int>(
+                    ClipManager::getInstance()
+                        .getClipsOnTrack(static_cast<TrackId>(trackId), ClipView::Arrangement)
+                        .size());
+            };
+            expectEquals(clipsOnTrack(), 1);
+            expect(UndoManager::getInstance().undo());
+            expectEquals(clipsOnTrack(), 2);
+            expect(ClipManager::getInstance().getClip(static_cast<ClipId>(leftId)) != nullptr);
+            dir.deleteRecursively();
+        }
+
+        beginTest("Two audio clips that meet take a crossfade as one undo step");
+        {
+            Fixture fixture;
+            FlatTempoMap tempo(120.0);
+            fixture.api.setProjectTempoMap([&tempo] { return &tempo; });
+            const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                 .getChildFile("magda-crossfade-test");
+            dir.createDirectory();
+            const auto sample = writeSample(dir.getChildFile("voice.wav"), 2.0);
+            const auto trackId = static_cast<int>(
+                fixture.run("tracks.create", object({{"name", "Voice"}, {"type", "audio"}}))
+                    .result["id"]);
+            const auto load = [&](double beat) {
+                return static_cast<int>(
+                    fixture
+                        .run("clips.loadSample",
+                             object({{"samplePath", sample.getFullPathName()},
+                                     {"placement", arrangementDestination(trackId, beat)}}))
+                        .result["id"]);
+            };
+            // Each clip keeps a beat of file past the joint to fade over.
+            const auto leftId = load(0.0);
+            expect(fixture
+                       .run("clips.resize",
+                            object({{"clipId", leftId}, {"lengthBeats", 3.0}, {"edge", "end"}}))
+                       .ok);
+            const auto rightId = load(4.0);
+            expect(fixture
+                       .run("clips.resize",
+                            object({{"clipId", rightId}, {"lengthBeats", 3.0}, {"edge", "start"}}))
+                       .ok);
+            expect(fixture
+                       .run("clips.move",
+                            object({{"clipId", rightId},
+                                    {"destination", arrangementDestination(trackId, 3.0)}}))
+                       .ok);
+
+            const auto revision = fixture.service.currentRevision();
+            const auto region = object({{"leftClipId", rightId},
+                                        {"rightClipId", leftId},
+                                        {"startBeat", 2.5},
+                                        {"endBeat", 3.5}});
+            const auto faded = fixture.run("clips.setCrossfade", region);
+            expect(faded.ok);
+            expect(fixture.service.currentRevision() == revision + 1);
+            const auto* clips = faded.result.getArray();
+            expect(clips != nullptr && clips->size() == 2);
+            if (clips != nullptr && clips->size() == 2) {
+                const auto& left = clips->getReference(0);
+                const auto& right = clips->getReference(1);
+                expectEquals(static_cast<int>(left["id"]), leftId);
+                expectWithinAbsoluteError(static_cast<double>(left["lengthBeats"]), 3.5, 1e-6);
+                expectWithinAbsoluteError(static_cast<double>(right["startBeat"]), 2.5, 1e-6);
+                expect(static_cast<bool>(left["audio"]["autoCrossfade"]));
+                expect(static_cast<bool>(right["audio"]["autoCrossfade"]));
+            }
+            expect(fixture.run("clips.setCrossfade", region).ok);
+            expect(fixture.service.currentRevision() == revision + 1,
+                   "Restating the overlap changes nothing");
+
+            expect(UndoManager::getInstance().undo());
+            const auto* left = ClipManager::getInstance().getClip(static_cast<ClipId>(leftId));
+            const auto* right = ClipManager::getInstance().getClip(static_cast<ClipId>(rightId));
+            expect(left != nullptr && right != nullptr);
+            if (left != nullptr && right != nullptr) {
+                expectWithinAbsoluteError(left->placement.endBeat(), 3.0, 1e-6);
+                expectWithinAbsoluteError(right->placement.startBeat, 3.0, 1e-6);
+            }
+
+            const auto off = fixture.run("clips.updateAudio",
+                                         object({{"clipId", leftId}, {"autoCrossfade", false}}));
+            expect(off.ok && !static_cast<bool>(off.result["audio"]["autoCrossfade"]));
+
+            const auto midiId = static_cast<int>(
+                fixture
+                    .run("clips.createMidi",
+                         object({{"lengthBeats", 4.0},
+                                 {"placement", arrangementDestination(trackId, 12.0)}}))
+                    .result["id"]);
+            const auto before = fixture.service.currentRevision();
+            const auto apart = fixture.run("clips.setCrossfade", object({{"leftClipId", leftId},
+                                                                         {"rightClipId", midiId},
+                                                                         {"startBeat", 2.5},
+                                                                         {"endBeat", 3.5}}));
+            expect(!apart.ok && apart.error.code == ErrorCode::Conflict);
+            const auto backwards =
+                fixture.run("clips.setCrossfade", object({{"leftClipId", leftId},
+                                                          {"rightClipId", rightId},
+                                                          {"startBeat", 3.5},
+                                                          {"endBeat", 2.5}}));
+            expect(!backwards.ok && backwards.error.code == ErrorCode::ValidationFailed);
+            expect(fixture.service.currentRevision() == before);
+            dir.deleteRecursively();
+        }
+
         beginTest("Arrangement clips move, resize, and duplicate through undoable operations");
         {
             Fixture fixture;
@@ -1634,6 +2024,59 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
                 if (!original.empty() && !restored->absolutePoints.empty())
                     expect(restored->absolutePoints.front().id == original.front().id);
             }
+        }
+
+        beginTest("Automation reads and writes in its target's units (#3348)");
+        {
+            Fixture fixture;
+            const auto laneOf = [](ControlTarget::Kind kind) {
+                AutomationTarget target;
+                target.kind = kind;
+                if (kind != ControlTarget::Kind::Tempo)
+                    target.devicePath = ChainNodePath::trackLevel(
+                        TrackManager::getInstance().createTrack("Units", TrackType::Media));
+                return static_cast<int>(AutomationManager::getInstance().createLane(
+                    target, AutomationLaneType::Absolute));
+            };
+            const auto write = [&fixture](int laneId, juce::var point) {
+                juce::Array<juce::var> points;
+                points.add(point);
+                return fixture.run("automation.setPoints",
+                                   object({{"laneId", laneId}, {"points", juce::var(points)}}));
+            };
+            const auto real = [](double value) {
+                return object({{"beatPosition", 0.0}, {"realValue", value}, {"curve", "linear"}});
+            };
+
+            const auto volumeLane = laneOf(ControlTarget::Kind::TrackVolume);
+            const auto volume = write(volumeLane, real(-6.0));
+            expect(volume.ok);
+            expectWithinAbsoluteError(static_cast<double>(volume.result["minValue"]), -60.0, 1e-6);
+            expect(volume.result["scale"].toString() == "fader_db");
+            expectWithinAbsoluteError(static_cast<double>(volume.result["points"][0]["realValue"]),
+                                      -6.0, 1e-4);
+            // Below unity the fader is linear in dB up to 0 dB at 0.75.
+            expectWithinAbsoluteError(static_cast<double>(volume.result["points"][0]["value"]),
+                                      0.675, 1e-6);
+
+            const auto pan = write(laneOf(ControlTarget::Kind::TrackPan), real(-0.5));
+            expect(pan.ok);
+            expectWithinAbsoluteError(static_cast<double>(pan.result["points"][0]["value"]), 0.25,
+                                      1e-6);
+            const auto tempo = write(laneOf(ControlTarget::Kind::Tempo), real(140.0));
+            expect(tempo.ok);
+            expectWithinAbsoluteError(static_cast<double>(tempo.result["points"][0]["realValue"]),
+                                      140.0, 1e-3);
+
+            const auto before = fixture.service.currentRevision();
+            const auto loud = write(volumeLane, real(12.0));
+            expect(!loud.ok && loud.error.code == ErrorCode::ValidationFailed);
+            const auto both = write(volumeLane, object({{"beatPosition", 0.0},
+                                                        {"value", 0.5},
+                                                        {"realValue", 0.0},
+                                                        {"curve", "linear"}}));
+            expect(!both.ok && both.error.code == ErrorCode::ValidationFailed);
+            expect(fixture.service.currentRevision() == before);
         }
 
         beginTest("Deleting an automation lane restores its clips on undo");

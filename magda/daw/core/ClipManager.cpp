@@ -2586,7 +2586,7 @@ void ClipManager::setTimeBend(ClipId clipId, const sdk::sequencer::TimeBend& ben
 void ClipManager::setClipVolumeDB(ClipId clipId, float dB) {
     if (auto* clip = getClip(clipId)) {
         if (clip->isAudio()) {
-            clip->volumeDB = juce::jlimit(-100.0f, 0.0f, dB);
+            clip->volumeDB = juce::jlimit(ClipInfo::kMinVolumeDB, ClipInfo::kMaxVolumeDB, dB);
             notifyClipPropertyChanged(clipId);
         }
     }
@@ -2595,7 +2595,7 @@ void ClipManager::setClipVolumeDB(ClipId clipId, float dB) {
 void ClipManager::setClipGainDB(ClipId clipId, float dB) {
     if (auto* clip = getClip(clipId)) {
         if (clip->isAudio()) {
-            clip->gainDB = juce::jlimit(0.0f, 24.0f, dB);
+            clip->gainDB = juce::jlimit(ClipInfo::kMinGainDB, ClipInfo::kMaxGainDB, dB);
             notifyClipPropertyChanged(clipId);
         }
     }

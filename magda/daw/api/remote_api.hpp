@@ -31,6 +31,7 @@ struct DeviceInfo;
 struct ProjectInfo;
 struct ReferenceImpactPlan;
 struct RoutingEndpoint;
+class TempoMap;
 struct TrackRoutingView;
 struct DroppedRoutingConnection;
 struct TrackSendView;
@@ -250,13 +251,43 @@ struct ChordTrackDto {
     bool operator==(const ChordTrackDto&) const = default;
 };
 
-/** How an audio clip plays: its tempo and where that tempo came from (#3060). */
+/** The file an audio clip reads (#3338). */
+struct ClipSourceDto {
+    juce::String path;
+    double sampleRate = 0.0;
+    double lengthSeconds = 0.0;  // 0 when the file could not be read
+
+    bool operator==(const ClipSourceDto&) const = default;
+};
+
+/** A point on an audio clip's gain envelope (#3064), pinned to a position in its file. */
+struct ClipGainPointDto {
+    double sourceSeconds = 0.0;
+    double gainDb = 0.0;  // -60 is silence
+    juce::String curve = "linear";
+
+    bool operator==(const ClipGainPointDto&) const = default;
+};
+
+/** How an audio clip plays: its tempo (#3060), level, fades and source (#3338). */
 struct ClipAudioDto {
     juce::String playback;  // "free" | "beat"
     bool looping = false;
     double tempo = 0.0;      // 0 when the clip has none
     juce::String tempoFrom;  // "none" | "fileMetadata" | "analysis" | "user" | "project"
     double speedRatio = 1.0;
+    double volumeDb = 0.0;
+    double gainDb = 0.0;
+    std::optional<ClipSourceDto> source;  // null when the clip has no pooled source
+    /// The stretch of the file the clip plays: its loop region when looping.
+    double sourceStartSeconds = 0.0;
+    double sourceLengthSeconds = 0.0;
+    double fadeInSeconds = 0.0;
+    double fadeOutSeconds = 0.0;
+    juce::String fadeInCurve = "linear";  // "linear" | "convex" | "concave" | "s_curve"
+    juce::String fadeOutCurve = "linear";
+    bool autoCrossfade = false;
+    std::vector<ClipGainPointDto> gainEnvelope;
 
     bool operator==(const ClipAudioDto&) const = default;
 };
@@ -613,6 +644,7 @@ struct AutomationPointDto {
     double beatPosition = 0.0;
     double value = 0.0;
     juce::String curve;
+    double realValue = 0.0;  // value in the target's units (#3348)
 
     bool operator==(const AutomationPointDto&) const = default;
 };
@@ -636,6 +668,11 @@ struct AutomationLaneDto {
     AutomationTargetDto target;
     std::vector<AutomationPointDto> points;
     std::vector<AutomationClipId> clipIds;
+    /// The target's units, as devices.listParameters reports a parameter's (#3348).
+    juce::String unit = {};
+    double minValue = 0.0;
+    double maxValue = 1.0;
+    ParameterScale scale = ParameterScale::Linear;
 
     bool operator==(const AutomationLaneDto&) const = default;
 };
@@ -961,7 +998,8 @@ TrackSendDto makeTrackSendDto(const TrackSendView& send);
 InvalidatedSendConnectionDto makeInvalidatedSendConnectionDto(
     const InvalidatedSendConnection& connection);
 ChordTrackDto makeChordTrackDto(const TrackInfo* track, ClipApi& clips);
-ClipDto makeClipDto(const ClipInfo& clip);
+/// @p tempo places the clip's read in its file; null reports an empty read at the anchor.
+ClipDto makeClipDto(const ClipInfo& clip, const TempoMap* tempo);
 std::vector<MidiEventDto> makeMidiEventDtos(const ClipInfo& clip);
 DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks);
 /// A pad with a mixer channel in @p tracks reads its level, pan and switches off it (#3010).
@@ -979,7 +1017,9 @@ DevicePresetDto makeDevicePresetDto(const DevicePresetEntry& entry);
 std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device,
                                                         const ChainNodePath& devicePath);
 SelectionDto makeSelectionDto(MagdaApi& api);
-AutomationClipDto makeAutomationClipDto(const AutomationClipInfo& clip);
+/// @p target converts the clip's points into its lane target's units.
+AutomationClipDto makeAutomationClipDto(const AutomationClipInfo& clip,
+                                        const ParameterInfo& target);
 TransportDto makeTransportDto(MagdaApi& api);
 SessionDto makeSessionDto(MagdaApi& api);
 AutomationLaneDto makeAutomationLaneDto(const AutomationLaneInfo& lane);

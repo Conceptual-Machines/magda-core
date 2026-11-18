@@ -20,6 +20,7 @@ target_sources(magda_daw PRIVATE
     remote_api.cpp
     remote_api_projection.cpp
     remote_handlers.cpp
+    remote_parameter_handlers.cpp
     remote_scopes.cpp
     remote_clients.cpp
     remote_audit.cpp
