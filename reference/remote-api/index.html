@@ -2809,11 +2809,14 @@ does not expose internal filesystem or engine objects through job results.</p>
   and Session scene indices are zero-based. Follow each operation's schema.</li>
 <li>Colours are unsigned 32-bit ARGB values.</li>
 <li>Device parameter writes use real units, such as Hz or dB. Read
-  <code>devices.listParameters</code> first. Automation values remain normalized <code>0..1</code>.</li>
+  <code>devices.listParameters</code> first. <code>devices.setParameters</code> writes several at
+  once, all or none. Automation points carry a normalized <code>0..1</code> <code>value</code> and a
+  <code>realValue</code> in the lane target's units, and writes take either.</li>
 <li>External plugin parameter writes and modulation links are restricted to
   parameters the user enabled for AI/agent control.</li>
 <li>File-taking operations use absolute paths on the computer running MAGDA.
-  Reads avoid exposing media paths, plugin state, or native engine objects.</li>
+  Reads avoid exposing plugin state or native engine objects. The one path a
+  read reports is an audio clip's own file, so a client can open what it plays.</li>
 <li>A device id is not globally unique. Address devices and nested racks with the
   complete <code>devicePath</code> returned by <code>devices.list</code>.</li>
 </ul>

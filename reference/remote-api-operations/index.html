@@ -3362,6 +3362,20 @@ WebSocket connection itself rather than the project, and has no MCP tool.</p>
 <td>—</td>
 </tr>
 <tr>
+<td><code>clips.split</code></td>
+<td>Split an arrangement clip at one or more beats inside it; returns the pieces in timeline order</td>
+<td><code>edit</code></td>
+<td><code>clipId</code> integer<br><code>beats</code> array of number</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clips.join</code></td>
+<td>Join arrangement clips on one track, each starting where the one before ends, into the first</td>
+<td><code>edit</code></td>
+<td><code>clipIds</code> array of integer</td>
+<td>—</td>
+</tr>
+<tr>
 <td><code>clips.duplicate</code></td>
 <td>Duplicate a clip to an arrangement position or session slot</td>
 <td><code>edit</code></td>
@@ -3377,10 +3391,17 @@ WebSocket connection itself rather than the project, and has no MCP tool.</p>
 </tr>
 <tr>
 <td><code>clips.updateAudio</code></td>
-<td>Update an audio clip's playback mode, looping, source tempo, stretch, reverse, and fades</td>
+<td>Update an audio clip's playback mode, looping, source tempo, stretch, reverse, fades, volume, gain, auto crossfade, and gain envelope</td>
 <td><code>edit</code></td>
 <td><code>clipId</code> integer</td>
-<td><code>playback</code> "free" | "beat"<br><code>looping</code> boolean<br><code>sourceBpm</code> number<br><code>stretch</code> "off" | "signalsmith" | "soundtouch" | "soundtouch_hq"<br><code>reversed</code> boolean<br><code>fadeInSeconds</code> number<br><code>fadeOutSeconds</code> number<br><code>fadeInCurve</code> "linear" | "convex" | "concave" | "s_curve"<br><code>fadeOutCurve</code> "linear" | "convex" | "concave" | "s_curve"</td>
+<td><code>playback</code> "free" | "beat"<br><code>looping</code> boolean<br><code>sourceBpm</code> number<br><code>stretch</code> "off" | "signalsmith" | "soundtouch" | "soundtouch_hq"<br><code>reversed</code> boolean<br><code>fadeInSeconds</code> number<br><code>fadeOutSeconds</code> number<br><code>fadeInCurve</code> "linear" | "convex" | "concave" | "s_curve"<br><code>fadeOutCurve</code> "linear" | "convex" | "concave" | "s_curve"<br><code>volumeDb</code> number<br><code>gainDb</code> number<br><code>autoCrossfade</code> boolean<br><code>gainEnvelope</code> array of object</td>
+</tr>
+<tr>
+<td><code>clips.setCrossfade</code></td>
+<td>Set the crossfade between two audio clips that meet on a track, as the overlap from startBeat to endBeat; equal beats remove it</td>
+<td><code>edit</code></td>
+<td><code>leftClipId</code> integer<br><code>rightClipId</code> integer<br><code>startBeat</code> number<br><code>endBeat</code> number</td>
+<td>—</td>
 </tr>
 <tr>
 <td><code>clips.transpose</code></td>
@@ -3492,6 +3513,13 @@ WebSocket connection itself rather than the project, and has no MCP tool.</p>
 <td>Set one device parameter, in real units</td>
 <td><code>edit</code></td>
 <td><code>devicePath</code> object<br><code>parameterIndex</code> integer<br><code>value</code> number</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>devices.setParameters</code></td>
+<td>Set several device parameters in real units, checked as a whole so all or none are written</td>
+<td><code>edit</code></td>
+<td><code>writes</code> array of object</td>
 <td>—</td>
 </tr>
 <tr>
@@ -4044,8 +4072,8 @@ WebSocket connection itself rather than the project, and has no MCP tool.</p>
 <td><code>automation.addPoint</code></td>
 <td>Add a point to an automation lane</td>
 <td><code>edit</code></td>
-<td><code>laneId</code> integer<br><code>beatPosition</code> number<br><code>value</code> number<br><code>curve</code> "linear" | "bezier" | "step" | "hard_corner"</td>
-<td>—</td>
+<td><code>laneId</code> integer<br><code>beatPosition</code> number<br><code>curve</code> "linear" | "bezier" | "step" | "hard_corner"</td>
+<td><code>value</code> number<br><code>realValue</code> number</td>
 </tr>
 <tr>
 <td><code>automation.setPoints</code></td>
