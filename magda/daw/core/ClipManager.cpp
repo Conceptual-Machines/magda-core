@@ -1535,10 +1535,9 @@ ClipId ClipManager::splitClipAtBeat(ClipId clipId, double splitBeat, double temp
     const double leftLengthBeats = leftLength * bpm / 60.0;
     const double rightLengthBeats = rightLength * bpm / 60.0;
 
-    // Create right half as new clip
+    // Create right half as new clip; both halves keep the clip's name (#3339).
     ClipInfo rightClip = *clip;
     rightClip.id = nextClipId_++;
-    rightClip.name = clip->name + " R";
     ClipOperations::setBeatPlacement(rightClip, clip->placement.startBeat + leftLengthBeats,
                                      rightLengthBeats, bpm);
 
@@ -1595,7 +1594,6 @@ ClipId ClipManager::splitClipAtBeat(ClipId clipId, double splitBeat, double temp
 
     // Resize original clip to be left half
     ClipOperations::setBeatPlacement(*clip, clip->placement.startBeat, leftLengthBeats, bpm);
-    clip->name = clip->name + " L";
 
     // Sync loop region after split
     auto* leftEvent = clip->primaryEvent();

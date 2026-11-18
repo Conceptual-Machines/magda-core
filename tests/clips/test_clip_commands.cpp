@@ -897,6 +897,27 @@ TEST_CASE("SplitClipCommand - undo notifies restored left clip property",
     REQUIRE(listener.sawPropertyChangeFor(original));
 }
 
+TEST_CASE("SplitClipCommand - every piece keeps the clip's name (#3339)",
+          "[clip][command][split]") {
+    resetState();
+    TrackId track = createTrack();
+    ClipId original = createAudio(track, 0.0, 4.0);
+
+    auto& cm = ClipManager::getInstance();
+    cm.getClip(original)->name = "Bass";
+
+    SplitClipCommand first(original, secondsToBeatPosition(2.0), 120.0);
+    REQUIRE(first.canExecute());
+    first.execute();
+    SplitClipCommand second(first.getRightClipId(), secondsToBeatPosition(3.0), 120.0);
+    REQUIRE(second.canExecute());
+    second.execute();
+
+    REQUIRE(cm.getClip(original)->name == "Bass");
+    REQUIRE(cm.getClip(first.getRightClipId())->name == "Bass");
+    REQUIRE(cm.getClip(second.getRightClipId())->name == "Bass");
+}
+
 // ============================================================================
 // DeleteClipCommand
 // ============================================================================
