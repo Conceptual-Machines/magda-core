@@ -998,6 +998,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/common/LinkableTextSlider.cpp
     ../magda/daw/ui/components/clips/ClipComponent.cpp
     ../magda/daw/ui/components/clips/ClipEnvelopeOverlay.cpp
+    ../magda/daw/ui/components/clips/ClipNotePainter.cpp
     ../magda/daw/ui/components/tracks/TrackContentPanel.cpp
     ../magda/daw/ui/components/tracks/TrackContentPanelClipDrag.cpp
     ../magda/daw/ui/components/automation/AutomationLaneComponent.cpp

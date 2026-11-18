@@ -3,4 +3,6 @@ target_sources(magda_daw_app PRIVATE
     ClipComponent.hpp
     ClipEnvelopeOverlay.cpp
     ClipEnvelopeOverlay.hpp
+    ClipNotePainter.cpp
+    ClipNotePainter.hpp
 )

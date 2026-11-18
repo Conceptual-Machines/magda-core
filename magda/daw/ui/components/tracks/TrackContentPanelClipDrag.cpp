@@ -12,6 +12,7 @@
 #include "../../interaction/ClipNudge.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../clips/ClipComponent.hpp"
+#include "../clips/ClipNotePainter.hpp"
 #include "../waveform/ClipWaveformPainter.hpp"
 #include "TrackContentPanel.hpp"
 #include "audio/AraTracks.hpp"
@@ -1040,11 +1041,12 @@ void TrackContentPanel::commitSelectionCopy(double deltaTime) {
 
 namespace {
 
-/** @brief An audio clip's ghost shows its waveform, dimmed and laid out as on the clip (#3342). */
-void paintGhostWaveform(juce::Graphics& g, ClipId clipId, juce::Rectangle<int> ghostBounds,
-                        double contentOffsetSeconds, double tempo, double pixelsPerBeat) {
+/** @brief A clip's ghost shows its content dimmed, laid out as on the clip: an audio clip's
+ *         waveform, a MIDI clip's notes (#3342). */
+void paintGhostContent(juce::Graphics& g, ClipId clipId, juce::Rectangle<int> ghostBounds,
+                       double contentOffsetSeconds, double tempo, double pixelsPerBeat) {
     const auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (clip == nullptr || !clip->isAudio() || audioEventRef(*clip).sourceFilePath().isEmpty())
+    if (clip == nullptr || ClipComponent::isChordClip(*clip))
         return;
 
     // The whole clip's extent at the ghost's position; a slice ghost shows only its part.
@@ -1054,20 +1056,31 @@ void paintGhostWaveform(juce::Graphics& g, ClipId clipId, juce::Rectangle<int> g
         ghostBounds.getX() - juce::roundToInt(contentOffsetSeconds * pixelsPerSecond),
         ghostBounds.getY(), juce::roundToInt(lengthSeconds * pixelsPerSecond),
         ghostBounds.getHeight());
-    const auto waveformArea =
-        content.reduced(2, 0)
-            .withTrimmedTop(interaction::ClipMetrics::headerHeightFor(content.getHeight()) + 2)
-            .withTrimmedBottom(2);
-    if (waveformArea.isEmpty())
-        return;
-
-    daw::ui::ClipWaveformSpec spec;
-    spec.tempo = tempo;
-    spec.colour = deriveClipInk(clip->colour).withAlpha(0.5f);
-    spec.raw = araPluginForClip(clip->id).has_value();
+    const int headerHeight = interaction::ClipMetrics::headerHeightFor(content.getHeight());
+    const auto ink = deriveClipInk(clip->colour).withAlpha(0.5f);
 
     juce::Graphics::ScopedSaveState state(g);
     g.reduceClipRegion(ghostBounds);
+
+    if (clip->isMidi()) {
+        const auto noteArea =
+            content.withTrimmedTop(headerHeight + 3).withTrimmedBottom(3).reduced(1, 0);
+        const double midiOffset = clip->loopEnabled ? clip->midiOffset : clip->midiTrimOffset;
+        daw::ui::paintClipMidiNotes(g, *clip, noteArea, ink, lengthSeconds * tempo / 60.0,
+                                    midiOffset);
+        return;
+    }
+
+    if (!clip->isAudio() || audioEventRef(*clip).sourceFilePath().isEmpty())
+        return;
+    const auto waveformArea =
+        content.reduced(2, 0).withTrimmedTop(headerHeight + 2).withTrimmedBottom(2);
+    if (waveformArea.isEmpty())
+        return;
+    daw::ui::ClipWaveformSpec spec;
+    spec.tempo = tempo;
+    spec.colour = ink;
+    spec.raw = araPluginForClip(clip->id).has_value();
     daw::ui::paintClipWaveform(
         g, *clip, clipId, waveformArea.reduced(0, juce::jmax(1, waveformArea.getHeight() / 14)),
         lengthSeconds, spec);
@@ -1130,8 +1143,8 @@ void TrackContentPanel::paintClipGhosts(juce::Graphics& g) {
         // Draw ghost clip with semi-transparent fill
         g.setColour(ghost.colour.withAlpha(0.3f));
         g.fillRoundedRectangle(ghost.bounds.toFloat(), 4.0f);
-        paintGhostWaveform(g, ghost.clipId, ghost.bounds, ghost.contentOffsetSeconds, getTempo(),
-                           currentZoom);
+        paintGhostContent(g, ghost.clipId, ghost.bounds, ghost.contentOffsetSeconds, getTempo(),
+                          currentZoom);
 
         // Draw solid border
         g.setColour(ghost.colour.withAlpha(0.6f));

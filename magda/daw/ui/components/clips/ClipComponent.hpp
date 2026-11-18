@@ -143,6 +143,9 @@ class ClipComponent : public juce::Component,
     std::function<void(ClipId, double, double)>
         onClipDragPreview;  // clipId, previewStartTime, previewLength
 
+    /** @brief A clip on a chord track, drawn as chord blocks rather than notes. */
+    static bool isChordClip(const ClipInfo& clip);
+
   private:
     /// The gain envelope over the body while the clip shows it (#3064).
     std::unique_ptr<ClipEnvelopeOverlay> gainEnvelope_;
@@ -295,7 +298,6 @@ class ClipComponent : public juce::Component,
     // Chord-track clips render their chordAnnotations as named blocks instead of
     // a MIDI-note preview.
     void paintChordClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
-    static bool isChordClip(const ClipInfo& clip);
     void paintClipHeader(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     /** @brief The clip's colour as drawn: grey while it is disabled. */
     juce::Colour displayColour(const ClipInfo& clip) const;
