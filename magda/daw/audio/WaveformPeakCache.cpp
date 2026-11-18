@@ -4,6 +4,7 @@
 #include "WaveformPeakCache.hpp"
 
 #include <algorithm>
+#include <limits>
 
 namespace magda {
 
@@ -31,6 +32,78 @@ struct PeakFileHeader {
 static_assert(sizeof(PeakFileHeader) == 56, "PeakFileHeader must be tightly packed");
 
 }  // namespace
+
+WaveformPeakCache::WaveformPeakCache(sdk::PeakData peaks) : peaks_(std::move(peaks)) {
+    const auto numChannels = static_cast<std::size_t>(peaks_.numChannels());
+    std::int64_t fineBuckets = peaks_.numBuckets();
+    while (fineBuckets >= COARSE_FACTOR * COARSE_FACTOR) {
+        const std::int64_t coarseBuckets = (fineBuckets + COARSE_FACTOR - 1) / COARSE_FACTOR;
+        std::vector<std::vector<std::int16_t>> level(numChannels);
+        for (std::size_t ch = 0; ch < numChannels; ++ch) {
+            const std::int16_t* fine = coarse_.empty()
+                                           ? peaks_.channelPeaks(static_cast<int>(ch)).data()
+                                           : coarse_.back()[ch].data();
+            auto& out = level[ch];
+            out.resize(static_cast<std::size_t>(coarseBuckets) * 2);
+            for (std::int64_t b = 0; b < coarseBuckets; ++b) {
+                const std::int64_t end = std::min((b + 1) * COARSE_FACTOR, fineBuckets);
+                auto minI = std::numeric_limits<std::int16_t>::max();
+                auto maxI = std::numeric_limits<std::int16_t>::min();
+                for (std::int64_t f = b * COARSE_FACTOR; f < end; ++f) {
+                    minI = std::min(minI, fine[f * 2]);
+                    maxI = std::max(maxI, fine[f * 2 + 1]);
+                }
+                out[static_cast<std::size_t>(b) * 2] = minI;
+                out[static_cast<std::size_t>(b) * 2 + 1] = maxI;
+            }
+        }
+        coarse_.push_back(std::move(level));
+        fineBuckets = coarseBuckets;
+    }
+}
+
+WaveformPeakCache::MinMax WaveformPeakCache::getMinMaxForRange(int channel,
+                                                               std::int64_t startSample,
+                                                               std::int64_t endSample) const {
+    const std::int64_t numBuckets = peaks_.numBuckets();
+    if (channel < 0 || channel >= peaks_.numChannels() || numBuckets <= 0)
+        return {};
+
+    endSample = std::clamp<std::int64_t>(endSample, 0, peaks_.numSourceSamples());
+    startSample = std::clamp<std::int64_t>(startSample, 0, endSample);
+    if (startSample >= endSample)
+        return {};
+
+    auto minI = std::numeric_limits<std::int16_t>::max();
+    auto maxI = std::numeric_limits<std::int16_t>::min();
+    const auto scan = [&](const std::int16_t* buckets, std::int64_t from, std::int64_t to) {
+        for (std::int64_t b = from; b < to; ++b) {
+            minI = std::min(minI, buckets[b * 2]);
+            maxI = std::max(maxI, buckets[b * 2 + 1]);
+        }
+    };
+
+    // Half-open bucket range, narrowed at each level to the part whole coarser buckets cover.
+    std::int64_t first = startSample / SAMPLES_PER_PEAK;
+    std::int64_t last = std::min(numBuckets, (endSample - 1) / SAMPLES_PER_PEAK + 1);
+    const std::int16_t* buckets = peaks_.channelPeaks(channel).data();
+    for (const auto& coarser : coarse_) {
+        if (last - first < 2 * COARSE_FACTOR)
+            break;
+        const std::int64_t alignedFirst = (first + COARSE_FACTOR - 1) / COARSE_FACTOR;
+        const std::int64_t alignedLast = last / COARSE_FACTOR;
+        scan(buckets, first, alignedFirst * COARSE_FACTOR);
+        scan(buckets, alignedLast * COARSE_FACTOR, last);
+        first = alignedFirst;
+        last = alignedLast;
+        buckets = coarser[static_cast<std::size_t>(channel)].data();
+    }
+    scan(buckets, first, last);
+
+    if (minI > maxI)
+        return {};
+    return {sdk::peakToFloat(minI), sdk::peakToFloat(maxI)};
+}
 
 juce::File WaveformPeakCache::getCacheRoot() {
     auto root = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
