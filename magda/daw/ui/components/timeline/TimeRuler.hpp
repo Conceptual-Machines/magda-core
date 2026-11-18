@@ -247,6 +247,21 @@ class TimeRuler : public juce::Component, private juce::Timer {
     double zoomAnchorTime = 0.0;
     static constexpr int DRAG_THRESHOLD = 3;
 
+    // Tick zone vs. lens. Leaving the ticks upward holds the tick zone for LENS_DELAY_MS,
+    // cursor and clicks alike, so the lens shows only when the pointer stays up there (#3341).
+    static constexpr int LENS_DELAY_MS = 250;
+    bool overTicks(int y) const {
+        return y >= getHeight() - tickHeightMajor();
+    }
+    bool onTicks(int y) const;
+    void trackTickZone(int y);
+    void endTickHold();
+    juce::MouseCursor cursorAt(int x, int y, juce::ModifierKeys mods) const;
+    bool wasOnTicks_ = false;
+    bool tickHold_ = false;
+    bool pressOnTicks_ = false;  // where the current click landed, for mouseUp/mouseDoubleClick
+    juce::TimedCallback lensDelay_{[this] { endTickHold(); }};
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimeRuler)
 };
 

@@ -45,7 +45,7 @@ ClipSnapshot makeAudioClip() {
     s.clipLengthSeconds = 2.0;
     s.fadeInSeconds = 0.5;     // handle at x = 2 + 0.5 * 98 = 51
     s.fadeOutSeconds = 0.0;    // handle at x = 198
-    s.volumeGainLinear = 0.5;  // line at y = 18 + 0.5 * 24 = 30
+    s.volumeGainLinear = 0.5;  // line at y = 18 + 0.5 * 24 = 30, handle centred at x = 100
     return s;
 }
 
@@ -266,22 +266,59 @@ TEST_CASE("Clip: fade handles exist on selected audio clips only", "[hit-tester]
     REQUIRE_FALSE(clipHit(51, 20, s).onFadeIn);
 }
 
-TEST_CASE("Clip: volume line yields to edges and fade handles", "[hit-tester]") {
-    const auto s = makeAudioClip();
+TEST_CASE("Clip: only the handle on the volume line takes a volume drag", "[hit-tester]") {
+    auto s = makeAudioClip();
 
-    // Volume line at y=30, away from the fade handles.
-    const auto onLine = clipHit(120, 30, s);
-    REQUIRE(onLine.onVolume);
-    REQUIRE(onLine.zone == ClipZone::Volume);
-    REQUIRE(clipCursor(onLine, true, NO_MODS) == CursorKind::UpDownResize);
+    REQUIRE(clipVolumeHandleBounds(s) == juce::Rectangle<float>(96.0f, 26.0f, 8.0f, 8.0f));
+    const auto onHandle = clipHit(100, 30, s);
+    REQUIRE(onHandle.zone == ClipZone::Volume);
+    REQUIRE(clipCursor(onHandle, true, NO_MODS) == CursorKind::UpDownResize);
+    // The hit square reaches 3px past the drawn one.
+    REQUIRE(clipHit(106, 36, s).onVolume);
+    REQUIRE_FALSE(clipHit(108, 30, s).onVolume);
 
-    // Same y on the resize edge: the edge excludes the volume handle.
-    const auto onEdge = clipHit(3, 30, s);
+    // The rest of the line is not a target (#3340).
+    REQUIRE_FALSE(clipHit(150, 30, s).onVolume);
+
+    // At 0 dB the handle stays inside the waveform area, below the header, and
+    // the top of the body away from it moves the clip.
+    s.volumeGainLinear = 1.0f;
+    REQUIRE(clipVolumeHandleBounds(s).getY() == 18.0f);
+    REQUIRE(clipHit(100, 20, s).zone == ClipZone::Volume);
+    REQUIRE(clipHit(150, 18, s).zone == ClipZone::Body);
+    REQUIRE(clipHit(100, 12, s).zone == ClipZone::Body);
+
+    // At silence it sits on the bottom edge and wins over the lower-half band.
+    s.volumeGainLinear = 0.0f;
+    REQUIRE(clipVolumeHandleBounds(s).getBottom() == 42.0f);
+    REQUIRE(clipHit(100, 40, s).zone == ClipZone::Volume);
+
+    // Unselected clips and clips under a shown gain envelope have no handle.
+    s.selected = false;
+    REQUIRE_FALSE(clipHit(100, 40, s).onVolume);
+    s.selected = true;
+    s.volumeLineShown = false;
+    REQUIRE(clipVolumeHandleBounds(s).isEmpty());
+}
+
+TEST_CASE("Clip: volume handle yields to edges and fade handles", "[hit-tester]") {
+    auto s = makeAudioClip();
+
+    // A fade-in handle at the clip's centre wins over the volume handle.
+    s.fadeInSeconds = 1.0;  // x = 2 + 98 = 100
+    const auto onBoth = clipHit(100, 30, s);
+    REQUIRE(onBoth.onFadeIn);
+    REQUIRE_FALSE(onBoth.onVolume);
+
+    // On a narrow clip the handle's hit square reaches the resize edges, which win
+    // (y=35 is below the fade band).
+    s.fadeInSeconds = 0.0;
+    s.width = 20;
+    REQUIRE(clipHit(10, 35, s).onVolume);
+    const auto onEdge = clipHit(4, 35, s);
+    REQUIRE(onEdge.onLeftEdge);
+    REQUIRE_FALSE(onEdge.onFadeIn);
     REQUIRE_FALSE(onEdge.onVolume);
-    // Near the fade-in handle x at a fade-band y: fade wins.
-    const auto nearFade = clipHit(51, 30, s);
-    REQUIRE(nearFade.onFadeIn);
-    REQUIRE_FALSE(nearFade.onVolume);
 }
 
 TEST_CASE("Clip: raw handle hits ignore selection but respect audio", "[hit-tester]") {
@@ -292,13 +329,13 @@ TEST_CASE("Clip: raw handle hits ignore selection but respect audio", "[hit-test
     // even on unselected clips (unlike clipHit's gated flags)...
     REQUIRE(clipFadeInHandleHit(51, 20, s));
     REQUIRE(clipFadeOutHandleHit(197, 20, s));
-    REQUIRE(clipVolumeLineHit(30, s));
+    REQUIRE_FALSE(clipVolumeHandleBounds(s).isEmpty());
     REQUIRE_FALSE(clipHit(51, 20, s).onFadeIn);
 
     // ...but never on MIDI clips.
     s.isAudio = false;
     REQUIRE_FALSE(clipFadeInHandleHit(51, 20, s));
-    REQUIRE_FALSE(clipVolumeLineHit(30, s));
+    REQUIRE(clipVolumeHandleBounds(s).isEmpty());
 }
 
 TEST_CASE("Clip: modifier tools override every zone", "[hit-tester]") {

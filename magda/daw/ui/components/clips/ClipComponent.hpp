@@ -143,6 +143,9 @@ class ClipComponent : public juce::Component,
     std::function<void(ClipId, double, double)>
         onClipDragPreview;  // clipId, previewStartTime, previewLength
 
+    /** @brief A clip on a chord track, drawn as chord blocks rather than notes. */
+    static bool isChordClip(const ClipInfo& clip);
+
   private:
     /// The gain envelope over the body while the clip shows it (#3064).
     std::unique_ptr<ClipEnvelopeOverlay> gainEnvelope_;
@@ -242,6 +245,7 @@ class ClipComponent : public juce::Component,
     // Volume handle state
     bool hoverVolumeHandle_ = false;
     float dragStartVolumeDB_ = 0.0f;
+    bool volumeDragAdjustsGain_ = false;  // Shift on the handle drags clip gain instead
 
     // Visual constants (hit-relevant ones are canonical in the shared hit
     // tester so zone math can never drift from the paint metrics, #1719)
@@ -294,7 +298,6 @@ class ClipComponent : public juce::Component,
     // Chord-track clips render their chordAnnotations as named blocks instead of
     // a MIDI-note preview.
     void paintChordClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
-    static bool isChordClip(const ClipInfo& clip);
     void paintClipHeader(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     /** @brief The clip's colour as drawn: grey while it is disabled. */
     juce::Colour displayColour(const ClipInfo& clip) const;
@@ -309,13 +312,15 @@ class ClipComponent : public juce::Component,
     void paintFadeHandles(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintVolumeLine(juce::Graphics& g, const ClipInfo& clip,
                          juce::Rectangle<int> waveformArea);
+    void paintVolumeHandle(juce::Graphics& g);
+    void repaintVolumeHandle();
+    void commitGainDrag();
 
     // Interaction helpers
     static bool isOnLeftEdge(int x);
     bool isOnRightEdge(int x) const;
     bool isOnFadeInHandle(int x, int y) const;
     bool isOnFadeOutHandle(int x, int y) const;
-    bool isOnVolumeHandle(int x, int y) const;
     // Snapshot for the shared hit tester (#1719): hover flags and the cursor
     // both derive from interaction::clipHit() so they can never disagree.
     interaction::ClipSnapshot makeHitSnapshot() const;

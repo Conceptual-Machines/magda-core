@@ -336,6 +336,34 @@ class ClipPaintTests : public juce::UnitTest {
             paintClip(ghost, fixture.panel);
             expect(cm.isGhostClip(original), "ghost clips paint their index badge");
         }
+
+        beginTest("A MIDI clip's drag ghost draws its notes (#3342)");
+        {
+            PaintFixture fixture;
+            auto& cm = ClipManager::getInstance();
+            const auto withNotes =
+                cm.createMidiClipBeats(testTrackId, 0.0, 4.0, ClipView::Arrangement);
+            const auto empty = cm.createMidiClipBeats(testTrackId, 8.0, 4.0, ClipView::Arrangement);
+            for (int i = 0; i < 4; ++i) {
+                MidiNote note;
+                note.noteNumber = 60 + i;
+                note.startBeat = static_cast<double>(i);
+                note.lengthBeats = 0.5;
+                cm.getClip(withNotes)->midiNotes.push_back(note);
+            }
+            cm.getClip(empty)->colour = cm.getClip(withNotes)->colour;
+
+            const auto renderGhost = [&](ClipId id) {
+                fixture.panel.clearAllClipGhosts();
+                fixture.panel.setClipGhost(id, {0, 0, 160, 80}, cm.getClip(id)->colour);
+                juce::Image image(juce::Image::ARGB, 160, 80, true);
+                juce::Graphics g(image);
+                fixture.panel.paintEntireComponent(g, false);
+                return image;
+            };
+            expect(pixelsDiffering(renderGhost(withNotes), renderGhost(empty)) > 0,
+                   "the ghost shows the clip's notes");
+        }
     }
 };
 

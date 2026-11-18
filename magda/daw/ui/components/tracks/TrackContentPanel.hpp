@@ -306,8 +306,8 @@ class TrackContentPanel : public juce::Component,
     bool nudgeSelectedClipsToAdjacentTrack(int direction);
 
     // Ghost clip methods (for Alt+drag visual feedback)
-    void setClipGhost(ClipId clipId, const juce::Rectangle<int>& bounds,
-                      const juce::Colour& colour);
+    void setClipGhost(ClipId clipId, const juce::Rectangle<int>& bounds, const juce::Colour& colour,
+                      double contentOffsetSeconds = 0.0);
     void clearClipGhost(ClipId clipId);
     void clearAllClipGhosts();
 
@@ -586,6 +586,7 @@ class TrackContentPanel : public juce::Component,
         ClipId clipId = INVALID_CLIP_ID;
         juce::Rectangle<int> bounds;
         juce::Colour colour;
+        double contentOffsetSeconds = 0.0;  // where a slice ghost starts in its clip
     };
     std::vector<ClipGhost> clipGhosts_;
     void paintClipGhosts(juce::Graphics& g);

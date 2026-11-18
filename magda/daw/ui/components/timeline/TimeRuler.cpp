@@ -202,6 +202,8 @@ int TimeRuler::getPreferredHeight() {
 }
 
 void TimeRuler::mouseDown(const juce::MouseEvent& event) {
+    pressOnTicks_ = onTicks(event.y);
+
     // Alt+click near phase marker → start phase drag
     if (event.mods.isAltDown() && loopEnabled && (loopPhaseVisible || loopPhaseHoverOnly)) {
         double phaseTime = relativeMode ? loopPhasePosition : (timeOffset + loopPhasePosition);
@@ -307,6 +309,9 @@ void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
 }
 
 void TimeRuler::mouseUp(const juce::MouseEvent& event) {
+    // A drag can end anywhere; only a later move off the ticks starts the lens delay.
+    wasOnTicks_ = overTicks(event.y);
+
     if (dragMode == DragMode::PhaseDrag) {
         if (onPhaseDragEnded) {
             double finalPhaseTime = pixelToTime(event.x);
@@ -319,9 +324,7 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
             onPhaseDragEnded(finalPhaseTime);
         }
         dragMode = DragMode::None;
-        setMouseCursor(event.y >= getHeight() - tickHeightMajor()
-                           ? juce::MouseCursor::IBeamCursor
-                           : CursorManager::getInstance().getZoomCursor());
+        setMouseCursor(cursorAt(event.x, event.y, event.mods));
         return;
     }
 
@@ -344,22 +347,20 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
                 if (!bypassSnap)
                     time = snapTimeToGrid(time);
                 // The lens area above only zooms; a click there places nothing.
-                if (event.y >= getHeight() - tickHeightMajor() && onPlayheadPositionClicked)
+                if (pressOnTicks_ && onPlayheadPositionClicked)
                     onPlayheadPositionClicked(time, bypassSnap);
             }
         }
     }
 
     dragMode = DragMode::None;
-    setMouseCursor(event.y >= getHeight() - tickHeightMajor()
-                       ? juce::MouseCursor::IBeamCursor
-                       : CursorManager::getInstance().getZoomCursor());
+    setMouseCursor(cursorAt(event.x, event.y, event.mods));
 }
 
 void TimeRuler::mouseDoubleClick(const juce::MouseEvent& event) {
     // Above the ticks, a double-click fits the view to the loop, or to the clip when it
     // does not loop.
-    if (event.y < getHeight() - tickHeightMajor()) {
+    if (!pressOnTicks_) {
         const double origin = relativeMode ? 0.0 : timeOffset;
         if (onZoomToLoopRequested && loopEnabled && loopLength > 0.0)
             onZoomToLoopRequested(origin + loopOffset, origin + loopOffset + loopLength);
@@ -379,17 +380,40 @@ void TimeRuler::mouseDoubleClick(const juce::MouseEvent& event) {
     }
 }
 
-void TimeRuler::mouseMove(const juce::MouseEvent& event) {
-    const int tickAreaTop = getHeight() - tickHeightMajor();
-    juce::MouseCursor desiredCursor = event.y >= tickAreaTop
-                                          ? juce::MouseCursor::IBeamCursor
-                                          : CursorManager::getInstance().getZoomCursor();
+bool TimeRuler::onTicks(int y) const {
+    return overTicks(y) || tickHold_;
+}
+
+void TimeRuler::trackTickZone(int y) {
+    if (overTicks(y)) {
+        wasOnTicks_ = true;
+        tickHold_ = false;
+        lensDelay_.stopTimer();
+    } else if (wasOnTicks_) {
+        wasOnTicks_ = false;
+        tickHold_ = true;
+        lensDelay_.startTimer(LENS_DELAY_MS);
+    }
+}
+
+void TimeRuler::endTickHold() {
+    lensDelay_.stopTimer();
+    tickHold_ = false;
+    if (isMouseOver() && !isMouseButtonDown()) {
+        const auto pos = getMouseXYRelative();
+        setMouseCursor(cursorAt(pos.x, pos.y, juce::ModifierKeys::getCurrentModifiers()));
+    }
+}
+
+juce::MouseCursor TimeRuler::cursorAt(int x, int y, juce::ModifierKeys mods) const {
+    juce::MouseCursor desiredCursor =
+        onTicks(y) ? juce::MouseCursor::IBeamCursor : CursorManager::getInstance().getZoomCursor();
 
     // Alt+hover near phase marker shows resize cursor
-    if (event.mods.isAltDown() && loopEnabled && (loopPhaseVisible || loopPhaseHoverOnly)) {
+    if (mods.isAltDown() && loopEnabled && (loopPhaseVisible || loopPhaseHoverOnly)) {
         double phaseTime = relativeMode ? loopPhasePosition : (timeOffset + loopPhasePosition);
         int phaseX = timeToPixel(phaseTime);
-        if (std::abs(event.x - phaseX) <= 8) {
+        if (std::abs(x - phaseX) <= 8) {
             desiredCursor = juce::MouseCursor::LeftRightResizeCursor;
         }
     }
@@ -400,12 +424,16 @@ void TimeRuler::mouseMove(const juce::MouseEvent& event) {
     // a click there got captured as a loop-region drag.
     if (desiredCursor == CursorManager::getInstance().getZoomCursor() ||
         desiredCursor == juce::MouseCursor::IBeamCursor) {
-        auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
+        auto loopCursor = loopInteraction_.getCursor(x, y);
         if (loopCursor != juce::MouseCursor::NormalCursor)
             desiredCursor = std::move(loopCursor);
     }
+    return desiredCursor;
+}
 
-    setMouseCursor(desiredCursor);
+void TimeRuler::mouseMove(const juce::MouseEvent& event) {
+    trackTickZone(event.y);
+    setMouseCursor(cursorAt(event.x, event.y, event.mods));
 
     // Check proximity to phase marker for hover display
     if (loopPhaseHoverOnly) {
@@ -420,6 +448,8 @@ void TimeRuler::mouseMove(const juce::MouseEvent& event) {
 }
 
 void TimeRuler::mouseExit(const juce::MouseEvent& /*event*/) {
+    wasOnTicks_ = false;
+    endTickHold();
     setMouseCursor(juce::MouseCursor::NormalCursor);
     if (loopPhaseHovered) {
         loopPhaseHovered = false;
