@@ -805,6 +805,7 @@ jobs:
         seed "$LUA_DIR" \
           9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30 \
           lua-5.4.7.tar.gz \
+          https://github.com/Conceptual-Machines/magda-deps/releases/download/lua-5.4.7/lua-5.4.7.tar.gz \
           https://www.lua.org/ftp/lua-5.4.7.tar.gz \
           http://deb.debian.org/debian/pool/main/l/lua5.4/lua5.4_5.4.7.orig.tar.gz \
           && echo "lua_dir=$LUA_DIR" >> "$GITHUB_OUTPUT"
@@ -840,18 +841,6 @@ jobs:
           "https://github.com/bytecodealliance/wasmtime/releases/download/$WASMTIME_VERSION/wasmtime-$WASMTIME_VERSION-$WASMTIME_ASSET.tar.xz" \
           && echo "wasmtime_dir=$WASMTIME_DIR" >> "$GITHUB_OUTPUT"
 
-        # The ONNX Runtime, for the same reason: it is the other release asset
-        # CMake fetches on this runner, and it failed the same way on the same
-        # afternoon.
-        ORT_VERSION=1.26.0
-        ORT_DIR="$CACHE_ROOT/onnxruntime-osx-arm64-$ORT_VERSION"
-
-        seed "$ORT_DIR" \
-          7a1280bbb1701ea514f71828765237e7896e0f2e1cd332f1f70dbd5c3e33aca3 \
-          "onnxruntime-osx-arm64-$ORT_VERSION.tgz" \
-          "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/onnxruntime-osx-arm64-$ORT_VERSION.tgz" \
-          && echo "onnxruntime_dir=$ORT_DIR" >> "$GITHUB_OUTPUT"
-
         exit 0
 
     - name: Configure CMake (Debug)
@@ -863,7 +852,6 @@ jobs:
           ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} \
           ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} \
           ${{ steps.deps-cache.outputs.wasmtime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_WASMTIME={0}', steps.deps-cache.outputs.wasmtime_dir) || '' }} \
-          ${{ steps.deps-cache.outputs.onnxruntime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_ONNXRUNTIME={0}', steps.deps-cache.outputs.onnxruntime_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.faust_debug_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.faust_debug_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.mutable_debug_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.mutable_debug_dir) || '' }}
 
@@ -1043,7 +1031,6 @@ jobs:
           ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} \
           ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} \
           ${{ steps.deps-cache.outputs.wasmtime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_WASMTIME={0}', steps.deps-cache.outputs.wasmtime_dir) || '' }} \
-          ${{ steps.deps-cache.outputs.onnxruntime_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_ONNXRUNTIME={0}', steps.deps-cache.outputs.onnxruntime_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.faust_release_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.faust_release_dir) || '' }} \
           ${{ steps.dsp-prebuilt.outputs.mutable_release_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.mutable_release_dir) || '' }}
 
@@ -1669,6 +1656,7 @@ jobs:
         # Written through .NET rather than Out-File: Windows PowerShell writes
         # UTF-16 there and the runner reads the file as UTF-8.
         if (Seed $luaDir '9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30' 'lua-5.4.7.tar.gz' @(
+                'https://github.com/Conceptual-Machines/magda-deps/releases/download/lua-5.4.7/lua-5.4.7.tar.gz',
                 'https://www.lua.org/ftp/lua-5.4.7.tar.gz',
                 'http://deb.debian.org/debian/pool/main/l/lua5.4/lua5.4_5.4.7.orig.tar.gz')) {
             [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "lua_dir=$luaDir`n")
