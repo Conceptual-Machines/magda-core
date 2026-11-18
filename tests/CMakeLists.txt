@@ -918,6 +918,7 @@ target_sources(magda_juce_tests PRIVATE
     remote/test_remote_websocket_live_juce.cpp
     clips/test_clip_inspector_juce.cpp
     clips/test_multi_clip_resize_preview_juce.cpp
+    clips/test_clip_volume_handle_juce.cpp
     clips/test_clip_paint_juce.cpp
     clips/test_clip_nudge_juce.cpp
     clips/test_clip_drag_targets_juce.cpp

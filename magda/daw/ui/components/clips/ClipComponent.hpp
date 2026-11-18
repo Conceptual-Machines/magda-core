@@ -242,6 +242,7 @@ class ClipComponent : public juce::Component,
     // Volume handle state
     bool hoverVolumeHandle_ = false;
     float dragStartVolumeDB_ = 0.0f;
+    bool volumeDragAdjustsGain_ = false;  // Shift on the handle drags clip gain instead
 
     // Visual constants (hit-relevant ones are canonical in the shared hit
     // tester so zone math can never drift from the paint metrics, #1719)
@@ -309,13 +310,15 @@ class ClipComponent : public juce::Component,
     void paintFadeHandles(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintVolumeLine(juce::Graphics& g, const ClipInfo& clip,
                          juce::Rectangle<int> waveformArea);
+    void paintVolumeHandle(juce::Graphics& g);
+    void repaintVolumeHandle();
+    void commitGainDrag();
 
     // Interaction helpers
     static bool isOnLeftEdge(int x);
     bool isOnRightEdge(int x) const;
     bool isOnFadeInHandle(int x, int y) const;
     bool isOnFadeOutHandle(int x, int y) const;
-    bool isOnVolumeHandle(int x, int y) const;
     // Snapshot for the shared hit tester (#1719): hover flags and the cursor
     // both derive from interaction::clipHit() so they can never disagree.
     interaction::ClipSnapshot makeHitSnapshot() const;

@@ -10,8 +10,11 @@
 
 #include "../../interaction/ClipDragTargets.hpp"
 #include "../../interaction/ClipNudge.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../clips/ClipComponent.hpp"
+#include "../waveform/ClipWaveformPainter.hpp"
 #include "TrackContentPanel.hpp"
+#include "audio/AraTracks.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipPlacementPolicy.hpp"
 #include "core/GestureRouter.hpp"
@@ -982,7 +985,7 @@ void TrackContentPanel::previewSelectionCopy(double deltaTime) {
         setClipGhost(
             info.clipId,
             {left, laneArea.getY() + 2, juce::jmax(10, right - left), laneArea.getHeight() - 4},
-            clip->colour);
+            clip->colour, sliceStart - info.originalStartTime);
     }
 }
 
@@ -1035,13 +1038,51 @@ void TrackContentPanel::commitSelectionCopy(double deltaTime) {
 // Ghost Clip Rendering (Alt+Drag Duplication Visual Feedback)
 // ============================================================================
 
+namespace {
+
+/** @brief An audio clip's ghost shows its waveform, dimmed and laid out as on the clip (#3342). */
+void paintGhostWaveform(juce::Graphics& g, ClipId clipId, juce::Rectangle<int> ghostBounds,
+                        double contentOffsetSeconds, double tempo, double pixelsPerBeat) {
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr || !clip->isAudio() || audioEventRef(*clip).sourceFilePath().isEmpty())
+        return;
+
+    // The whole clip's extent at the ghost's position; a slice ghost shows only its part.
+    const double pixelsPerSecond = pixelsPerBeat * tempo / 60.0;
+    const double lengthSeconds = clip->getTimelineLength(tempo);
+    const juce::Rectangle<int> content(
+        ghostBounds.getX() - juce::roundToInt(contentOffsetSeconds * pixelsPerSecond),
+        ghostBounds.getY(), juce::roundToInt(lengthSeconds * pixelsPerSecond),
+        ghostBounds.getHeight());
+    const auto waveformArea =
+        content.reduced(2, 0)
+            .withTrimmedTop(interaction::ClipMetrics::headerHeightFor(content.getHeight()) + 2)
+            .withTrimmedBottom(2);
+    if (waveformArea.isEmpty())
+        return;
+
+    daw::ui::ClipWaveformSpec spec;
+    spec.tempo = tempo;
+    spec.colour = deriveClipInk(clip->colour).withAlpha(0.5f);
+    spec.raw = araPluginForClip(clip->id).has_value();
+
+    juce::Graphics::ScopedSaveState state(g);
+    g.reduceClipRegion(ghostBounds);
+    daw::ui::paintClipWaveform(
+        g, *clip, clipId, waveformArea.reduced(0, juce::jmax(1, waveformArea.getHeight() / 14)),
+        lengthSeconds, spec);
+}
+
+}  // namespace
+
 void TrackContentPanel::setClipGhost(ClipId clipId, const juce::Rectangle<int>& bounds,
-                                     const juce::Colour& colour) {
+                                     const juce::Colour& colour, double contentOffsetSeconds) {
     // Update existing ghost or add new one
     for (auto& ghost : clipGhosts_) {
         if (ghost.clipId == clipId) {
             ghost.bounds = bounds;
             ghost.colour = colour;
+            ghost.contentOffsetSeconds = contentOffsetSeconds;
             repaintVisible();
             return;
         }
@@ -1052,6 +1093,7 @@ void TrackContentPanel::setClipGhost(ClipId clipId, const juce::Rectangle<int>& 
     ghost.clipId = clipId;
     ghost.bounds = bounds;
     ghost.colour = colour;
+    ghost.contentOffsetSeconds = contentOffsetSeconds;
     clipGhosts_.push_back(ghost);
     repaintVisible();
 }
@@ -1088,6 +1130,8 @@ void TrackContentPanel::paintClipGhosts(juce::Graphics& g) {
         // Draw ghost clip with semi-transparent fill
         g.setColour(ghost.colour.withAlpha(0.3f));
         g.fillRoundedRectangle(ghost.bounds.toFloat(), 4.0f);
+        paintGhostWaveform(g, ghost.clipId, ghost.bounds, ghost.contentOffsetSeconds, getTempo(),
+                           currentZoom);
 
         // Draw solid border
         g.setColour(ghost.colour.withAlpha(0.6f));

@@ -183,19 +183,14 @@ bool onFadeHandle(int x, int y, const ClipSnapshot& s, bool fadeIn) {
            static_cast<float>(ClipMetrics::FADE_HANDLE_HIT_WIDTH) * 0.5f;
 }
 
-// ClipComponent::isOnVolumeHandle — near the volume line.
-bool onVolumeLine(int y, const ClipSnapshot& s) {
-    if (!s.isAudio || !s.volumeLineShown || !s.mixHandles)
+bool onVolumeHandle(int x, int y, const ClipSnapshot& s) {
+    const auto handle = clipVolumeHandleBounds(s);
+    if (handle.isEmpty())
         return false;
-
-    const auto area = waveformArea(s);
-    if (area.getWidth() <= 0 || area.getHeight() <= 0)
-        return false;
-
-    const float gain = juce::jlimit(0.0f, 1.0f, s.volumeGainLinear);
-    const float lineY =
-        static_cast<float>(area.getY()) + ((1.0f - gain) * static_cast<float>(area.getHeight()));
-    return std::abs(static_cast<float>(y) - lineY) <= ClipMetrics::VOLUME_LINE_HIT_DISTANCE;
+    return handle
+        .withSizeKeepingCentre(ClipMetrics::VOLUME_HANDLE_HIT_SIZE,
+                               ClipMetrics::VOLUME_HANDLE_HIT_SIZE)
+        .contains(static_cast<float>(x), static_cast<float>(y));
 }
 
 }  // namespace
@@ -208,8 +203,19 @@ bool clipFadeOutHandleHit(int x, int y, const ClipSnapshot& s) {
     return onFadeHandle(x, y, s, false);
 }
 
-bool clipVolumeLineHit(int y, const ClipSnapshot& s) {
-    return onVolumeLine(y, s);
+juce::Rectangle<float> clipVolumeHandleBounds(const ClipSnapshot& s) {
+    if (!s.isAudio || !s.volumeLineShown || !s.mixHandles)
+        return {};
+
+    const auto area = waveformArea(s).toFloat();
+    constexpr float size = ClipMetrics::VOLUME_HANDLE_SIZE;
+    if (area.getWidth() < size || area.getHeight() < size)
+        return {};
+
+    const float gain = juce::jlimit(0.0f, 1.0f, s.volumeGainLinear);
+    const float lineY = area.getY() + (1.0f - gain) * area.getHeight();
+    const float top = juce::jlimit(area.getY(), area.getBottom() - size, lineY - size * 0.5f);
+    return {area.getCentreX() - size * 0.5f, top, size, size};
 }
 
 ClipHit clipHit(int x, int y, const ClipSnapshot& s) {
@@ -223,11 +229,11 @@ ClipHit clipHit(int x, int y, const ClipSnapshot& s) {
     hit.lowerHalf = y >= s.height / 2 && !onEdge;
 
     // Fade + volume handles exist only on selected audio clips; the volume
-    // line additionally yields to edges and fade handles.
+    // handle additionally yields to edges and fade handles.
     if (s.selected) {
         hit.onFadeIn = onFadeHandle(x, y, s, true);
         hit.onFadeOut = onFadeHandle(x, y, s, false);
-        hit.onVolume = !hit.onFadeIn && !hit.onFadeOut && !onEdge && onVolumeLine(y, s);
+        hit.onVolume = !hit.onFadeIn && !hit.onFadeOut && !onEdge && onVolumeHandle(x, y, s);
     }
 
     // Winning zone, in the historical cursor-priority order.

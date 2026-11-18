@@ -535,13 +535,17 @@ void ClipComponent::paint(juce::Graphics& g) {
         paintFadeHandles(g, *clip, getLocalBounds());
     }
 
-    // Draw volume line (audio clips with non-zero volume, or when hovering/dragging); a shown gain
-    // envelope takes its place (#3064).
-    if (mixHandles && !clip->gainEnvelopeShown &&
-        (std::abs(clip->volumeDB) > 0.01f || hoverVolumeHandle_ ||
-         dragMode_ == DragMode::VolumeDrag)) {
-        auto wfArea = bounds.reduced(2, 0).withTrimmedTop(headerHeight() + 2).withTrimmedBottom(2);
-        paintVolumeLine(g, *clip, wfArea);
+    // Draw volume line (audio clips with non-zero volume, or when hovering/dragging) and, on a
+    // selected clip, the handle that drags it; a shown gain envelope takes their place (#3064).
+    if (mixHandles && !clip->gainEnvelopeShown) {
+        if (std::abs(clip->volumeDB) > 0.01f || hoverVolumeHandle_ ||
+            dragMode_ == DragMode::VolumeDrag) {
+            auto wfArea =
+                bounds.reduced(2, 0).withTrimmedTop(headerHeight() + 2).withTrimmedBottom(2);
+            paintVolumeLine(g, *clip, wfArea);
+        }
+        if (isSelected_)
+            paintVolumeHandle(g);
     }
 
     // Marquee highlight overlay (during marquee drag)
@@ -1083,9 +1087,9 @@ void ClipComponent::paintSelectionOutline(juce::Graphics& g, juce::Rectangle<int
 
 namespace {
 
-enum class StatusGlyph { BeatMode, Loop, Warp, Reverse };
+enum class StatusGlyph { BeatMode, Warp, Reverse };
 
-/** @brief A header status mark (beat mode, loop, warp, reverse), drawn into @p box. */
+/** @brief A header status mark (beat mode, warp, reverse), drawn into @p box. */
 void paintStatusGlyph(juce::Graphics& g, juce::Rectangle<float> box, StatusGlyph glyph) {
     const auto b = box.withSizeKeepingCentre(9.0f, 9.0f);
     const juce::PathStrokeType stroke(1.2f, juce::PathStrokeType::curved,
@@ -1097,19 +1101,6 @@ void paintStatusGlyph(juce::Graphics& g, juce::Rectangle<float> box, StatusGlyph
             g.drawText(juce::CharPointer_UTF8("\xe2\x99\xa9"), box, juce::Justification::centred,
                        false);
             return;
-        case StatusGlyph::Loop: {
-            const auto c = b.getCentre();
-            const float r = b.getWidth() * 0.45f;
-            p.addCentredArc(c.x, c.y, r, r, 0.0f, 0.5f, juce::MathConstants<float>::twoPi - 0.3f,
-                            true);
-            g.strokePath(p, stroke);
-            // Arrowhead at the arc's open end, pointing along it.
-            juce::Path head;
-            head.addTriangle(c.x + 0.5f, b.getY() - 1.5f, c.x + 0.5f, b.getY() + 2.5f, c.x + 3.5f,
-                             b.getY() + 0.5f);
-            g.fillPath(head);
-            return;
-        }
         case StatusGlyph::Warp:
             p.startNewSubPath(b.getX(), b.getBottom());
             p.lineTo(b.getX() + b.getWidth() * 0.4f, b.getY());
@@ -1202,14 +1193,12 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         }
     }
 
-    // Status marks at the right, outermost first: reverse, warp, loop, beat mode.
+    // Status marks at the right, outermost first: reverse, warp, beat mode.
     std::vector<StatusGlyph> marks;
     if (clip.isAudio() && audioEventRef(clip).reversed)
         marks.push_back(StatusGlyph::Reverse);
     if (clip.isAudio() && audioEventRef(clip).warpEnabled)
         marks.push_back(StatusGlyph::Warp);
-    if (clip.loopEnabled)
-        marks.push_back(StatusGlyph::Loop);
     if (clip.isAudio() && audioEventRef(clip).autoTempo)
         marks.push_back(StatusGlyph::BeatMode);
     constexpr int markW = 13;
@@ -1473,18 +1462,90 @@ void ClipComponent::paintVolumeLine(juce::Graphics& g, const ClipInfo& clip,
     g.drawHorizontalLine(static_cast<int>(lineY), static_cast<float>(visibleWaveformArea.getX()),
                          static_cast<float>(visibleWaveformArea.getRight()));
 
-    // Show dB text during drag
-    if (dragMode_ == DragMode::VolumeDrag) {
+    // Show dB text during drag. Compact clips draw their name over the waveform, so they show none.
+    if (dragMode_ == DragMode::VolumeDrag && headerHeight() > 0) {
         juce::String dbText;
-        if (clip.volumeDB <= -100.0f)
+        if (volumeDragAdjustsGain_)
+            dbText = "Gain +" + juce::String(clip.gainDB, 1) + " dB";
+        else if (clip.volumeDB <= -100.0f)
             dbText = "-inf dB";
         else
             dbText = juce::String(clip.volumeDB, 1) + " dB";
-        g.setColour(juce::Colours::white);
-        g.setFont(10.0f);
-        g.drawText(dbText, waveformArea.getX() + 4, static_cast<int>(lineY) - 14, 60, 14,
-                   juce::Justification::centredLeft);
+        // At the right, above the line or else below it, clear of the header and the handle;
+        // not drawn where it fits neither way.
+        const juce::Font font(juce::FontOptions(10.0f));
+        const int textWidth = juce::GlyphArrangement::getStringWidthInt(font, dbText) + 2;
+        constexpr int textHeight = 14;
+        const auto handle =
+            interaction::clipVolumeHandleBounds(makeHitSnapshot()).getSmallestIntegerContainer();
+        const int line = static_cast<int>(lineY);
+        for (const int top : {line - textHeight, line + 1}) {
+            const juce::Rectangle<int> box(waveformArea.getRight() - 4 - textWidth, top, textWidth,
+                                           textHeight);
+            if (waveformArea.contains(box) && !box.intersects(handle)) {
+                g.setColour(juce::Colours::white);
+                g.setFont(font);
+                g.drawText(dbText, box, juce::Justification::centredRight);
+                break;
+            }
+        }
     }
+}
+
+void ClipComponent::commitGainDrag() {
+    auto& cm = ClipManager::getInstance();
+    std::vector<std::pair<ClipId, float>> finalGains;
+    const auto restore = [&](ClipId cid, const ClipInfo& before) {
+        if (auto* c = cm.getClip(cid)) {
+            finalGains.emplace_back(cid, c->gainDB);
+            c->gainDB = before.gainDB;
+        }
+    };
+    restore(clipId_, dragStartClipSnapshot_);
+    for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_)
+        restore(cid, snap);
+    dragStartSelectedFadeSnapshots_.clear();
+
+    // Always a compound: gain commands merge with the one before them, which would fold
+    // two separate drags into one undo step.
+    auto& undo = UndoManager::getInstance();
+    undo.beginCompoundOperation("Adjust Gain");
+    for (const auto& [cid, db] : finalGains)
+        undo.executeCommand(std::make_unique<SetClipGainDBCommand>(cid, db));
+    undo.endCompoundOperation();
+}
+
+void ClipComponent::paintVolumeHandle(juce::Graphics& g) {
+    const auto handle = interaction::clipVolumeHandleBounds(makeHitSnapshot());
+    if (handle.isEmpty())
+        return;
+    const bool dragging = dragMode_ == DragMode::VolumeDrag;
+    const bool active = hoverVolumeHandle_ || dragging;
+    g.setColour(juce::Colours::white.withAlpha(active ? 0.9f : 0.6f));
+
+    // A diamond while Shift would make the drag change gain instead of volume.
+    const bool gain = dragging
+                          ? volumeDragAdjustsGain_
+                          : mouseIsOver_ && juce::ModifierKeys::getCurrentModifiers().isShiftDown();
+    if (!gain) {
+        g.fillRect(handle);
+        return;
+    }
+    const auto d = handle.expanded(1.0f);
+    juce::Path diamond;
+    diamond.startNewSubPath(d.getCentreX(), d.getY());
+    diamond.lineTo(d.getRight(), d.getCentreY());
+    diamond.lineTo(d.getCentreX(), d.getBottom());
+    diamond.lineTo(d.getX(), d.getCentreY());
+    diamond.closeSubPath();
+    g.fillPath(diamond);
+}
+
+void ClipComponent::repaintVolumeHandle() {
+    if (isSelected_)
+        repaint(interaction::clipVolumeHandleBounds(makeHitSnapshot())
+                    .expanded(2.0f)
+                    .getSmallestIntegerContainer());
 }
 
 void ClipComponent::resized() {
@@ -1635,16 +1696,24 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
+    // The volume handle takes the press the cursor shows (#1719): only on a clip already
+    // selected, and ahead of the lower-half time selection.
+    const bool onVolumeHandle =
+        interaction::clipHit(e.x, e.y, makeHitSnapshot()).zone == interaction::ClipZone::Volume;
+    const bool gainOnHandle = onVolumeHandle && e.mods.isShiftDown() && !e.mods.isAltDown() &&
+                              !e.mods.isCommandDown() && !e.mods.isCtrlDown();
+
     // Lower half of the clip body is a time-selection zone, just like empty lane
     // space: forward a plain click there to the panel so it draws an I-beam time
     // selection instead of grabbing/moving the clip. (Grabbing an *existing*
     // selection is handled earlier by hitTest making this component transparent,
     // so the panel owns that drag directly.) Edges keep resize priority, and the
     // clip-op modifiers (select/copy/blade/erase/context) are handled elsewhere.
-    const bool plainLowerZoneClick =
-        parentPanel_ != nullptr && e.y >= getHeight() / 2 && !isOnLeftEdge(e.x) &&
-        !isOnRightEdge(e.x) && !e.mods.isAltDown() && !e.mods.isCommandDown() &&
-        !e.mods.isCtrlDown() && !e.mods.isShiftDown() && !e.mods.isPopupMenu();
+    const bool plainLowerZoneClick = parentPanel_ != nullptr && !onVolumeHandle &&
+                                     e.y >= getHeight() / 2 && !isOnLeftEdge(e.x) &&
+                                     !isOnRightEdge(e.x) && !e.mods.isAltDown() &&
+                                     !e.mods.isCommandDown() && !e.mods.isCtrlDown() &&
+                                     !e.mods.isShiftDown() && !e.mods.isPopupMenu();
     if (plainLowerZoneClick) {
         dragMode_ = DragMode::None;
         forwardingToPanel_ = true;
@@ -1708,7 +1777,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         pendingCopyDragAction_ = true;
         pendingCopyDragIsGhost_ = true;
     } else if (e.mods.isShiftDown()) {
-        if (magda::isRangeSelectClick(e.mods)) {
+        if (magda::isRangeSelectClick(e.mods) && !gainOnHandle) {
             selectionManager.extendSelectionTo(clipId_);
             didRangeSelect = true;
             isSelected_ = selectionManager.isClipSelected(clipId_);
@@ -1893,9 +1962,9 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Volume handle (top edge of waveform area, audio clips only)
-    if (isSelected_ && isOnVolumeHandle(e.x, e.y)) {
+    if (onVolumeHandle) {
         dragMode_ = DragMode::VolumeDrag;
+        volumeDragAdjustsGain_ = gainOnHandle;
         dragStartVolumeDB_ = clip->volumeDB;
         dragStartClipSnapshot_ = *clip;
         // Capture selected clips' state for multi-volume
@@ -2516,8 +2585,15 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             auto parentPos = e.getEventRelativeTo(parentPanel_).getPosition();
             int deltaY = parentPos.y - dragStartPos_.y;
             float dbDelta = static_cast<float>(-deltaY) * 0.5f;  // Up = louder
-            float newGainDB = juce::jlimit(-100.0f, 0.0f, dragStartVolumeDB_ + dbDelta);
             auto& cm = ClipManager::getInstance();
+            if (volumeDragAdjustsGain_) {
+                cm.setClipGainDB(clipId_, dragStartClipSnapshot_.gainDB + dbDelta);
+                for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_)
+                    cm.setClipGainDB(cid, snap.gainDB + dbDelta);
+                repaint();
+                break;
+            }
+            float newGainDB = juce::jlimit(-100.0f, 0.0f, dragStartVolumeDB_ + dbDelta);
             cm.setClipVolumeDB(clipId_, newGainDB);
             for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_) {
                 float otherDB = juce::jlimit(-100.0f, 0.0f, snap.volumeDB + dbDelta);
@@ -2986,6 +3062,10 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
             case DragMode::VolumeDrag: {
                 // Restore all clips to pre-drag state for correct undo capture
                 auto& cm = ClipManager::getInstance();
+                if (volumeDragAdjustsGain_) {
+                    commitGainDrag();
+                    break;
+                }
                 const auto* current = cm.getClip(clipId_);
                 float finalDB = current ? current->volumeDB : dragStartVolumeDB_;
                 float dbDelta = finalDB - dragStartVolumeDB_;
@@ -3163,6 +3243,7 @@ void ClipComponent::mouseEnter(const juce::MouseEvent& e) {
     mouseIsOver_ = true;
     startTimer(50);
     updateCursor(e.mods);
+    repaintVolumeHandle();  // entering with Shift held shows the diamond
 }
 
 void ClipComponent::mouseExit(const juce::MouseEvent& /*e*/) {
@@ -3184,6 +3265,8 @@ void ClipComponent::modifierKeysChanged(const juce::ModifierKeys& mods) {
     // cursor table is enough. During a drag the gesture owns the cursor.
     if (mouseIsOver_ && !juce::Component::isMouseButtonDownAnywhere())
         updateCursor(mods);
+    if (mouseIsOver_)
+        repaintVolumeHandle();
     juce::Component::modifierKeysChanged(mods);
 }
 
@@ -3356,11 +3439,6 @@ bool ClipComponent::isOnFadeInHandle(int x, int y) const {
 
 bool ClipComponent::isOnFadeOutHandle(int x, int y) const {
     return interaction::clipFadeOutHandleHit(x, y, makeHitSnapshot());
-}
-
-bool ClipComponent::isOnVolumeHandle(int x, int y) const {
-    juce::ignoreUnused(x);
-    return interaction::clipVolumeLineHit(y, makeHitSnapshot());
 }
 
 interaction::ClipSnapshot ClipComponent::makeHitSnapshot() const {

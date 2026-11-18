@@ -165,13 +165,14 @@ constexpr int headerHeightFor(int clipHeight) {
     return clipHeight < COMPACT_CLIP_HEIGHT ? 0 : HEADER_HEIGHT;
 }
 constexpr int FADE_HANDLE_HIT_WIDTH = 14;
-constexpr float VOLUME_LINE_HIT_DISTANCE = 6.0f;
+constexpr float VOLUME_HANDLE_SIZE = 8.0f;
+constexpr float VOLUME_HANDLE_HIT_SIZE = 14.0f;
 }  // namespace ClipMetrics
 
 enum class ClipZone {
     FadeIn,     // fade-in handle (selected audio clips)
     FadeOut,    // fade-out handle (selected audio clips)
-    Volume,     // volume line (selected audio clips, away from edges/fades)
+    Volume,     // volume handle on the line (selected audio clips, away from edges/fades)
     LowerHalf,  // lower body half, away from edges: time-selection band
     EdgeLeft,   // resize edge
     EdgeRight,  // resize edge
@@ -218,7 +219,11 @@ ClipHit clipHit(int x, int y, const ClipSnapshot& s);
  *  the selected gate on top (#1721). */
 bool clipFadeInHandleHit(int x, int y, const ClipSnapshot& s);
 bool clipFadeOutHandleHit(int x, int y, const ClipSnapshot& s);
-bool clipVolumeLineHit(int y, const ClipSnapshot& s);
+
+/** @brief The volume handle's drawn square: on the line at the clip's centre, kept inside the
+ *         waveform area. Empty where the clip has no volume line to grab. Only the handle takes
+ *         a volume drag, so a press near the top of the clip still moves it (#3340). */
+juce::Rectangle<float> clipVolumeHandleBounds(const ClipSnapshot& s);
 
 /** Cursor for a clip hit. Modifier tools take priority (Shift+Ctrl erase,
  *  Alt copy-drag, Cmd+Alt blade), then the zone table. `selected` gates the

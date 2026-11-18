@@ -11,7 +11,8 @@
 /**
  * The piano roll's ruler: the lens area above the time ticks zooms, and a double-click there
  * fits the view to the loop or the clip. A click on the ticks moves the playhead and a
- * double-click on them places the edit cursor.
+ * double-click on them places the edit cursor. Leaving the ticks upward keeps the tick zone
+ * for a moment before the lens takes over (#3341).
  */
 
 namespace {
@@ -86,6 +87,32 @@ class TimeRulerClicksTest final : public juce::UnitTest {
         click(ticks, 2);
         ruler.mouseDoubleClick(eventAt(ruler, 120, ticks, pressed, 2));
         expectEquals(editCursorRequests, 1);
+
+        const auto move = [&](int y) {
+            ruler.mouseMove(eventAt(ruler, 120, y, juce::ModifierKeys(), 0));
+        };
+        const auto iBeam = juce::MouseCursor(juce::MouseCursor::IBeamCursor);
+
+        beginTest("Just after leaving the ticks, the area above still acts as the ticks");
+        int placed = playheadClicks;
+        move(ticks);
+        move(lens);
+        expect(ruler.getMouseCursor() == iBeam);
+        click(lens, 1);
+        expectEquals(playheadClicks, placed + 1);
+
+        beginTest("Once the lens delay passes, a click above the ticks places nothing");
+        placed = playheadClicks;
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(1000);
+        click(lens, 1);
+        expectEquals(playheadClicks, placed);
+
+        beginTest("Coming in from above, the lens shows at once");
+        ruler.mouseExit(eventAt(ruler, 120, lens, juce::ModifierKeys(), 0));
+        move(lens);
+        expect(ruler.getMouseCursor() != iBeam);
+        click(lens, 1);
+        expectEquals(playheadClicks, placed);
     }
 };
 
