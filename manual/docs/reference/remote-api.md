@@ -294,7 +294,9 @@ does not expose internal filesystem or engine objects through job results.
   and Session scene indices are zero-based. Follow each operation's schema.
 - Colours are unsigned 32-bit ARGB values.
 - Device parameter writes use real units, such as Hz or dB. Read
-  `devices.listParameters` first. Automation values remain normalized `0..1`.
+  `devices.listParameters` first. `devices.setParameters` writes several at
+  once, all or none. Automation points carry a normalized `0..1` `value` and a
+  `realValue` in the lane target's units, and writes take either.
 - External plugin parameter writes and modulation links are restricted to
   parameters the user enabled for AI/agent control.
 - File-taking operations use absolute paths on the computer running MAGDA.

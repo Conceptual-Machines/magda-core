@@ -163,6 +163,10 @@ juce::String sessionStateName(SessionClipPlayState state) {
     return "stopped";
 }
 
+double realValueOf(double normalized, const ParameterInfo& target) {
+    return ParameterUtils::normalizedToReal(static_cast<float>(normalized), target);
+}
+
 juce::String curveName(AutomationCurveType curve) {
     switch (curve) {
         case AutomationCurveType::Linear:
@@ -862,15 +866,20 @@ AutomationLaneDto makeAutomationLaneDto(const AutomationLaneInfo& lane) {
     dto.target.modId = lane.target.modId;
     dto.target.modParameterIndex = lane.target.modParamIndex;
     dto.target.sendBusIndex = lane.target.sendBusIndex;
-    for (const auto& point : lane.absolutePoints) {
-        dto.points.push_back(
-            {point.id, point.beatPosition, point.value, curveName(point.curveType)});
-    }
+    const auto info = getParameterInfoForTarget(lane.target);
+    for (const auto& point : lane.absolutePoints)
+        dto.points.push_back({point.id, point.beatPosition, point.value, curveName(point.curveType),
+                              realValueOf(point.value, info)});
     dto.clipIds = lane.clipIds;
+    dto.unit = info.unit;
+    dto.minValue = info.minValue;
+    dto.maxValue = info.maxValue;
+    dto.scale = info.scale;
     return dto;
 }
 
-AutomationClipDto makeAutomationClipDto(const AutomationClipInfo& clip) {
+AutomationClipDto makeAutomationClipDto(const AutomationClipInfo& clip,
+                                        const ParameterInfo& target) {
     AutomationClipDto dto;
     dto.id = clip.id;
     dto.laneId = clip.laneId;
@@ -881,8 +890,8 @@ AutomationClipDto makeAutomationClipDto(const AutomationClipInfo& clip) {
     dto.looping = clip.looping;
     dto.loopLengthBeats = clip.loopLengthBeats;
     for (const auto& point : clip.points)
-        dto.points.push_back(
-            {point.id, point.beatPosition, point.value, curveName(point.curveType)});
+        dto.points.push_back({point.id, point.beatPosition, point.value, curveName(point.curveType),
+                              realValueOf(point.value, target)});
     return dto;
 }
 

@@ -644,6 +644,7 @@ struct AutomationPointDto {
     double beatPosition = 0.0;
     double value = 0.0;
     juce::String curve;
+    double realValue = 0.0;  // value in the target's units (#3348)
 
     bool operator==(const AutomationPointDto&) const = default;
 };
@@ -667,6 +668,11 @@ struct AutomationLaneDto {
     AutomationTargetDto target;
     std::vector<AutomationPointDto> points;
     std::vector<AutomationClipId> clipIds;
+    /// The target's units, as devices.listParameters reports a parameter's (#3348).
+    juce::String unit = {};
+    double minValue = 0.0;
+    double maxValue = 1.0;
+    ParameterScale scale = ParameterScale::Linear;
 
     bool operator==(const AutomationLaneDto&) const = default;
 };
@@ -1011,7 +1017,9 @@ DevicePresetDto makeDevicePresetDto(const DevicePresetEntry& entry);
 std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device,
                                                         const ChainNodePath& devicePath);
 SelectionDto makeSelectionDto(MagdaApi& api);
-AutomationClipDto makeAutomationClipDto(const AutomationClipInfo& clip);
+/// @p target converts the clip's points into its lane target's units.
+AutomationClipDto makeAutomationClipDto(const AutomationClipInfo& clip,
+                                        const ParameterInfo& target);
 TransportDto makeTransportDto(MagdaApi& api);
 SessionDto makeSessionDto(MagdaApi& api);
 AutomationLaneDto makeAutomationLaneDto(const AutomationLaneInfo& lane);

@@ -28,6 +28,7 @@
 #include "../core/DeviceInfo.hpp"
 #include "../core/DrumGridPads.hpp"
 #include "../core/MidiNoteCommands.hpp"
+#include "../core/ParameterUtils.hpp"
 #include "../core/PluginParameterConfigStore.hpp"
 #include "../core/PresetManager.hpp"
 #include "../core/SourcePool.hpp"
@@ -548,6 +549,31 @@ std::optional<AutomationCurveType> parseCurve(const juce::String& curve) {
     if (curve == "hard_corner")
         return AutomationCurveType::HardCorner;
     return std::nullopt;
+}
+
+/// A point's normalised value from `value`, or from `realValue` in @p target's units (#3348).
+std::optional<double> pointValue(const juce::var& item, const ParameterInfo& target,
+                                 juce::String& error) {
+    if (has(item, "value") == has(item, "realValue")) {
+        error = "each point takes exactly one of value or realValue";
+        return std::nullopt;
+    }
+    if (has(item, "value"))
+        return readDouble(item, "value");
+    const auto real = readDouble(item, "realValue");
+    if (!std::isfinite(real) || real < target.minValue || real > target.maxValue) {
+        error = "realValue " + juce::String(real) + " is outside [" +
+                juce::String(target.minValue) + ", " + juce::String(target.maxValue) + "] " +
+                target.unit;
+        return std::nullopt;
+    }
+    return static_cast<double>(ParameterUtils::realToNormalized(static_cast<float>(real), target));
+}
+
+juce::var automationClipJson(MagdaApi& api, const AutomationClipInfo& clip) {
+    const auto* lane = api.automation().getLane(clip.laneId);
+    return toJson(makeAutomationClipDto(
+        clip, lane != nullptr ? getParameterInfoForTarget(lane->target) : ParameterInfo{}));
 }
 
 std::optional<AutomationLaneType> parseLaneType(const juce::String& type) {
@@ -3419,54 +3445,6 @@ HandlerResult devicesListParameters(MagdaApi& api, const juce::var& input, const
     return HandlerResult::ok(toJsonArray(items));
 }
 
-HandlerResult devicesSetParameter(MagdaApi& api, const juce::var& input, const RequestContext&) {
-    const auto path = toChainNodePath(devicePathFromJson(input["devicePath"]));
-    if (!path)
-        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
-    const auto* device = api.devices().getDevice(*path);
-    if (device == nullptr)
-        return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
-
-    const auto parameterIndex = readInt(input, "parameterIndex", -1);
-    const auto parameters = makeDeviceParameterDtos(*device, *path);
-    const auto named = std::ranges::find(parameters, parameterIndex, &DeviceParameterDto::index);
-    if (named == parameters.end())
-        return notFound("parameter", parameterIndex);
-
-    // DeviceApi::setDeviceParameter enforces the user's per-parameter opt-in
-    // for every facade consumer; this pre-check only exists to classify the
-    // refusal as PermissionDenied with a useful message, which the facade's
-    // bare bool cannot convey (#2296).
-    if (!named->aiAgentEnabled)
-        return HandlerResult::fail(ErrorCode::PermissionDenied,
-                                   "parameter " + juce::String(parameterIndex) +
-                                       " is not enabled for AI agent control; enable it under "
-                                       "Configure Parameters");
-
-    // Reject rather than clamp, for the same reason the facade does: a clamped
-    // write reports success while setting a value the caller did not ask for.
-    const auto value = static_cast<double>(input["value"]);
-    if (!std::isfinite(value) || value < named->minValue || value > named->maxValue)
-        return HandlerResult::fail(ErrorCode::ValidationFailed,
-                                   "value " + juce::String(value) + " is outside [" +
-                                       juce::String(named->minValue) + ", " +
-                                       juce::String(named->maxValue) + "] " + named->unit);
-
-    if (!api.devices().setDeviceParameter(*path, parameterIndex, static_cast<float>(value)))
-        return HandlerResult::fail(ErrorCode::Conflict, "parameter write was rejected");
-
-    // Read the result back through the same projection listParameters uses, so
-    // the caller sees what the model now holds rather than what was sent.
-    const auto* updated = api.devices().getDevice(*path);
-    if (updated != nullptr) {
-        for (const auto& parameter : makeDeviceParameterDtos(*updated, *path)) {
-            if (parameter.index == parameterIndex)
-                return HandlerResult::ok(toJson(parameter));
-        }
-    }
-    return HandlerResult::fail(ErrorCode::InternalError, "parameter vanished after write");
-}
-
 HandlerResult devicesSetParameterConfig(MagdaApi& api, const juce::var& input,
                                         const RequestContext&) {
     const auto path = toChainNodePath(devicePathFromJson(input["devicePath"]));
@@ -4730,9 +4708,13 @@ HandlerResult automationAddPoint(MagdaApi& api, const juce::var& input, const Re
                                    "lane " + juce::String(laneId) +
                                        " does not hold points directly; add them to its clips");
 
+    juce::String error;
+    const auto value = pointValue(input, getParameterInfoForTarget(target->target), error);
+    if (!value)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, error);
     runCommand<AddAutomationPointCommand>(api, laneId, INVALID_AUTOMATION_CLIP_ID,
-                                          static_cast<double>(input["beatPosition"]),
-                                          static_cast<double>(input["value"]), *curve);
+                                          static_cast<double>(input["beatPosition"]), *value,
+                                          *curve);
 
     const auto* lane = api.automation().getLane(laneId);
     if (lane == nullptr)
@@ -4750,6 +4732,7 @@ HandlerResult automationSetPoints(MagdaApi& api, const juce::var& input, const R
                                    "lane " + juce::String(laneId) +
                                        " does not hold points directly; set points on its clips");
 
+    const auto targetInfo = getParameterInfoForTarget(lane->target);
     std::vector<AutomationPoint> points;
     points.reserve(static_cast<size_t>(input["points"].getArray()->size()));
     for (const auto& item : *input["points"].getArray()) {
@@ -4757,9 +4740,13 @@ HandlerResult automationSetPoints(MagdaApi& api, const juce::var& input, const R
         if (!curve)
             return HandlerResult::fail(ErrorCode::ValidationFailed,
                                        "unsupported curve: " + item["curve"].toString());
+        juce::String error;
+        const auto value = pointValue(item, targetInfo, error);
+        if (!value)
+            return HandlerResult::fail(ErrorCode::ValidationFailed, error);
         AutomationPoint point;
         point.beatPosition = static_cast<double>(item["beatPosition"]);
-        point.value = static_cast<double>(item["value"]);
+        point.value = *value;
         point.curveType = *curve;
         points.push_back(point);
     }
@@ -4827,7 +4814,7 @@ HandlerResult automationListClips(MagdaApi& api, const juce::var& input, const R
     std::vector<juce::var> items;
     for (const auto& clip : api.automation().getClips()) {
         if (!filterLane || clip.laneId == laneId)
-            items.push_back(toJson(makeAutomationClipDto(clip)));
+            items.push_back(automationClipJson(api, clip));
     }
     return HandlerResult::ok(toJsonArray(items));
 }
@@ -4837,7 +4824,7 @@ HandlerResult automationGetClip(MagdaApi& api, const juce::var& input, const Req
     const auto* clip = api.automation().getClip(clipId);
     if (clip == nullptr)
         return notFound("automation clip", clipId);
-    return HandlerResult::ok(toJson(makeAutomationClipDto(*clip)));
+    return HandlerResult::ok(automationClipJson(api, *clip));
 }
 
 HandlerResult automationCreateClip(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -4855,7 +4842,7 @@ HandlerResult automationCreateClip(MagdaApi& api, const juce::var& input, const 
     const auto* clip = api.automation().getClip(clipId);
     if (clip == nullptr)
         return HandlerResult::fail(ErrorCode::Conflict, "automation clip creation failed");
-    return HandlerResult::ok(toJson(makeAutomationClipDto(*clip)));
+    return HandlerResult::ok(automationClipJson(api, *clip));
 }
 
 HandlerResult automationDeleteClip(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -4873,12 +4860,12 @@ HandlerResult automationMoveClip(MagdaApi& api, const juce::var& input, const Re
         return notFound("automation clip", clipId);
     const auto startBeat = readDouble(input, "startBeat");
     if (clip->startBeats == startBeat)
-        return HandlerResult::unchanged(toJson(makeAutomationClipDto(*clip)));
+        return HandlerResult::unchanged(automationClipJson(api, *clip));
     runCommand<MoveAutomationClipCommand>(api, clipId, startBeat);
     const auto* moved = api.automation().getClip(clipId);
     if (moved == nullptr)
         return HandlerResult::fail(ErrorCode::InternalError, "automation clip move failed");
-    return HandlerResult::ok(toJson(makeAutomationClipDto(*moved)));
+    return HandlerResult::ok(automationClipJson(api, *moved));
 }
 
 HandlerResult automationResizeClip(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -4893,13 +4880,13 @@ HandlerResult automationResizeClip(MagdaApi& api, const juce::var& input, const 
     const auto effectiveLength = fromStart ? std::min(requestedLength, endBeat) : requestedLength;
     const auto effectiveStart = fromStart ? endBeat - effectiveLength : clip->startBeats;
     if (clip->startBeats == effectiveStart && clip->lengthBeats == effectiveLength)
-        return HandlerResult::unchanged(toJson(makeAutomationClipDto(*clip)));
+        return HandlerResult::unchanged(automationClipJson(api, *clip));
 
     runCommand<ResizeAutomationClipCommand>(api, clipId, requestedLength, fromStart);
     const auto* resized = api.automation().getClip(clipId);
     if (resized == nullptr)
         return HandlerResult::fail(ErrorCode::InternalError, "automation clip resize failed");
-    return HandlerResult::ok(toJson(makeAutomationClipDto(*resized)));
+    return HandlerResult::ok(automationClipJson(api, *resized));
 }
 
 HandlerResult automationDuplicateClip(MagdaApi& api, const juce::var& input,
@@ -4914,7 +4901,7 @@ HandlerResult automationDuplicateClip(MagdaApi& api, const juce::var& input,
     const auto* created = api.automation().getClip(createdId);
     if (created == nullptr)
         return HandlerResult::fail(ErrorCode::Conflict, "automation clip duplication failed");
-    return HandlerResult::ok(toJson(makeAutomationClipDto(*created)));
+    return HandlerResult::ok(automationClipJson(api, *created));
 }
 
 HandlerResult automationUpdateClip(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -4940,6 +4927,9 @@ HandlerResult automationUpdateClip(MagdaApi& api, const juce::var& input, const 
 
     const bool replacePoints = has(input, "points");
     if (replacePoints) {
+        const auto* lane = api.automation().getLane(clip->laneId);
+        const auto targetInfo =
+            lane != nullptr ? getParameterInfoForTarget(lane->target) : ParameterInfo{};
         desired.points.clear();
         desired.points.reserve(static_cast<size_t>(input["points"].getArray()->size()));
         for (const auto& item : *input["points"].getArray()) {
@@ -4951,9 +4941,13 @@ HandlerResult automationUpdateClip(MagdaApi& api, const juce::var& input, const 
             if (beat > clip->lengthBeats)
                 return HandlerResult::fail(ErrorCode::ValidationFailed,
                                            "automation point lies beyond the clip");
+            juce::String error;
+            const auto value = pointValue(item, targetInfo, error);
+            if (!value)
+                return HandlerResult::fail(ErrorCode::ValidationFailed, error);
             AutomationPoint point;
             point.beatPosition = beat;
-            point.value = readDouble(item, "value");
+            point.value = *value;
             point.curveType = *curve;
             desired.points.push_back(point);
         }
@@ -4973,7 +4967,7 @@ HandlerResult automationUpdateClip(MagdaApi& api, const juce::var& input, const 
                            clip->loopLengthBeats == desired.loopLengthBeats &&
                            (!replacePoints || samePoints(clip->points, desired.points));
     if (unchanged)
-        return HandlerResult::unchanged(toJson(makeAutomationClipDto(*clip)));
+        return HandlerResult::unchanged(automationClipJson(api, *clip));
 
     const auto applied = runCommandAndRead<UpdateAutomationClipCommand>(
         api, [](const UpdateAutomationClipCommand& command) { return command.didApply(); }, clipId,
@@ -4983,7 +4977,7 @@ HandlerResult automationUpdateClip(MagdaApi& api, const juce::var& input, const 
     const auto* updated = api.automation().getClip(clipId);
     if (updated == nullptr)
         return HandlerResult::fail(ErrorCode::InternalError, "updated automation clip disappeared");
-    return HandlerResult::ok(toJson(makeAutomationClipDto(*updated)));
+    return HandlerResult::ok(automationClipJson(api, *updated));
 }
 
 // ===========================================================================
@@ -5299,6 +5293,199 @@ HandlerResult clipsSetCrossfade(MagdaApi& api, const juce::var& input, const Req
     if (!succeeded)
         return HandlerResult::fail(ErrorCode::Conflict, "the clips cannot crossfade there");
     return HandlerResult::ok(pair());
+}
+
+namespace {
+
+double bpmAtClip(MagdaApi& api, const ClipInfo& clip) {
+    const auto* tempo = api.project().tempoMap();
+    return tempo != nullptr ? tempo->bpmAt(clip.placement.startBeat) : 0.0;
+}
+
+juce::var clipsJson(MagdaApi& api, const std::vector<ClipId>& ids) {
+    std::vector<juce::var> items;
+    for (const auto id : ids)
+        if (const auto* clip = api.clips().getClip(id))
+            items.push_back(clipJson(api, *clip));
+    return toJsonArray(items);
+}
+
+}  // namespace
+
+HandlerResult clipsSplit(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<ClipId>(readInt(input, "clipId"));
+    const auto* clip = api.clips().getClip(clipId);
+    if (clip == nullptr)
+        return notFound("clip", clipId);
+    if (clip->view != ClipView::Arrangement)
+        return HandlerResult::fail(ErrorCode::Conflict, "only an arrangement clip splits");
+
+    std::vector<double> beats;
+    for (const auto& beat : *input["beats"].getArray())
+        beats.push_back(static_cast<double>(beat));
+    std::ranges::sort(beats);
+    beats.erase(std::unique(beats.begin(), beats.end()), beats.end());
+    for (const auto beat : beats)
+        if (!(beat > clip->placement.startBeat && beat < clip->placement.endBeat()))
+            return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                       "beat " + juce::String(beat) + " is not inside the clip");
+
+    // Right to left, so every cut lands on the original clip and its id stays the first piece.
+    const auto bpm = bpmAtClip(api, *clip);
+    std::vector<ClipId> pieces{clipId};
+    for (auto beat = beats.rbegin(); beat != beats.rend(); ++beat) {
+        const auto right = runCommandAndRead<SplitClipCommand>(
+            api, [](const SplitClipCommand& command) { return command.getRightClipId(); }, clipId,
+            BeatPosition{*beat}, bpm);
+        if (right == INVALID_CLIP_ID)
+            return HandlerResult::fail(ErrorCode::Conflict, "split was rejected");
+        pieces.insert(pieces.begin() + 1, right);
+    }
+    return HandlerResult::ok(clipsJson(api, pieces));
+}
+
+namespace {
+
+/// Renders clips from different files into one and joins them on completion, as a job (#3345).
+HandlerResult joinByRender(MagdaApi& api, const std::vector<ClipId>& ids,
+                           const RequestContext& context) {
+    if (context.jobs == nullptr || context.engineJobs == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError,
+                                   "engine file services are unavailable");
+    if (!ReplaceWithRenderedClipCommand::spanHoldsOnly(ids))
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "another clip plays under these clips; move it first");
+    OfflineRenderRequest request;
+    if (!ReplaceWithRenderedClipCommand::fillRender(request, ids))
+        return HandlerResult::fail(ErrorCode::NotFound, "a clip to join is gone");
+
+    // What each clip was, so a render that lands after one changed joins nothing.
+    std::vector<juce::String> before;
+    for (const auto id : ids)
+        before.push_back(juce::JSON::toString(clipJson(api, *api.clips().getClip(id))));
+
+    auto cancelled = std::make_shared<std::atomic_bool>(false);
+    const auto jobId =
+        context.jobs->accept({.kind = "clips.join",
+                              .ownerClientId = context.clientId,
+                              .requiredScope = Scope::Edit,
+                              .acceptedRevision = context.revision,
+                              .revisionPolicy = JobRevisionPolicy::CheckAtStartOnly,
+                              .projectBound = true,
+                              .cancellable = true},
+                             [cancelled] { cancelled->store(true, std::memory_order_release); });
+    if (jobId.isEmpty())
+        return HandlerResult::fail(ErrorCode::InternalError, "join job was not accepted");
+
+    auto jobs = context.jobsOwner;
+    auto revision = context.revisionOwner;
+    const auto owner = context.clientId;
+    const auto rendered = request.destination;
+    auto* live = &api;
+    const auto started = context.engineJobs->renderRange(
+        std::move(request), cancelled,
+        [jobs, jobId](double progress) {
+            if (jobs)
+                jobs->reportProgress(jobId, std::clamp(progress, 0.0, 1.0));
+        },
+        [jobs, revision, jobId, owner, rendered, live, ids, before](EngineJobResult result) {
+            if (!jobs)
+                return;
+            const auto now = [&revision] {
+                return revision ? revision->load(std::memory_order_acquire) : INITIAL_REVISION;
+            };
+            const auto refuse = [&](Error error) {
+                rendered.deleteFile();
+                jobs->fail(jobId, std::move(error), now());
+            };
+            if (result.status == EngineJobResultStatus::Cancelled)
+                return refuse({ErrorCode::Cancelled, "join was cancelled", {}});
+            if (result.status != EngineJobResultStatus::Succeeded)
+                return refuse({ErrorCode::InternalError, "join render failed", {}});
+            Error lookup;
+            const auto job = jobs->get(jobId, owner, allScopes(), lookup);
+            if (!job ||
+                (job->state != RemoteJobState::Accepted && job->state != RemoteJobState::Running)) {
+                rendered.deleteFile();
+                return;
+            }
+            for (size_t i = 0; i < ids.size(); ++i) {
+                const auto* clip = live->clips().getClip(ids[i]);
+                if (clip == nullptr || juce::JSON::toString(clipJson(*live, *clip)) != before[i])
+                    return refuse(
+                        {ErrorCode::Conflict, "the clips changed while they rendered", {}});
+            }
+            const auto joinedId = runCommandAndRead<ReplaceWithRenderedClipCommand>(
+                *live,
+                [](const ReplaceWithRenderedClipCommand& command) {
+                    return command.getJoinedClipId();
+                },
+                ids, rendered);
+            const auto* joined = live->clips().getClip(joinedId);
+            if (joined == nullptr)
+                return refuse({ErrorCode::InternalError, "the joined clip was not created", {}});
+            jobs->complete(jobId, clipJson(*live, *joined), now());
+        });
+
+    if (started == EngineJobStartStatus::Started)
+        context.jobs->markRunning(jobId);
+    else
+        context.jobs->fail(jobId, engineStartError(started), context.revision);
+    Error error;
+    const auto job = currentJob(*context.jobs, jobId, context, error);
+    return !job.isVoid() ? HandlerResult::unchanged(job) : HandlerResult::fail(std::move(error));
+}
+
+}  // namespace
+
+HandlerResult clipsJoin(MagdaApi& api, const juce::var& input, const RequestContext& context) {
+    std::vector<const ClipInfo*> clips;
+    for (const auto& value : *input["clipIds"].getArray()) {
+        const auto id = static_cast<ClipId>(static_cast<int>(value));
+        const auto* clip = api.clips().getClip(id);
+        if (clip == nullptr)
+            return notFound("clip", id);
+        if (std::ranges::find(clips, clip) != clips.end())
+            return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                       "clip " + juce::String(id) + " is named twice");
+        clips.push_back(clip);
+    }
+    std::ranges::sort(clips, {}, [](const ClipInfo* clip) { return clip->placement.startBeat; });
+
+    const auto* first = clips.front();
+    const auto bpm = bpmAtClip(api, *first);
+    bool keepsAudio = true;
+    for (size_t i = 0; i < clips.size(); ++i) {
+        const auto* clip = clips[i];
+        if (clip->view != ClipView::Arrangement || first->view != ClipView::Arrangement)
+            return HandlerResult::fail(ErrorCode::Conflict, "only arrangement clips join");
+        if (clip->trackId != first->trackId || clip->getType() != first->getType())
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "joined clips share a track and a type");
+        if (i == 0)
+            continue;
+        if (!JoinClipsCommand(clips[i - 1]->id, clip->id, bpm).canExecute())
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "clip " + juce::String(clip->id) +
+                                           " does not start where the clip before it ends");
+        keepsAudio = keepsAudio && JoinClipsCommand::keepsAudio(*clips[i - 1], *clip, bpm);
+    }
+    std::vector<ClipId> ids;
+    for (const auto* clip : clips)
+        ids.push_back(clip->id);
+    if (!keepsAudio)
+        return joinByRender(api, ids, context);
+
+    const auto leftId = first->id;
+    const std::vector<ClipId> rest(ids.begin() + 1, ids.end());
+    for (const auto id : rest)
+        runCommand<JoinClipsCommand>(api, leftId, id, bpm);
+    if (std::ranges::any_of(rest, [&api](ClipId id) { return api.clips().getClip(id) != nullptr; }))
+        return HandlerResult::fail(ErrorCode::Conflict, "join was rejected");
+    const auto* joined = api.clips().getClip(leftId);
+    if (joined == nullptr)
+        return notFound("clip", leftId);
+    return HandlerResult::ok(clipJson(api, *joined));
 }
 
 HandlerResult clipsTranspose(MagdaApi& api, const juce::var& input, const RequestContext&) {

@@ -1966,11 +1966,17 @@ TEST_CASE("Remote session and automation projections use MagdaApi values",
     REQUIRE(dto.target.devicePath->trackId == 1);
     REQUIRE(dto.points.size() == 2);
     REQUIRE(dto.points[1].curve == "step");
+    // Pan reads in its own range, so centre is 0 (#3348).
+    REQUIRE(dto.minValue == -1.0);
+    REQUIRE(dto.maxValue == 1.0);
+    REQUIRE(std::abs(dto.points[0].realValue) < 1e-6);
 
     lane.target = AutomationTarget::trackVolume(MASTER_TRACK_ID);
     const auto masterDto = makeAutomationLaneDto(lane);
     REQUIRE(masterDto.target.devicePath.has_value());
     REQUIRE(masterDto.target.devicePath->trackId == MASTER_TRACK_ID);
+    REQUIRE(masterDto.scale == ParameterScale::FaderDB);
+    REQUIRE(std::abs(masterDto.points[1].realValue) < 1e-4);
     const auto* operation = OperationRegistry::instance().find("automation.getLane");
     REQUIRE(operation != nullptr);
     REQUIRE(validateJson(toJson(masterDto), operation->outputSchema).empty());

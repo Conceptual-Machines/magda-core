@@ -96,7 +96,9 @@ change it with `mods.update`, and use `mods.link` / `mods.unlink` or
 `macros.link` / `macros.unlink` to manage parameter targets. `mods.remove`
 deletes a mod; macros are fixed slots, so `macros.setValue` controls one.
 Links to external plugin parameters require the same AI Agent opt-in as
-`devices.setParameter`. Reads need only `read`; all writes need `edit`.
+`devices.setParameter`. `devices.setParameters` takes a list of writes across
+devices, checks them all by the same rules first, and writes all or none (#3347).
+Reads need only `read`; all writes need `edit`.
 
 ### Building a Drum Grid kit
 

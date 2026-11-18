@@ -1590,37 +1590,11 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 double tempo =
                     mainView ? mainView->getTimelineController().getState().tempo.bpm : 120.0;
 
-                std::vector<ClipId> sortedClips(selectedClips.begin(), selectedClips.end());
-                const auto startSeconds = [&clipManager, tempo](ClipId id) {
-                    const auto* clip = clipManager.getClip(id);
-                    return clip != nullptr ? timelineStartSeconds(*clip, tempo) : 0.0;
-                };
-                std::ranges::sort(sortedClips, {}, startSeconds);
-
-                // Join sequentially: left absorbs right, then result absorbs next, etc.
-                if (sortedClips.size() > 2) {
-                    UndoManager::getInstance().beginCompoundOperation("Join Clips");
-                }
-
-                ClipId leftId = sortedClips[0];
-                bool allJoined = true;
-                for (size_t i = 1; i < sortedClips.size(); ++i) {
-                    auto cmd = std::make_unique<JoinClipsCommand>(leftId, sortedClips[i], tempo);
-                    if (cmd->canExecute()) {
-                        UndoManager::getInstance().executeCommand(std::move(cmd));
-                    } else {
-                        allJoined = false;
-                        break;
-                    }
-                }
-
-                if (sortedClips.size() > 2) {
-                    UndoManager::getInstance().endCompoundOperation();
-                }
-
-                if (allJoined) {
-                    selectionManager.selectClips({leftId});
-                }
+                const auto joined =
+                    joinClipsInApp(std::vector<ClipId>(selectedClips.begin(), selectedClips.end()),
+                                   getAudioEngine(), tempo);
+                if (joined != INVALID_CLIP_ID)
+                    selectionManager.selectClips({joined});
             }
             return true;
 

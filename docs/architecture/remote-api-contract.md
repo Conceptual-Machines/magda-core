@@ -500,6 +500,23 @@ anything changes, and restating the current overlap does not advance the
 revision. A crossfade is read from the two clips' `startBeat` and
 `lengthBeats`.
 
+`clips.split` cuts an arrangement clip at one or more `beats`, each strictly
+inside it, and returns the pieces in timeline order, the original clip first.
+`clips.join` takes two or more arrangement clips on one track, of one type, each
+starting where the one before ends, in any order, and returns the joined clip,
+which keeps the first clip's id. Both run as one undo step and refuse before
+anything changes (#3345). An audio join lengthens the first clip when every
+clip carries on the one before in the same file: the same file read on, at the
+same level, playback and gain envelope, with no fade at the seam. The joined
+clip ends with the last clip's fade-out. Any other audio join renders the clips
+into one new file, as Render Time Selection does: the clips only, without track
+or master effects, each part's level, fades and envelope baked in. That join
+returns a job, as `tracks.freeze` does, whose result is the joined clip playing
+the new file; one undo puts the originals back. It is refused while another
+clip plays under the span, and a clip changed during the render fails the job
+with nothing joined. Glue and Join Clips in the app render the same way, behind
+a progress window.
+
 `clips.resize` takes `lengthBeats` and an `edge` of `start` or `end`. All three
 operations are edit-scoped and commit as one undo action. A move that restates
 the current destination and a resize that restates the current length are
@@ -513,8 +530,13 @@ source/destination plan and preserves allocated clip IDs.
 ### Automation lane writes
 
 `automation.setPoints` replaces the complete point set on an absolute lane as
-one undoable mutation. Input points contain beat position, normalized value,
-and curve type; point IDs are allocated by MAGDA and returned only in the lane
+one undoable mutation. Input points contain beat position, a value, and curve
+type. The value is either a normalized `value` or a `realValue` in the lane
+target's units (#3348); a `realValue` outside the target's range is refused, as
+is a point with both or neither. Lanes report the target's `unit`, `minValue`,
+`maxValue`, and `scale`, and every point on a lane or automation clip reports
+its `realValue` beside `value`. `automation.addPoint` and
+`automation.updateClip` take points the same way; point IDs are allocated by MAGDA and returned only in the lane
 projection. Repeating the same curve is a revision-neutral no-op. Clip-based
 lanes reject this operation because their points belong to automation clips.
 
