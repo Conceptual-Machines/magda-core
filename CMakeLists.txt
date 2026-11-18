@@ -301,15 +301,14 @@ endif()
 # FetchContent_MakeAvailable just populates lua_SOURCE_DIR; the actual
 # static library is built by magda/scripting/CMakeLists.txt.
 #
-# Two URLs for one file, tried in order. www.lua.org is a single small host and
-# it has already gone unreachable from the self-hosted runners for long enough
-# to fail a build in configure; Debian's pool carries the pristine upstream
-# tarball, byte for byte, and the hash below is what proves it before anything
-# is unpacked. A mirror is only ever an availability question when the bytes
-# are pinned.
+# Three URLs for one file, tried in order: our magda-deps copy, then lua.org and
+# Debian's pool. www.lua.org is a single small host that has gone unreachable from
+# the self-hosted runners and from private networks; every source carries the
+# pristine upstream tarball, and the hash proves it before anything is unpacked.
 FetchContent_Declare(
     lua
-    URL https://www.lua.org/ftp/lua-5.4.7.tar.gz
+    URL https://github.com/Conceptual-Machines/magda-deps/releases/download/lua-5.4.7/lua-5.4.7.tar.gz
+        https://www.lua.org/ftp/lua-5.4.7.tar.gz
         http://deb.debian.org/debian/pool/main/l/lua5.4/lua5.4_5.4.7.orig.tar.gz
     URL_HASH SHA256=9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30
 )
@@ -340,28 +339,21 @@ FetchContent_MakeAvailable(lame)
 add_subdirectory(third_party/lame)
 
 # ONNX Runtime 1.26.0 — CLAP inference engine for the media DB (issue #768).
-# Microsoft ships prebuilt binaries per (OS, arch); we pin one per platform.
+# Microsoft's NuGet package, which carries every platform's prebuilt library: the GitHub
+# repo and its release archives went offline on 2026-11-17. The macOS library in it is
+# byte-identical to the release archive's. Our magda-deps copy is tried first, NuGet second.
 # Skipped on Intel macOS (MAGDA_HAVE_CLAP=OFF) since upstream dropped
 # osx-x86_64 in 1.26 — those builds ship without semantic search.
 if(MAGDA_HAVE_CLAP)
     set(ORT_VERSION 1.26.0)
-    if(APPLE AND (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64"
-                  OR CMAKE_OSX_ARCHITECTURES MATCHES "arm64"))
-        set(ORT_URL  "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-osx-arm64-${ORT_VERSION}.tgz")
-        set(ORT_HASH SHA256=7a1280bbb1701ea514f71828765237e7896e0f2e1cd332f1f70dbd5c3e33aca3)
-    elseif(UNIX AND NOT APPLE)
-        set(ORT_URL  "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz")
-        set(ORT_HASH SHA256=1254da24fb389cf39dc0ff3451ab48301740ffbfcbaf646849df92f80ee92c57)
-    elseif(WIN32)
-        set(ORT_URL  "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-win-x64-${ORT_VERSION}.zip")
-        set(ORT_HASH SHA256=6ebe99b5564bf4d029b6e93eac9ff423682b6212eade769e9ca3f685eaf500b4)
-    else()
-        message(FATAL_ERROR "ONNX Runtime: no prebuilt binary for this platform (set MAGDA_HAVE_CLAP=OFF to skip)")
-    endif()
+    set(ORT_PACKAGE microsoft.ml.onnxruntime.${ORT_VERSION}.nupkg)
     FetchContent_Declare(
         onnxruntime
-        URL      ${ORT_URL}
-        URL_HASH ${ORT_HASH}
+        URL           "https://github.com/Conceptual-Machines/magda-deps/releases/download/onnxruntime-${ORT_VERSION}/${ORT_PACKAGE}"
+                      "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/${ORT_VERSION}/${ORT_PACKAGE}"
+        URL_HASH      SHA256=50cc3772668f04b8373ad65a36793f94699bc4e818f6e691fc68f1578c38ce42
+        # A .nupkg is a zip; the name tells FetchContent to unpack it.
+        DOWNLOAD_NAME onnxruntime-${ORT_VERSION}.zip
     )
     FetchContent_MakeAvailable(onnxruntime)
     add_subdirectory(third_party/onnxruntime)
