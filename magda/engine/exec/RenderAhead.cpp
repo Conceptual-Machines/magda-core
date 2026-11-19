@@ -8,6 +8,7 @@
 
 #include "clip/ClipSnapshot.hpp"
 #include "clip/ClipStreamFeed.hpp"
+#include "exec/AheadLaunches.hpp"
 #include "exec/ParallelPlanExecutor.hpp"
 
 namespace magda::engine {
@@ -123,7 +124,10 @@ int RenderAhead::renderOnce() {
         scratch_.getNumSamples() < context.maxBlockSize)
         scratch_.setSize(context.numChannels, context.maxBlockSize);
 
-    const BlockFeeds feeds{.clips = clips.get(), .streams = streams};
+    BlockFeeds feeds{.clips = clips.get(),
+                     .sections = epoch.launches != nullptr ? &epoch.launches->sections() : nullptr,
+                     .streams = streams,
+                     .handles = epoch.launches != nullptr ? &epoch.launches->handles() : nullptr};
     const auto limit = clock.nextSequence + static_cast<std::uint64_t>(depth);
 
     int count = 0;
@@ -160,6 +164,7 @@ int RenderAhead::renderOnce() {
                 return true;
             };
 
+            feeds.holdsLaunches = segment.waitingForPhase;
             auto block = segment.block;
             block.feeds = &feeds;
             if (!epoch.executor->processSide(0, sequence, *values, block, scratch_, cue) ||

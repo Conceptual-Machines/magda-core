@@ -1670,11 +1670,13 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
 
 bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValues& values,
                                const BlockInfo& requestedBlock, juce::AudioBuffer<float>& output,
-                               const std::function<bool()>& underClaim, bool forceWhole) {
+                               const std::function<bool()>& underClaim) {
     // A table without sides resolves whole on the ahead side, which may be blocks early.
+    // A roll's first block renders at the callback, so a launch from stopped sounds with it and
+    // the ahead side's launch handles start from the real ones (#3316).
     const auto* table = appliesValues(values) ? values.params.get() : nullptr;
-    const bool splits =
-        guarded_ && (table == nullptr || (!table->opSide.empty() && table->sidesAgree));
+    const bool splits = guarded_ && !requestedBlock.started &&
+                        (table == nullptr || (!table->opSide.empty() && table->sidesAgree));
 
     if (side == 0) {
         // Asked again under the claim: the callback may have rendered the block whole meanwhile.
@@ -1695,6 +1697,8 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
             handoffs_.releaseClaim();
             return true;
         }
+        if (aheadState_ != nullptr)
+            aheadState_->beginAheadBlock(requestedBlock);
     }
 
     const juce::ScopedNoDenormals noDenormals;
@@ -1709,14 +1713,8 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
         // which needs them to itself. A block the ahead side passed without rendering it for this
         // moment (a jump, a different callback size, a skip) costs what it rendered from here
         // on: forgotten, and rendered again after this one.
-        // Session playback reaching a track rendered ahead stops the ahead side for good: its
-        // sources would otherwise be rendered by both, one of them blind to the launch.
-        if (forceWhole)
-            handoffs_.stop();
-        forceWhole = handoffs_.stopped();
-
         auto published = handoffs_.published(sequence, BlockStamp::of(start.block));
-        if (published != HandoffRing::Published::split || !splits || forceWhole) {
+        if (published != HandoffRing::Published::split || !splits) {
             // A writer inside its ops gives the block up at the next one; waited for no longer
             // than a quarter of this block, so a writer that has stalled costs a miss, not a gap.
             const auto rate = start.block.rate() > 0.0 ? start.block.rate() : context_.sampleRate;
@@ -1726,8 +1724,7 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
                     std::chrono::steady_clock::now() +
                     std::chrono::duration_cast<std::chrono::steady_clock::duration>(patience))) {
                 published = handoffs_.published(sequence, BlockStamp::of(start.block));
-                const bool whole =
-                    published != HandoffRing::Published::split || !splits || forceWhole;
+                const bool whole = published != HandoffRing::Published::split || !splits;
                 if (whole) {
                     // What is discarded was never heard, notes ended in it included, so the ahead
                     // side meets this block as it would a jump: its sources chase, its devices
@@ -1740,6 +1737,8 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
                         callbackRenderer_->renderWhole(values, requestedBlock, output);
                     else
                         process(values, requestedBlock, output);
+                    if (aheadState_ != nullptr)
+                        aheadState_->renderedWhole();
                     discontinuousAhead_ = false;
                     handoffs_.release(sequence);
                 }

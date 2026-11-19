@@ -4,6 +4,7 @@
 #include "launch/SessionLauncher.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "clip/ClipSnapshot.hpp"
 #include "launch/FollowActions.hpp"
@@ -56,6 +57,8 @@ LaunchTap::Reading readingOf(const LaunchHandle& handle) {
     return reading;
 }
 
+}  // namespace
+
 /**
  * @brief Apply @p request against the table that is live now.
  *
@@ -65,7 +68,7 @@ LaunchTap::Reading readingOf(const LaunchHandle& handle) {
  * and it is a number rather than a pointer, so nothing here can name a retired
  * handle.
  */
-void apply(const LaunchRequest& request, const LaunchHandleTable& table) {
+void applyLaunchRequest(const LaunchRequest& request, const LaunchHandleTable& table) {
     const auto* entry = table.findEntry(request.key);
     if (entry == nullptr || entry->handle == nullptr || entry->incarnation != request.incarnation)
         return;
@@ -113,6 +116,30 @@ void apply(const LaunchRequest& request, const LaunchHandleTable& table) {
             return;
     }
 }
+
+std::optional<double> aheadPosition(const LaunchRequest& request, double safeBeat) {
+    if (request.kind == LaunchRequest::Kind::loop ||
+        (request.position && *request.position >= safeBeat))
+        return request.position;
+
+    if (request.position && request.gridBeats > 0.0)
+        return *request.position +
+               (std::ceil((safeBeat - *request.position) / request.gridBeats) * request.gridBeats);
+
+    return safeBeat;
+}
+
+void adoptPublishedLoops(const LaunchHandleTable& table, const ClipSnapshot* clips) {
+    if (clips == nullptr)
+        return;
+    for (const auto& entry : table.entries)
+        if (entry.handle != nullptr)
+            if (const auto* track = clips->find(entry.key.trackId); track != nullptr)
+                if (const auto* slot = track->slot(entry.key.sceneIndex); slot != nullptr)
+                    entry.handle->adoptPublishedLooping(slot->loopBeats);
+}
+
+namespace {
 
 /**
  * @brief End the runs that reach their end inside @p range, and start what
@@ -224,11 +251,37 @@ SlotRunBoundary boundaryAtEnd(const SyncRange& range) {
             .monotonicBeat = range.monotonicBeatAt(at)};
 }
 
+void advanceEach(const LaunchHandleTable& table, const SyncRange& range, SlotRunQueue* runs,
+                 const ClipSnapshot* clips) {
+    for (const auto& entry : table.entries)
+        if (entry.handle != nullptr) {
+            const auto playingBefore =
+                entry.handle->playState() == LaunchHandle::PlayState::playing;
+            const auto playedBefore = entry.handle->playedMonotonicRange();
+            const auto status = entry.handle->advance(range);
+
+            // Published by the block that decided it, so the UI is never a
+            // frame behind the audio and has nothing to poll (#2303).
+            if (entry.tap != nullptr)
+                entry.tap->write(readingOf(*entry.handle));
+
+            if (runs != nullptr)
+                publishRunEdges(*runs, entry, range, status, sourceFor(clips, entry.key),
+                                playingBefore, playedBefore ? playedBefore->length() : 0.0);
+        }
+}
+
 }  // namespace
+
+void advanceHandles(const LaunchHandleTable& table, const BlockInfo& block) {
+    const auto range = syncRangeFor(block);
+    applyDueFollowActions(table, range);
+    advanceEach(table, range, nullptr, nullptr);
+}
 
 void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& requests,
                           const BlockInfo& block, SlotRunQueue* runs, const ClipSnapshot* clips,
-                          const SlotRunBoundary* completedBoundary) {
+                          const SlotRunBoundary* completedBoundary, const AheadRequests* ahead) {
     const LaunchHandleFeed::Reader table(handles);
     const auto range = syncRangeFor(block);
     const auto boundary = completedBoundary != nullptr ? *completedBoundary : boundaryAtEnd(range);
@@ -250,37 +303,36 @@ void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& request
     // The same pinned snapshot the sources render below. Adopt it before the
     // request lane, so an explicit setLooping made after the publish remains
     // the last word for this block and every unchanged block after it.
-    if (clips != nullptr)
-        for (const auto& entry : table->entries)
-            if (entry.handle != nullptr)
-                if (const auto* track = clips->find(entry.key.trackId); track != nullptr)
-                    if (const auto* slot = track->slot(entry.key.sceneIndex); slot != nullptr)
-                        entry.handle->adoptPublishedLooping(slot->loopBeats);
+    adoptPublishedLoops(*table.get(), clips);
 
     // Every request before any advance, so a scene reaches all of its handles
     // on the same block.
-    requests.drain([&table](const LaunchRequest& request) { apply(request, *table.get()); });
+    if (ahead != nullptr && ahead->slots != nullptr) {
+        const auto end = requests.committed();
+        auto late = false;
+        if (ahead->renderedAhead)
+            requests.peek(end, [&](const LaunchRequest& request) {
+                late = late || (ahead->slots->covers(request.key.trackId) &&
+                                aheadPosition(request, ahead->safeBeat) != request.position);
+            });
+        requests.drain(end, [&](const LaunchRequest& asked) {
+            auto request = asked;
+            if (late)
+                request.position = aheadPosition(asked, ahead->safeBeat);
+            applyLaunchRequest(request, *table.get());
+            if (ahead->slots->covers(request.key.trackId))
+                ahead->slots->forward(request);
+        });
+    } else {
+        requests.drain(
+            [&table](const LaunchRequest& request) { applyLaunchRequest(request, *table.get()); });
+    }
 
     // After the requests, so a launch made in this block beats the follow
     // action of the run it replaces.
     applyDueFollowActions(*table.get(), range);
 
-    for (const auto& entry : table->entries)
-        if (entry.handle != nullptr) {
-            const auto playingBefore =
-                entry.handle->playState() == LaunchHandle::PlayState::playing;
-            const auto playedBefore = entry.handle->playedMonotonicRange();
-            const auto status = entry.handle->advance(range);
-
-            // Published by the block that decided it, so the UI is never a
-            // frame behind the audio and has nothing to poll (#2303).
-            if (entry.tap != nullptr)
-                entry.tap->write(readingOf(*entry.handle));
-
-            if (runs != nullptr)
-                publishRunEdges(*runs, entry, range, status, sourceFor(clips, entry.key),
-                                playingBefore, playedBefore ? playedBefore->length() : 0.0);
-        }
+    advanceEach(*table.get(), range, runs, clips);
 
     // After every edge this block reported, which is what lets a capture end a
     // run here without cutting one whose end it has not seen (SlotRuns.hpp).

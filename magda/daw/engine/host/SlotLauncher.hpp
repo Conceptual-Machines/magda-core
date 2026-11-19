@@ -142,6 +142,10 @@ class SlotLauncher {
     /// The beat @p clip's launch is due on, or nothing for as soon as possible.
     std::optional<double> dueBeat(const ClipInfo& clip) const;
 
+    /// The grid @p due lies on for @p clip, or zero for none: where a launch rendered ahead
+    /// moves when it is asked too late for its beat (#3316).
+    double gridBeats(const ClipInfo& clip, std::optional<double> due) const;
+
     /// The tap for @p clip's slot, or null. Never stored: see the file comment.
     const engine::LaunchTap* tapFor(const ClipInfo& clip) const;
 

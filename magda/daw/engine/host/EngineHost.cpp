@@ -795,16 +795,18 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         return std::make_shared<const engine::RenderPlan>(engine::insertHandoffs(plan));
     }
 
-    /// Tracks holding session clips or recording into a slot: rendered at the callback while
-    /// anything renders ahead.
+    /// Tracks recording into a slot or holding a clip that launches unquantized: rendered at the
+    /// callback while anything renders ahead. Other session tracks render ahead (#3316).
     std::set<TrackId> sessionTracks() const {
         std::set<TrackId> tracks;
         if (masterInput_)
             return tracks;
         const auto& clips = ClipManager::getInstance();
         for (const auto& track : TrackManager::getInstance().getTracks())
-            if (!clips.getClipsOnTrack(track.id, ClipView::Session).empty())
-                tracks.insert(track.id);
+            for (const auto clipId : clips.getClipsOnTrack(track.id, ClipView::Session))
+                if (const auto* clip = clips.getClip(clipId);
+                    clip != nullptr && clip->launchQuantize == LaunchQuantize::None)
+                    tracks.insert(track.id);
         for (const auto& entry : sessionSlotTargets_)
             tracks.insert(entry.first);
         return tracks;
@@ -2502,8 +2504,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (session_ == nullptr)
             return;
 
-        // A track gaining its first session clip or slot take moves to the callback before
-        // the snapshot that can launch it there goes live (CompileOptions::sessionTracks).
+        // A track gaining an unquantized clip or a slot take moves to the callback before the
+        // snapshot that can launch it there goes live (CompileOptions::sessionTracks).
         if (sessionRendersAhead_ && sessionTracks() != compiledSessionTracks_)
             publishPlan();
 

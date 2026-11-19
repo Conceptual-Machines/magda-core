@@ -58,6 +58,7 @@ add_library(magda_engine STATIC
     plan/TrackRouting.hpp
     exec/HandoffRing.cpp
     exec/RenderAhead.cpp
+    exec/AheadLaunches.cpp
     exec/PlanExecutor.cpp
     exec/ParallelPlanExecutor.cpp
     exec/BlockProfile.cpp

@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "clip/ClipSnapshotFeed.hpp"
+#include "exec/AheadLaunches.hpp"
 #include "exec/ParallelPlanExecutor.hpp"
 #include "exec/RenderAhead.hpp"
 #include "exec/RenderThreadPool.hpp"
@@ -603,6 +604,9 @@ class EngineSession {
         /// first block that stops feeding a take the edit ended, whatever the
         /// publishing thread has got round to since the swap.
         std::vector<TakeKey> takes;
+
+        /// What the ahead side renders this plan's session tracks from (#3316), or null.
+        std::unique_ptr<AheadLaunches> launches;
     };
 
     using PublishedRender =
@@ -707,10 +711,14 @@ class EngineSession {
     /// What the ahead thread renders against: the live epoch, once it is live.
     void handRenderAheadEpoch();
 
-    /// Whether session playback reaches any of @p tracks, rendered ahead, in @p block: a launch
-    /// the plan has not moved to the callback yet, which the callback then renders itself.
-    /// Audio thread, after the handles and sections have advanced.
-    bool playsSession(std::span<const TrackId> tracks, const BlockInfo& block);
+    /// The handle table the store last published, which a plan's copies are made from.
+    std::shared_ptr<const LaunchHandleTable> handleTable_;
+
+    /// Where @p render's slots rendered ahead take the requests drained in @p block of a
+    /// callback of @p callbackSamples: past what the ahead side can have rendered, with a
+    /// callback to spare for a tempo rise (#3316). Empty without them.
+    AheadRequests aheadRequests(const PreparedRender& render, const BlockInfo& block,
+                                int callbackSamples) const;
 };
 
 }  // namespace magda::engine

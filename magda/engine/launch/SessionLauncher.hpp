@@ -226,6 +226,50 @@ inline SyncRange syncRangeFor(const BlockInfo& block) {
 }
 
 /**
+ * @brief The slots a second thread renders ahead of the callback, from copies of their handles
+ *        (#3316).
+ *
+ * A request for one reaches the real handle and the copy at one beat, so both land on it. One
+ * due before @ref AheadRequests::safeBeat has been rendered past already, and is moved.
+ */
+class AheadSlots {
+  public:
+    /// Whether @p trackId's slots are rendered ahead.
+    virtual bool covers(TrackId trackId) const = 0;
+
+    /// @p request as the real handle was given it. Audio thread.
+    virtual void forward(const LaunchRequest& request) = 0;
+
+  protected:
+    ~AheadSlots() = default;
+};
+
+struct AheadRequests {
+    AheadSlots* slots = nullptr;
+
+    /// A monotonic beat the ahead side cannot have rendered yet.
+    double safeBeat = 0.0;
+
+    /// Whether it can have rendered this block at all. A stopped one or a roll's first, which
+    /// the callback renders, leaves every request where it was asked.
+    bool renderedAhead = true;
+};
+
+/// Where @p request lands when nothing before @p safeBeat can hear it: its own beat when that is
+/// no sooner, else the first beat of its grid from there, else @p safeBeat itself (#3316).
+std::optional<double> aheadPosition(const LaunchRequest& request, double safeBeat);
+
+/// Apply @p request to its handle in @p table, if the table still names it. Audio thread.
+void applyLaunchRequest(const LaunchRequest& request, const LaunchHandleTable& table);
+
+/// Have every handle in @p table take its slot's loop from @p clips. Audio thread.
+void adoptPublishedLoops(const LaunchHandleTable& table, const ClipSnapshot* clips);
+
+/// End the runs due inside @p block, start what follows them, and advance every handle in @p
+/// table over it, for a table with no taps or capture (#3316). Audio thread.
+void advanceHandles(const LaunchHandleTable& table, const BlockInfo& block);
+
+/**
  * @brief Apply what has been asked, then advance every handle over @p block.
  *
  * On the audio thread, once per block, before anything renders. Every handle,
@@ -245,10 +289,15 @@ inline SyncRange syncRangeFor(const BlockInfo& block) {
  *
  * @p completedBoundary overrides the block's continuous endpoint when the
  * transport cursor jumps there, such as a callback segment ending at a loop.
+ *
+ * @p ahead names the slots rendered ahead. When one of this block's requests is
+ * too late for them, every request in it that is moves (aheadPosition), so a
+ * scene stays one event.
  */
 void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& requests,
                           const BlockInfo& block, SlotRunQueue* runs = nullptr,
                           const ClipSnapshot* clips = nullptr,
-                          const SlotRunBoundary* completedBoundary = nullptr);
+                          const SlotRunBoundary* completedBoundary = nullptr,
+                          const AheadRequests* ahead = nullptr);
 
 }  // namespace magda::engine

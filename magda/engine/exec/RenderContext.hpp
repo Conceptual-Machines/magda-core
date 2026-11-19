@@ -58,6 +58,9 @@ struct BlockFeeds {
     const TrackSectionTable* sections = nullptr;
     const ClipStreamTable* streams = nullptr;
     const LaunchHandleTable* handles = nullptr;
+
+    /// The clock is waiting for Link's phase, so no launch handle moves this block.
+    bool holdsLaunches = false;
 };
 
 /**

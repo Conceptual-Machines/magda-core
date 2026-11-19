@@ -59,7 +59,8 @@ double quantizeBeats(LaunchQuantize quantize, double beatsPerBar) {
 /// is the user's intent and not what is sounding: a follow action moves a run
 /// to a slot nobody launched (#2304).
 void handOver(const SlotLauncher& launcher, engine::LaunchRequestQueue::Gesture& gesture,
-              TrackId trackId, const engine::SlotKey& launching, std::optional<double> due) {
+              TrackId trackId, const engine::SlotKey& launching, std::optional<double> due,
+              double grid) {
     auto& clips = ClipManager::getInstance();
 
     for (const auto clipId : clips.getClipsOnTrack(trackId, ClipView::Session)) {
@@ -73,7 +74,7 @@ void handOver(const SlotLauncher& launcher, engine::LaunchRequestQueue::Gesture&
         // A plain stop, not a release: the slot taking over holds the track,
         // and releasing the section here would hand it back for the instant
         // between the two (#2302).
-        gesture.stop(keyOf(*clip), due);
+        gesture.stop(keyOf(*clip), due, grid);
     }
 }
 
@@ -114,6 +115,7 @@ void SlotLauncher::launch(ClipId clipId) {
         return;
 
     const auto due = dueBeat(*clip);
+    const auto grid = gridBeats(*clip, due);
 
     {
         engine::LaunchRequestQueue::Gesture gesture(session->launchRequests());
@@ -126,10 +128,10 @@ void SlotLauncher::launch(ClipId clipId) {
         // On the same beat as the launch below, so the track hands over on one
         // sample rather than sounding two slots across the gap.
         if (const auto recording = host_.launchRecordTarget(clip->trackId))
-            gesture.stop(*recording, due);
-        handOver(*this, gesture, clip->trackId, keyOf(*clip), due);
+            gesture.stop(*recording, due, grid);
+        handOver(*this, gesture, clip->trackId, keyOf(*clip), due, grid);
 
-        gesture.play(keyOf(*clip), due);
+        gesture.play(keyOf(*clip), due, grid);
     }
     noteAsked(*clip);
 
@@ -211,6 +213,7 @@ void SlotLauncher::launchScene(const std::vector<TrackId>& trackIds, int sceneIn
     // and resolving per clip would put two of them on different sides of a
     // boundary the gesture straddled.
     std::optional<double> due;
+    double grid = 0.0;
     std::vector<const ClipInfo*> launching;
     std::vector<TrackId> stopped;
 
@@ -230,8 +233,10 @@ void SlotLauncher::launchScene(const std::vector<TrackId>& trackIds, int sceneIn
         if (!hasHandle(*clip))
             continue;
 
-        if (!due)
+        if (!due) {
             due = dueBeat(*clip);
+            grid = gridBeats(*clip, due);
+        }
 
         launching.push_back(clip);
     }
@@ -250,22 +255,22 @@ void SlotLauncher::launchScene(const std::vector<TrackId>& trackIds, int sceneIn
         for (const auto trackId : trackIds)
             if (const auto recording = host_.launchRecordTarget(trackId);
                 recording && recording->sceneIndex != sceneIndex)
-                gesture.stop(*recording, due);
+                gesture.stop(*recording, due, grid);
 
         for (const auto* clip : launching) {
             gesture.setLooping(keyOf(*clip),
                                clip->sessionCycleBeats(host_.launchTempo().bpmAt(0.0)));
-            handOver(*this, gesture, clip->trackId, keyOf(*clip), due);
+            handOver(*this, gesture, clip->trackId, keyOf(*clip), due, grid);
         }
 
         // Every follower joins the leader's run rather than starting one of its
         // own, which is what keeps a scene in phase when it is relaunched
         // (LaunchRequests.hpp).
-        gesture.play(leader, due);
+        gesture.play(leader, due, grid);
 
         for (const auto* clip : launching)
             if (!(keyOf(*clip) == leader))
-                gesture.playSynced(keyOf(*clip), leader, due);
+                gesture.playSynced(keyOf(*clip), leader, due, grid);
     }
 
     for (const auto* clip : launching) {
@@ -337,7 +342,7 @@ void SlotLauncher::stopTrack(TrackId trackId) {
     {
         engine::LaunchRequestQueue::Gesture gesture(session->launchRequests());
         for (const auto& key : slotsOnTrack(trackId))
-            gesture.backToArrangement(key, due);
+            gesture.backToArrangement(key, due, gridBeats(*clip, due));
     }
     asked_.erase(clipId);
 
@@ -662,6 +667,10 @@ std::optional<double> SlotLauncher::dueBeat(const ClipInfo& clip) const {
     const auto boundary = std::floor(sync.beat / period + 1.0) * period;
 
     return sync.monotonicAt(boundary);
+}
+
+double SlotLauncher::gridBeats(const ClipInfo& clip, std::optional<double> due) const {
+    return due ? quantizeBeats(clip.launchQuantize, host_.launchBeatsPerBar()) : 0.0;
 }
 
 const engine::LaunchTap* SlotLauncher::tapFor(const ClipInfo& clip) const {
