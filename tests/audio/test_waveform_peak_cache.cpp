@@ -148,3 +148,45 @@ TEST_CASE("WaveformPeakCache - cache file bytes are pinned", "[audio][peaks]") {
         CHECK(hash == f.payloadHash);
     }
 }
+
+TEST_CASE("WaveformPeakCache - a wide range matches its buckets taken one by one",
+          "[audio][peaks]") {
+    constexpr int kLength = 1200037;
+    const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                         .getChildFile("magda-peak-cache-test-" + juce::Uuid().toString());
+    dir.createDirectory();
+    const auto file = dir.getChildFile("long.wav");
+    REQUIRE(writeWav(file, {fixtureChannel(0, kLength), fixtureChannel(1, kLength)}, false));
+
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
+    REQUIRE(reader != nullptr);
+    const auto cache = magda::WaveformPeakCache::computeAndWrite(file, *reader);
+    REQUIRE(cache != nullptr);
+
+    const std::pair<std::int64_t, std::int64_t> ranges[] = {
+        {0, kLength},     {1, kLength - 1},  {64, 128},          {1000, 3000},
+        {1023, 66000},    {1024, 65536},     {16384, 16384 * 3}, {70001, 700001},
+        {262143, 524289}, {500000, 1200037}, {1199000, 1300000}, {31, 1048577},
+    };
+    for (const auto& [start, end] : ranges) {
+        INFO("range " << start << " to " << end);
+        for (int ch = 0; ch < 2; ++ch) {
+            float expectedMin = 1.0f;
+            float expectedMax = -1.0f;
+            const auto clampedEnd = std::min<std::int64_t>(end, kLength);
+            for (std::int64_t s = start / 64 * 64; s < clampedEnd; s += 64) {
+                const auto bucket = cache->getMinMaxForRange(ch, s, s + 1);
+                expectedMin = std::min(expectedMin, bucket.min);
+                expectedMax = std::max(expectedMax, bucket.max);
+            }
+            const auto wide = cache->getMinMaxForRange(ch, start, end);
+            CHECK(wide.min == expectedMin);
+            CHECK(wide.max == expectedMax);
+        }
+    }
+
+    magda::WaveformPeakCache::getCacheFileFor(file).deleteFile();
+    dir.deleteRecursively();
+}
