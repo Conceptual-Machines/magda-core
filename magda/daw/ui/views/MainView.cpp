@@ -801,7 +801,6 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
     if (hasFlag(changes, ChangeFlags::Playhead)) {
         playheadPosition = state.playhead.getPosition();
         playheadComponent->setPlayheadPosition(playheadPosition);
-        playheadComponent->repaint();
 
         // Repaint recording overlay when playhead moves during recording
         if (state.playhead.isRecording) {
@@ -1894,45 +1893,43 @@ MainView::PlayheadComponent::PlayheadComponent(MainView& owner) : owner(owner) {
 
 MainView::PlayheadComponent::~PlayheadComponent() = default;
 
+MainView::PlayheadComponent::Cursors MainView::PlayheadComponent::currentCursors() const {
+    const auto& state = owner.timelineController->getState();
+    const int scrollOffset = owner.trackContentViewport->getViewPositionX();
+    // Rounded as TimeRuler rounds, so the cursors align with the ruler ticks.
+    const auto columnOf = [&](double beats) {
+        return static_cast<int>(std::round(beats * owner.horizontalZoom)) +
+               LayoutConfig::TIMELINE_LEFT_PADDING - scrollOffset;
+    };
+
+    Cursors cursors;
+    cursors.editX = columnOf(state.playhead.editPositionBeats);
+    cursors.playX = columnOf(state.playhead.playbackPositionBeats);
+    cursors.playing = state.playhead.isPlaying;
+    // The playhead snaps to a new selection's start, where it would cover the range handle.
+    cursors.editDimmed = state.selection.isVisuallyActive() &&
+                         (std::abs(cursors.editX - columnOf(state.selection.startBeats)) <= 5 ||
+                          std::abs(cursors.editX - columnOf(state.selection.endBeats)) <= 5);
+    return cursors;
+}
+
+void MainView::PlayheadComponent::repaintCursors(const Cursors& cursors) {
+    repaint(cursors.editX - 7, 0, 14, LayoutConfig::getInstance().playheadRowHeight);
+    repaint(cursors.playX - 2, 0, 4, getHeight());
+}
+
 void MainView::PlayheadComponent::paint(juce::Graphics& g) {
     const auto& state = owner.timelineController->getState();
-    int scrollOffset = owner.trackContentViewport->getViewPositionX();
+    const auto cursors = currentCursors();
+    const double editPos = state.playhead.editPosition;
+    const double playbackPos = state.playhead.playbackPosition;
+    const int editX = cursors.editX;
+    const int playX = cursors.playX;
 
-    // Get positions from state
-    double editPos = state.playhead.editPosition;
-    double playbackPos = state.playhead.playbackPosition;
-    double editBeats = state.playhead.editPositionBeats;
-    double playBeats = state.playhead.playbackPositionBeats;
-    bool isPlaying = state.playhead.isPlaying;
-
-    // Calculate edit cursor position in pixels (triangle position)
-    // Use std::round to match TimeRuler so cursors align with the ruler ticks.
-    int editX = static_cast<int>(std::round(editBeats * owner.horizontalZoom)) +
-                LayoutConfig::TIMELINE_LEFT_PADDING;
-    editX -= scrollOffset;
-
-    // Calculate play cursor position in pixels (vertical line position)
-    int playX = static_cast<int>(std::round(playBeats * owner.horizontalZoom)) +
-                LayoutConfig::TIMELINE_LEFT_PADDING;
-    playX -= scrollOffset;
-
-    // Draw edit cursor (triangle) - always visible. Neutral near-white to match
-    // the range strip and stay hue-agnostic over any clip colour.
+    // Edit cursor (triangle), always visible. Neutral near-white, hue-agnostic over any clip.
     if (editPos >= 0 && editPos <= owner.timelineLength && editX >= 0 && editX < getWidth()) {
-        // When the playhead sits on top of a time-range handle (it snaps to the
-        // selection start on creation), draw it translucent so the blue handle
-        // shows through instead of being fully covered.
-        float triAlpha = 1.0f;
-        if (state.selection.isVisuallyActive()) {
-            const auto handleX = [&](double beats) {
-                return static_cast<int>(std::round(beats * owner.horizontalZoom)) +
-                       LayoutConfig::TIMELINE_LEFT_PADDING - scrollOffset;
-            };
-            if (std::abs(editX - handleX(state.selection.startBeats)) <= 5 ||
-                std::abs(editX - handleX(state.selection.endBeats)) <= 5)
-                triAlpha = 0.55f;
-        }
-        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(triAlpha));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY)
+                        .withAlpha(cursors.editDimmed ? 0.55f : 1.0f));
         // Fill the playhead row: top edge at y0, tip at the row bottom.
         const auto ph = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
         juce::Path triangle;
@@ -1940,11 +1937,9 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
         g.fillPath(triangle);
     }
 
-    // Draw play cursor (vertical line) - only during playback when position differs from edit
-    if (isPlaying && playbackPos >= 0 && playbackPos <= owner.timelineLength && playX >= 0 &&
+    // Play cursor (vertical line), only during playback, from below the playhead row down.
+    if (cursors.playing && playbackPos >= 0 && playbackPos <= owner.timelineLength && playX >= 0 &&
         playX < getWidth()) {
-        // Draw thin vertical line extending the full track area, starting at the
-        // top of the track content (just below the playhead/triangle row).
         const auto lineTop = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
         daw::ui::paintPlayheadLine(g, static_cast<float>(playX), lineTop,
                                    static_cast<float>(getHeight()));
@@ -1953,7 +1948,15 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
 
 void MainView::PlayheadComponent::setPlayheadPosition(double position) {
     playheadPosition = position;
-    repaint();
+
+    // The overlay spans the arrangement, so only the cursors' own strips are invalidated:
+    // a full repaint redraws every visible clip on every playback tick.
+    const auto cursors = currentCursors();
+    if (cursors == lastCursors_)
+        return;
+    repaintCursors(lastCursors_);
+    repaintCursors(cursors);
+    lastCursors_ = cursors;
 }
 
 bool MainView::PlayheadComponent::hitTest([[maybe_unused]] int x, [[maybe_unused]] int y) {

@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -69,7 +70,7 @@ struct ScannedPluginParameter {
  * A scan is not an engine question, and neither is the project operation of capturing a
  * hosted plugin's state, so neither lives on AudioEngine (#2756, #2758).
  */
-class PluginService {
+class PluginService : private juce::ChangeListener {
   public:
     static PluginService& getInstance();
 
@@ -101,6 +102,9 @@ class PluginService {
     }
 
     juce::Array<juce::PluginDescription> knownTypes() const;
+
+    /** @brief The known plugins whose scan recorded ARA, kept until the list changes. */
+    const std::vector<juce::PluginDescription>& araTypes();
 
     /**
      * @brief Plugins for browser and menu presentation, honouring the user's format
@@ -235,6 +239,9 @@ class PluginService {
     PluginService();
     ~PluginService();
 
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+    void attachList(juce::KnownPluginList* list);
+
     PluginScanCoordinator& coordinator() const;
     void loadList();
     PluginStateProvider* currentProvider() const {
@@ -243,6 +250,7 @@ class PluginService {
 
     juce::AudioPluginFormatManager* formats_ = nullptr;
     juce::KnownPluginList* list_ = nullptr;
+    std::optional<std::vector<juce::PluginDescription>> araTypes_;
 
     /// What useOwnList() attaches, until the engine that asked for it goes.
     std::unique_ptr<juce::AudioPluginFormatManager> ownFormats_;

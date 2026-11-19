@@ -265,6 +265,7 @@ class AraTrackEditingTest final : public juce::UnitTest {
         if (service.knownList() == nullptr)
             service.useOwnList();
         service.knownList()->addType(plugin_);
+        service.knownList()->sendSynchronousChangeMessage();
 
         auto& tracks = magda::TrackManager::getInstance();
         const auto track = tracks.createTrack("Vocal");
