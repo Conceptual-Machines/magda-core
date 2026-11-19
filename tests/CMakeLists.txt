@@ -235,6 +235,8 @@ set(TEST_SOURCES
     ui/test_channel_labels.cpp
     # Tracktion's saved audio interface, migrated to AudioIOService (#2746)
     audio/test_legacy_audio_settings.cpp
+    # The CPU readout averaged over whole windows, not a few blocks
+    audio/test_callback_load.cpp
     # Hardware channels named as saved routes name them (#2747)
     audio/test_hardware_route_names.cpp
     # JACK devices listing a card's own ports, not PipeWire's monitors (#3107)
