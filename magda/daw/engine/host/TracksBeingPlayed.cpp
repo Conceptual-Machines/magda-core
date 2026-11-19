@@ -19,12 +19,7 @@ std::set<TrackId> tracksBeingPlayed(const std::vector<TrackInfo>& tracks,
         if (const auto* clip = clips.getClip(id))
             played.insert(clip->trackId);
     };
-    played.insert(selection.getSelectedTrack());
-    played.insert(selection.getSelectedTracks().begin(), selection.getSelectedTracks().end());
-    clipTrack(selection.getSelectedClip());
-    for (const auto id : selection.getSelectedClips())
-        clipTrack(id);
-    clipTrack(selection.getNoteSelection().clipId);
+    clipTrack(selection.getClipInEditor());
     played.insert(selection.getDeviceSelection().trackId);
     played.insert(selection.getSelectedChainNode().trackId);
     played.erase(INVALID_TRACK_ID);

@@ -955,6 +955,16 @@ void SelectionManager::notifyTimeRangeSelectionChanged(const TimeRangeSelection&
     }
 }
 
+void SelectionManager::setClipInEditor(ClipId clipId) {
+    if (clipInEditor_ == clipId)
+        return;
+    clipInEditor_ = clipId;
+    NotifyGuard guard(*this);
+    for (auto* listener : listeners_)
+        if (listener != nullptr)
+            listener->clipInEditorChanged(clipId);
+}
+
 void SelectionManager::notifyNoteSelectionChanged(const NoteSelection& selection) {
     NotifyGuard guard(*this);
     for (auto* listener : listeners_) {

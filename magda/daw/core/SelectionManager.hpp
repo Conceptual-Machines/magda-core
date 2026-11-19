@@ -356,6 +356,8 @@ class SelectionManagerListener {
     virtual void macrosPanelSelectionChanged(
         [[maybe_unused]] const MacrosPanelSelection& selection) {}
     virtual void paramSelectionChanged([[maybe_unused]] const ParamSelection& selection) {}
+    /// The clip open in an editor moved (SelectionManager::getClipInEditor).
+    virtual void clipInEditorChanged([[maybe_unused]] ClipId clipId) {}
 
     // Automation selection callbacks
     virtual void automationLaneSelectionChanged(
@@ -597,6 +599,12 @@ class SelectionManager {
      * @brief Check if a specific note is selected
      */
     bool isNoteSelected(ClipId clipId, size_t noteIndex) const;
+
+    /// The clip an expanded editor shows, or none; set by the panel that hosts it (#1898).
+    void setClipInEditor(ClipId clipId);
+    ClipId getClipInEditor() const {
+        return clipInEditor_;
+    }
 
     /**
      * @brief Check if there's a valid note selection
@@ -1050,6 +1058,7 @@ class SelectionManager {
     std::unordered_set<ClipId> selectedClipIds_;  // For multi-clip selection
     TimeRangeSelection timeRangeSelection_;
     NoteSelection noteSelection_;
+    ClipId clipInEditor_ = INVALID_CLIP_ID;
     ClipId anchorNoteClipId_ = INVALID_CLIP_ID;
     size_t anchorNoteIndex_ = std::numeric_limits<size_t>::max();
     DeviceSelection deviceSelection_;

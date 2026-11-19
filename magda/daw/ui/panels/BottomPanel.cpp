@@ -431,6 +431,7 @@ BottomPanel::~BottomPanel() {
     ClipManager::getInstance().removeListener(this);
     TrackManager::getInstance().removeListener(this);
     SelectionManager::getInstance().removeListener(this);
+    SelectionManager::getInstance().setClipInEditor(INVALID_CLIP_ID);
     PluginPreferences::getInstance().removeListener(this);
     ProjectManager::getInstance().removeListener(this);
     MidiEditorKeyState::getInstance().removeChangeListener(this);
@@ -815,6 +816,7 @@ void BottomPanel::paint(juce::Graphics& g) {
 
 void BottomPanel::resized() {
     syncHeaderVisibility(getActiveContent());
+    queueClipInEditor();
 
     // Hide everything when collapsed
     if (isCollapsed()) {
@@ -987,15 +989,18 @@ void BottomPanel::resized() {
 
 void BottomPanel::clipsChanged() {
     updateContentBasedOnSelection();
+    queueClipInEditor();
 }
 
 void BottomPanel::clipSelectionChanged(ClipId /*clipId*/) {
     updateContentBasedOnSelection();
     syncGridControlsFromContent();
+    queueClipInEditor();
 }
 
 void BottomPanel::selectionTypeChanged(SelectionType /*newType*/) {
     updateContentBasedOnSelection();
+    queueClipInEditor();
 }
 
 void BottomPanel::multiClipSelectionChanged(const std::unordered_set<ClipId>& /*clipIds*/) {
@@ -1412,6 +1417,7 @@ void BottomPanel::setPianoRollFullscreenActive(bool active) {
 
 void BottomPanel::onContentWillSwitch(daw::ui::PanelContent* outgoing,
                                       daw::ui::PanelContent* incoming) {
+    queueClipInEditor();
     // Depopulate outgoing content's header controls
     if (outgoing)
         outgoing->depopulateHeader(*headerBar_);
@@ -1567,6 +1573,20 @@ void BottomPanel::updateOverlayTracksButtonState() {
         return;
     auto* editor = dynamic_cast<daw::ui::MidiEditorContent*>(getActiveContent());
     overlayTracksButton_->setActive(editor != nullptr && editor->hasOverlayTracks());
+}
+
+void BottomPanel::queueClipInEditor() {
+    if (clipInEditorQueued_)
+        return;
+    clipInEditorQueued_ = true;
+    juce::MessageManager::callAsync([safe = juce::Component::SafePointer<BottomPanel>(this)] {
+        if (safe == nullptr)
+            return;
+        safe->clipInEditorQueued_ = false;
+        const auto open = !safe->isCollapsed() && safe->isShowing();
+        SelectionManager::getInstance().setClipInEditor(open ? safe->getActiveEditingClipId()
+                                                             : INVALID_CLIP_ID);
+    });
 }
 
 ClipId BottomPanel::getActiveEditingClipId() const {

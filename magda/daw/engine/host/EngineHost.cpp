@@ -831,6 +831,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     void selectionTypeChanged(SelectionType) override {
         selectionMoved();
     }
+    void clipInEditorChanged(ClipId) override {
+        selectionMoved();
+    }
     void trackSelectionChanged(TrackId) override {
         selectionMoved();
     }
