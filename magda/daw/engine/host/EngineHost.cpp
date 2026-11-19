@@ -27,6 +27,7 @@
 #include "../../audio/DeviceParameterDisplayTextProvider.hpp"
 #include "../../audio/DeviceParameterList.hpp"
 #include "../../audio/MidiBridge.hpp"
+#include "../../audio/io/CallbackLoad.hpp"
 #include "../../audio/midi/RecordingNoteQueue.hpp"
 #include "../../audio/plugin_manager/ExternalPluginState.hpp"
 #include "../../audio/plugins/DeviceStateDocument.hpp"
@@ -726,11 +727,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             juce::String(rendered_.load(std::memory_order_relaxed)) + " callbacks so far");
     }
 
-    void start(juce::AudioDeviceManager& devices) {
+    void start(juce::AudioDeviceManager& devices, CallbackLoad* load) {
         if (devices_ != nullptr)
             return;
 
         devices_ = &devices;
+        load_ = load;
         TrackManager::getInstance().addListener(this);
         AutomationManager::getInstance().addListener(this);
         ClipManager::getInstance().addListener(this);
@@ -3523,6 +3525,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                           float* const* output, int numOutputChannels,
                                           int numSamples,
                                           const juce::AudioIODeviceCallbackContext&) override {
+        const auto entered = juce::Time::getMillisecondCounterHiRes();
+        const juce::ScopeGuard recordLoad{[&] {
+            if (load_ != nullptr)
+                load_->record(juce::Time::getMillisecondCounterHiRes() - entered, numSamples,
+                              rate_.load(std::memory_order_relaxed));
+        }};
+
         for (auto channel = 0; channel < numOutputChannels; ++channel)
             if (output[channel] != nullptr)
                 juce::FloatVectorOperations::clear(output[channel], numSamples);
@@ -4150,6 +4159,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     adapter::LocalDeviceControlPlane plane_{control_, sessionDevices_};
 
     juce::AudioDeviceManager* devices_ = nullptr;
+    CallbackLoad* load_ = nullptr;
 
     /// Plugin services an offline render loads a plugin with when no live instance exists.
     juce::AudioPluginFormatManager* formats_ = nullptr;
@@ -4349,8 +4359,8 @@ EngineHost::EngineHost() : impl_(std::make_unique<Impl>()) {}
 
 EngineHost::~EngineHost() = default;
 
-void EngineHost::start(juce::AudioDeviceManager& devices) {
-    impl_->start(devices);
+void EngineHost::start(juce::AudioDeviceManager& devices, CallbackLoad* load) {
+    impl_->start(devices, load);
 }
 
 void EngineHost::setPluginServices(juce::AudioPluginFormatManager& formats,

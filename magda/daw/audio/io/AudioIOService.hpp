@@ -17,6 +17,7 @@
 
 #include "../../core/Config.hpp"
 #include "AudioIOControl.hpp"
+#include "CallbackLoad.hpp"
 #include "MicrophoneAccess.hpp"
 
 namespace magda {
@@ -142,6 +143,11 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
         return manager_;
     }
 
+    /** @brief What the attached callback records its time into, for status().cpuUsage. */
+    CallbackLoad& callbackLoad() {
+        return callbackLoad_;
+    }
+
   private:
     Direction openDirection(bool inputs) const;
 
@@ -184,6 +190,7 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
     juce::AudioDeviceManager manager_;
+    CallbackLoad callbackLoad_;
     juce::File legacySettings_;
     juce::File openMark_;
     MicrophoneAccess microphone_;
