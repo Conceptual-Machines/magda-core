@@ -30,6 +30,7 @@ class String;
 }  // namespace juce
 
 namespace magda {
+class CallbackLoad;
 class PhaseSource;
 class InsertRenderCapture;
 class OfflineRenderSession;
@@ -93,9 +94,10 @@ class EngineHost {
      * The device decides the sample rate and block size, so the session behind
      * this is built on the first callback rather than here: until then the
      * output is silence and the cursor stands still, which is what a session
-     * with no plan renders anyway (EngineSession::process).
+     * with no plan renders anyway (EngineSession::process). Each callback's time goes to
+     * @p load when one is given.
      */
-    void start(juce::AudioDeviceManager& devices);
+    void start(juce::AudioDeviceManager& devices, CallbackLoad* load = nullptr);
 
     /**
      * @brief Where external plugins are found and what can open them (#2566).
