@@ -167,8 +167,13 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         return devices.initialise(0, 2, nullptr, true).isEmpty() && devices.device != nullptr;
     }
 
-    static void settle() {
-        juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    // Until the plan is published and the callback renders it: a fixed 20 ms left a slow
+    // runner's device unprepared, so the pumped blocks rendered nothing.
+    static void settle(magda::daw::engine_host::EngineHost& host) {
+        auto tick = 0;
+        do
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(5);
+        while (!host.isSettled() && ++tick < 400);
     }
 
     static void pump(CapturePumpDevice& device, int blocks) {
@@ -232,7 +237,7 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         const auto clip = sessionMidi(track, 0, 60);
         magda::daw::engine_host::EngineHost host;
         host.start(devices);
-        settle();
+        settle(host);
         host.launchClip(clip);
         pump(*devices.device, 20);
         host.stopSessionTrack(track);
@@ -255,14 +260,14 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         const auto clip = sessionMidi(track, 0, 60);
         magda::daw::engine_host::EngineHost host;
         host.start(devices);
-        settle();
+        settle(host);
 
         host.setLoop(true, 0.0, 0.25);
         expect(host.startMidiRecording(0.0), "Session material makes Arrangement record eligible");
         host.launchClip(clip);
         pump(*devices.device, 50);
         magda::TrackManager::getInstance().createTrack("Unrelated plan swap");
-        settle();
+        settle(host);
         expect(arrangement(track).empty(),
                "the capture pass stays structural until its final stop boundary");
         host.stopMidiRecording();
@@ -290,7 +295,7 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         const auto clip = sessionMidi(track, 0, 62);
         magda::daw::engine_host::EngineHost host;
         host.start(devices);
-        settle();
+        settle(host);
         host.launchClip(clip);
         pump(*devices.device, 25);
 
@@ -333,14 +338,14 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         const auto clip = sessionMidi(track, 0, 67);
         magda::daw::engine_host::EngineHost host;
         host.start(devices);
-        settle();
+        settle(host);
         host.launchClip(clip);
         pump(*devices.device, 10);
 
         host.setPunch(0.4, 0.6, true, true);
         expect(host.startMidiRecording(0.1));
         pump(*devices.device, 30);
-        settle();
+        settle(host);
 
         expect(!host.isRecording(), "punch-out finalizes while playback continues");
         const auto captured = arrangement(track);
@@ -366,7 +371,7 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         const auto clip = sessionMidi(track, 0, 63);
         magda::daw::engine_host::EngineHost host;
         host.start(devices);
-        settle();
+        settle(host);
         expect(host.startMidiRecording(0.0));
         host.launchClip(clip);
         pump(*devices.device, 10);
@@ -402,7 +407,7 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         const auto second = sessionMidi(track, 1, 64);
         magda::daw::engine_host::EngineHost host;
         host.start(devices);
-        settle();
+        settle(host);
         expect(host.startMidiRecording(0.0));
 
         host.launchClip(first);
@@ -443,7 +448,7 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         sessionAudio(second, 0, audioFile);
         magda::daw::engine_host::EngineHost host;
         host.start(devices);
-        settle();
+        settle(host);
         expect(host.startMidiRecording(0.0));
 
         host.launchScene({first, second}, 0);
@@ -480,7 +485,7 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         const auto clip = sessionMidi(track, 0, 60);
         magda::daw::engine_host::EngineHost host;
         host.start(devices);
-        settle();
+        settle(host);
         expect(host.startMidiRecording(0.0));
         host.launchClip(clip);
         pump(*devices.device, 10);
@@ -489,7 +494,7 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         clips.clearMidiNotes(clip);
         clips.addMidiNote(
             clip, {.noteNumber = 72, .velocity = 100, .startBeat = 0.0, .lengthBeats = 4.0});
-        settle();
+        settle(host);
         pump(*devices.device, 10);
         host.stopMidiRecording();
 
@@ -516,7 +521,7 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         const auto oldClip = sessionMidi(track, 0, 55);
         magda::daw::engine_host::EngineHost host;
         host.start(devices);
-        settle();
+        settle(host);
         expect(host.startMidiRecording(0.0));
         host.launchClip(oldClip);
         pump(*devices.device, 10);
@@ -524,7 +529,7 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         auto& clips = magda::ClipManager::getInstance();
         clips.deleteClip(oldClip);
         sessionMidi(track, 0, 79);
-        settle();
+        settle(host);
         pump(*devices.device, 10);
         host.stopMidiRecording();
 
@@ -553,7 +558,7 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         const auto oldClip = sessionMidi(oldTrack, 0, 48);
         magda::daw::engine_host::EngineHost host;
         host.start(devices);
-        settle();
+        settle(host);
         expect(host.startMidiRecording(0.0));
         host.launchClip(oldClip);
         pump(*devices.device, 10);
@@ -564,7 +569,7 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         const auto newTrack = tracks.createTrack("New project");
         expectEquals(newTrack, oldTrack);
         const auto newClip = sessionMidi(newTrack, 0, 76);
-        settle();
+        settle(host);
         expect(host.startMidiRecording(0.0));
         host.launchClip(newClip);
         pump(*devices.device, 10);
@@ -588,7 +593,7 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
 
         magda::daw::engine_host::EngineHost host;
         host.start(devices);
-        settle();
+        settle(host);
         const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory)
                               .getNonexistentChildFile("magda-master-capture", ".wav");
         const magda::MasterCaptureRequest request{
