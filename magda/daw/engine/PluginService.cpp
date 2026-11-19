@@ -158,7 +158,30 @@ void PluginService::useEngineList(juce::AudioPluginFormatManager& formats,
                                   juce::KnownPluginList& list) {
     ++attachment_;
     formats_ = &formats;
-    list_ = &list;
+    attachList(&list);
+}
+
+void PluginService::attachList(juce::KnownPluginList* list) {
+    if (list_ != nullptr)
+        list_->removeChangeListener(this);
+    list_ = list;
+    araTypes_.reset();
+    if (list_ != nullptr)
+        list_->addChangeListener(this);
+}
+
+void PluginService::changeListenerCallback(juce::ChangeBroadcaster*) {
+    araTypes_.reset();
+}
+
+const std::vector<juce::PluginDescription>& PluginService::araTypes() {
+    if (!araTypes_) {
+        araTypes_.emplace();
+        for (const auto& type : knownTypes())
+            if (type.hasARAExtension)
+                araTypes_->push_back(type);
+    }
+    return *araTypes_;
 }
 
 void PluginService::useOwnList() {
@@ -181,7 +204,7 @@ void PluginService::forgetEngineList() {
 
     ++attachment_;
     formats_ = nullptr;
-    list_ = nullptr;
+    attachList(nullptr);
     internalScanner_ = nullptr;
 
     // Released with the engine rather than at static destruction, which runs after the
