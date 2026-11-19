@@ -416,8 +416,20 @@ class MainView::PlayheadComponent : public juce::Component {
     void mouseMove(const juce::MouseEvent& event) override;
 
   private:
+    /// Where the two cursors sit, in component pixels.
+    struct Cursors {
+        int editX = 0;
+        int playX = 0;
+        bool playing = false;
+        bool editDimmed = false;
+        bool operator==(const Cursors&) const = default;
+    };
+    Cursors currentCursors() const;
+    void repaintCursors(const Cursors& cursors);
+
     MainView& owner;
     double playheadPosition = 0.0;
+    Cursors lastCursors_;
     bool isDragging = false;
     int dragStartX = 0;
     double dragStartPosition = 0.0;

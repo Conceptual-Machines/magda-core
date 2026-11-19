@@ -14,12 +14,13 @@ namespace {
 
 /** @brief The installed plugin @p device names, if the scan says it offers ARA. */
 std::optional<juce::String> araName(const DeviceInfo& device) {
-    const auto* known = PluginService::getInstance().knownList();
-    if (known == nullptr || device.format == PluginFormat::Internal || device.uniqueId.isEmpty())
+    if (device.format == PluginFormat::Internal || device.uniqueId.isEmpty())
         return std::nullopt;
-    if (const auto type = known->getTypeForIdentifierString(device.uniqueId);
-        type != nullptr && type->hasARAExtension)
-        return type->name;
+    // Clip paints ask this per clip: matching against the whole known list was 92% of a
+    // zoom step's paint time.
+    for (const auto& type : PluginService::getInstance().araTypes())
+        if (type.matchesIdentifierString(device.uniqueId))
+            return type.name;
     return std::nullopt;
 }
 
