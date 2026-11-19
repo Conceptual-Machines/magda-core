@@ -615,6 +615,16 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // the user's curve). Deserialized projects never pass through here.
     static void seedSidechainModIfMissing(DeviceInfo& dev, const ChainNodePath& devicePath);
 
+    /**
+     * @brief Give a device added fresh its plugin's default preset (#3311).
+     *
+     * @p source is what the caller handed in: one carrying state, a preset name
+     * or pads is a copy or a preset and keeps what it has. Runs at the add sites
+     * because the default's own links need @p devicePath.
+     */
+    void adoptDefaultPresetIfFresh(const DeviceInfo& source, DeviceInfo& dev,
+                                   const ChainNodePath& devicePath);
+
     // Common prep for the FX-chain and rack-chain add paths: assign a fresh
     // DeviceId from nextFxDeviceId_, re-key and retarget its pads, stamp the
     // default kit, and tag analysis devices. Returns the prepared copy; callers

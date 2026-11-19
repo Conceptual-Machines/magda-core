@@ -191,6 +191,7 @@ DeviceId TrackManager::addDeviceToPad(const ChainNodePath& gridPath, ChainId pad
 
     auto newDevice = prepareNewDevice(gridPath.trackId, device);
     const auto devicePath = padChainPath(gridPath, padChainId).withDevice(newDevice.id);
+    adoptDefaultPresetIfFresh(device, newDevice, devicePath);
     seedSidechainModIfMissing(newDevice, devicePath);
 
     const auto at = insertIndex < 0

@@ -545,7 +545,13 @@ juce::File PresetManager::getDevicePluginDirectory(const juce::String& pluginFol
 bool PresetManager::saveDevicePreset(const DeviceInfo& device, const juce::String& presetName) {
     auto pluginDir = getDevicePluginDirectory(device.name);
     auto target = pluginDir.getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
+    if (!writeDevicePresetFile(device, target))
+        return false;
+    mirrorToMediaDb(getPresetsDirectory(), target);
+    return true;
+}
 
+bool PresetManager::writeDevicePresetFile(const DeviceInfo& device, const juce::File& target) {
     // Identity, authorship and creation time survive an overwrite; a device the envelope cannot
     // hold exactly keeps the legacy payload.
     device_preset::Metadata metadata;
@@ -564,7 +570,6 @@ bool PresetManager::saveDevicePreset(const DeviceInfo& device, const juce::Strin
                                 lastError_)) {
         return false;
     }
-    mirrorToMediaDb(getPresetsDirectory(), target);
     return true;
 }
 
@@ -573,6 +578,13 @@ bool PresetManager::loadDevicePreset(const juce::String& pluginFolder,
                                      DeviceInfo& outDevice) {
     auto source = getDevicePluginDirectory(pluginFolder)
                       .getChildFile(sanitizeRelativePath(presetRelativePath) + kPresetExtension);
+    if (!readDevicePresetFile(source, outDevice))
+        return false;
+    outDevice.presetName = presetRelativePath;
+    return true;
+}
+
+bool PresetManager::readDevicePresetFile(const juce::File& source, DeviceInfo& outDevice) {
     if (source.existsAsFile()) {
         const auto envelope =
             device_preset::readEnvelope(source.loadFileAsString(), source, outDevice);
@@ -580,7 +592,6 @@ bool PresetManager::loadDevicePreset(const juce::String& pluginFolder,
             case device_preset::ReadStatus::Loaded:
                 for (const auto& warning : envelope.warnings)
                     DBG("Device preset " << source.getFullPathName() << ": " << warning);
-                outDevice.presetName = presetRelativePath;
                 return true;
             case device_preset::ReadStatus::FromNewerVersion:
                 lastError_ = "Preset was written by a newer version: " + envelope.error;
@@ -607,7 +618,30 @@ bool PresetManager::loadDevicePreset(const juce::String& pluginFolder,
     namespace hydration = daw::audio::device_state_hydration;
     hydration::completeDeviceParameters(outDevice,
                                         hydration::provenanceFromMagdaVersion(savedVersion));
-    outDevice.presetName = presetRelativePath;
+    return true;
+}
+
+juce::File PresetManager::getDefaultDevicePresetFile(const juce::String& pluginFolder) const {
+    return getPresetsDirectory()
+        .getChildFile("Defaults")
+        .getChildFile(sanitizeName(pluginFolder) + kPresetExtension);
+}
+
+bool PresetManager::hasDefaultDevicePreset(const juce::String& pluginFolder) const {
+    return getDefaultDevicePresetFile(pluginFolder).existsAsFile();
+}
+
+bool PresetManager::saveDefaultDevicePreset(const DeviceInfo& device) {
+    auto unnamed = device;
+    unnamed.presetName.clear();
+    return writeDevicePresetFile(unnamed, getDefaultDevicePresetFile(device.name));
+}
+
+bool PresetManager::loadDefaultDevicePreset(const juce::String& pluginFolder,
+                                            DeviceInfo& outDevice) {
+    if (!readDevicePresetFile(getDefaultDevicePresetFile(pluginFolder), outDevice))
+        return false;
+    outDevice.presetName.clear();
     return true;
 }
 

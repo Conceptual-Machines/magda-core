@@ -22,6 +22,7 @@
 #include "ParameterUtils.hpp"
 #include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
+#include "PresetManager.hpp"
 #include "RackInfo.hpp"
 #include "TrackManager.hpp"
 #include "audio/plugins/SavedDeviceState.hpp"
@@ -403,6 +404,8 @@ DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId 
     }
     if (auto* chain = getChain(trackId, rackId, chainId)) {
         DeviceInfo newDevice = prepareNewDevice(trackId, device);
+        adoptDefaultPresetIfFresh(
+            device, newDevice, ChainNodePath::chainDevice(trackId, rackId, chainId, newDevice.id));
         seedSidechainModIfMissing(
             newDevice, ChainNodePath::chainDevice(trackId, rackId, chainId, newDevice.id));
         chain->elements.push_back(makeDeviceElement(newDevice));
@@ -433,6 +436,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
         return INVALID_DEVICE_ID;
 
     DeviceInfo newDevice = prepareNewDevice(chainPath.trackId, device);
+    adoptDefaultPresetIfFresh(device, newDevice, chainPath.withDevice(newDevice.id));
     seedSidechainModIfMissing(newDevice, chainPath.withDevice(newDevice.id));
 
     insertIndex = std::clamp(insertIndex, 0, static_cast<int>(chain->elements.size()));
@@ -2060,6 +2064,36 @@ DeviceInfo TrackManager::prepareNewDevice(TrackId trackId, const DeviceInfo& dev
     // read a browser category (#2427).
     legacy_devices::normalizeChordEngineRole(newDevice);
     return newDevice;
+}
+
+void TrackManager::adoptDefaultPresetIfFresh(const DeviceInfo& source, DeviceInfo& dev,
+                                             const ChainNodePath& devicePath) {
+    if (source.pluginState.isNotEmpty() || source.presetName.isNotEmpty() || source.pads)
+        return;
+
+    auto& presets = PresetManager::getInstance();
+    if (!presets.hasDefaultDevicePreset(dev.name))
+        return;
+    DeviceInfo preset;
+    if (!presets.loadDefaultDevicePreset(dev.name, preset) || preset.pluginId != dev.pluginId)
+        return;
+
+    dev.parameters = preset.parameters;
+    dev.insert = preset.insert;
+    dev.macros = preset.macros;
+    dev.mods = preset.mods;
+    dev.gainDb = preset.gainDb;
+    dev.gainValue = std::pow(10.0f, preset.gainDb / 20.0f);
+    dev.pluginState = stripPresetRuntimePluginState(preset.pluginState);
+    retargetPresetLinks(dev.macros, dev.mods, preset.id, devicePath);
+
+    if (preset.pads) {
+        dev.pads = std::move(preset.pads);
+        ChainIdRemap ids;
+        ids.devices[preset.id] = dev.id;
+        rekeyPads(dev, ids);
+        retargetPadLinks(dev, devicePath.trackId, ids);
+    }
 }
 
 void TrackManager::rekeyPads(DeviceInfo& device, ChainIdRemap& remap) {

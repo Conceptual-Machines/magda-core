@@ -156,3 +156,28 @@ TEST_CASE("A loaded device preset is named by its path", "[presets][device]") {
     REQUIRE(presets.loadDevicePreset(source.name, "Bass/Reese 808", loaded));
     CHECK(loaded.presetName == "Bass/Reese 808");
 }
+
+TEST_CASE("A default device preset is unnamed and stays out of the preset list",
+          "[presets][device][default]") {
+    PresetDirectoryScope scope;
+    auto& presets = PresetManager::getInstance();
+    auto source = device(3, "Serum", "opening-state");
+    source.presetName = "Bass/Reese 808";
+
+    CHECK_FALSE(presets.hasDefaultDevicePreset(source.name));
+    REQUIRE(presets.saveDefaultDevicePreset(source));
+    CHECK(presets.hasDefaultDevicePreset(source.name));
+    CHECK(presets.getDevicePresets(source.name).isEmpty());
+    CHECK_FALSE(presets.classifyPresetFile(presets.getDefaultDevicePresetFile(source.name)));
+
+    DeviceInfo loaded;
+    REQUIRE(presets.loadDefaultDevicePreset(source.name, loaded));
+    CHECK(loaded.pluginId == source.pluginId);
+    CHECK(loaded.pluginState == "opening-state");
+    CHECK(loaded.presetName.isEmpty());
+
+    source.pluginState = "replaced";
+    REQUIRE(presets.saveDefaultDevicePreset(source));
+    REQUIRE(presets.loadDefaultDevicePreset(source.name, loaded));
+    CHECK(loaded.pluginState == "replaced");
+}

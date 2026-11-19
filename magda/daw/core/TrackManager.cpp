@@ -2247,6 +2247,8 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = prepareNewDevice(trackId, device);
+        adoptDefaultPresetIfFresh(device, newDevice,
+                                  ChainNodePath::topLevelDevice(trackId, newDevice.id));
         seedSidechainModIfMissing(newDevice, ChainNodePath::topLevelDevice(trackId, newDevice.id));
         track->chain.fxChainElements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
@@ -2276,6 +2278,8 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = prepareNewDevice(trackId, device);
+        adoptDefaultPresetIfFresh(device, newDevice,
+                                  ChainNodePath::topLevelDevice(trackId, newDevice.id));
         seedSidechainModIfMissing(newDevice, ChainNodePath::topLevelDevice(trackId, newDevice.id));
 
         // Clamp insert index to valid range
@@ -2346,6 +2350,8 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
     newDevice.id = nextPostFxDeviceId_++;
     applyCachedCapabilitiesToDevice(newDevice);
     daw::audio::applyDeviceDeclaration(newDevice);
+    adoptDefaultPresetIfFresh(device, newDevice,
+                              ChainNodePath::postFxDevice(trackId, newDevice.id));
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
 
@@ -2418,6 +2424,8 @@ DeviceId TrackManager::addDeviceToMixerAnalysis(TrackId trackId, const DeviceInf
     newDevice.id = nextMixerAnalysisDeviceId_++;
     applyCachedCapabilitiesToDevice(newDevice);
     daw::audio::applyDeviceDeclaration(newDevice);
+    adoptDefaultPresetIfFresh(device, newDevice,
+                              ChainNodePath::mixerAnalysisDevice(trackId, newDevice.id));
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
     track->chain.mixerAnalysisElements.push_back(PostFxChainElement{newDevice});

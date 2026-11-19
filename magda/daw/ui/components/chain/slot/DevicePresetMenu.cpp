@@ -20,6 +20,8 @@ constexpr int kRevealInFinder = 1;
 constexpr int kRevealPluginUserDir = 2;
 constexpr int kRescanPluginPresets = 3;
 constexpr int kSavePluginPreset = 4;
+constexpr int kSaveDefaultPreset = 5;
+constexpr int kLoadDefaultPreset = 6;
 constexpr int kPresetIdBase = 1000;
 constexpr int kProgramIdBase = 100000;
 constexpr int kPluginPresetIdBase = 200000;
@@ -126,6 +128,36 @@ void loadMagdaPreset(const juce::String& pluginFolder, const magda::ChainNodePat
         if (onLoaded)
             onLoaded(*live);
     }
+}
+
+void loadDefaultPreset(const juce::String& pluginFolder, const magda::ChainNodePath& nodePath,
+                       const std::function<void(const magda::DeviceInfo& liveDevice)>& onLoaded) {
+    magda::DeviceInfo preset;
+    auto& presetManager = magda::PresetManager::getInstance();
+    if (!presetManager.loadDefaultDevicePreset(pluginFolder, preset)) {
+        showPresetErrorAsync("Load Default Preset Failed", presetManager.getLastError());
+        return;
+    }
+
+    auto& trackManager = magda::TrackManager::getInstance();
+    if (!trackManager.applyDevicePreset(nodePath, preset)) {
+        showPresetErrorAsync("Load Default Preset Failed",
+                             "Preset is for a different plugin (\"" + preset.pluginId + "\").");
+        return;
+    }
+
+    if (auto* live = trackManager.getDeviceInChainByPath(nodePath); live != nullptr && onLoaded)
+        onLoaded(*live);
+}
+
+void saveDefaultPreset(const magda::DeviceInfo& device, const magda::ChainNodePath& nodePath) {
+    auto snapshot = snapshotDeviceForPreset(device, nodePath);
+    if (!snapshot.has_value())
+        return;
+
+    auto& presetManager = magda::PresetManager::getInstance();
+    if (!presetManager.saveDefaultDevicePreset(*snapshot))
+        showPresetErrorAsync("Save Default Preset Failed", presetManager.getLastError());
 }
 
 }  // namespace
@@ -393,6 +425,11 @@ DevicePresetMenu buildDevicePresetMenu(
         addDeviceItems(menu);
 
     menu.addSeparator();
+    menu.addItem(kSaveDefaultPreset, "Save as Default Preset");
+    menu.addItem(kLoadDefaultPreset, "Load Default Preset",
+                 magda::PresetManager::getInstance().hasDefaultDevicePreset(device.name));
+
+    menu.addSeparator();
     const bool hasPresetFiles = plugin.extension.isNotEmpty();
     if (hasPresetFiles)
         menu.addItem(kSavePluginPreset, "Save as " + plugin.extension + "...");
@@ -426,6 +463,10 @@ void showDevicePresetMenu(juce::Component* targetComponent, const magda::DeviceI
                 revealPluginPresets(device);
             } else if (chosen == kRescanPluginPresets) {
                 magda::PluginPresetScanner::getInstance().rescan(device);
+            } else if (chosen == kSaveDefaultPreset) {
+                saveDefaultPreset(device, devicePath);
+            } else if (chosen == kLoadDefaultPreset) {
+                loadDefaultPreset(device.name, devicePath, callbacks.onPresetLoaded);
             } else if (chosen == kSavePluginPreset) {
                 showSavePluginPresetDialog(device, devicePath, callbacks.onNameChanged);
             } else if (chosen >= kPluginPresetIdBase) {
