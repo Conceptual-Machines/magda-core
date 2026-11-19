@@ -699,6 +699,22 @@ class PlanExecutor {
     /// and written to the store only by @ref commitReroutes.
     std::vector<std::size_t> reroutedOps_;
 
+    /// An instrument that stopped hearing its own track's live input, as a selection moving
+    /// off the track does (#1898): owed that input's held keys once, rather than a panic.
+    struct HeldRelease {
+        EngineMidiSource* source = nullptr;
+        OpKey input;
+        std::atomic<bool> owed{true};
+        juce::MidiBuffer midi;
+    };
+    std::vector<std::unique_ptr<HeldRelease>> heldReleaseForOp_;
+
+    /// The release @p previous still owes the device @p key, if that device is in it.
+    static HeldRelease* owedRelease(const PlanExecutor& previous, const DeviceKey& key);
+
+    /// The source bound to this plan's op of @p kind at @p key, if it has one.
+    EngineMidiSource* midiSourceOfKind(OpKind kind, const OpKey& key) const;
+
     /// Which publish this executor is, or zero for one that never went live.
     /// What decides whose debt it may spend.
     std::uint64_t epoch_ = 0;

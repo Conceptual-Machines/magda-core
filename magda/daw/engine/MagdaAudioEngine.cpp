@@ -463,6 +463,10 @@ void MagdaAudioEngine::projectAuthoredStateAt(const ChainNodePath& devicePath) {
 }
 
 // The window opens onto the instance this renders through (#2580).
+double MagdaAudioEngine::deviceLatencySeconds(const ChainNodePath& devicePath) const {
+    return host_ != nullptr ? host_->deviceLatencySeconds(devicePath) : 0.0;
+}
+
 std::optional<PluginPrograms> MagdaAudioEngine::getPluginPrograms(const ChainNodePath& path) {
     return host_->getPluginPrograms(path);
 }

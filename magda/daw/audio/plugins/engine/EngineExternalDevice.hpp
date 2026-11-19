@@ -193,6 +193,9 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
          */
         bool drain(const std::function<void(Observation)>& sink) const;
 
+        /// Whether the plugin reported a new latency since the last call. Message thread.
+        bool takeLatencyMoved() const;
+
       private:
         friend class EngineExternalDevice;
         explicit PluginEditSource(std::weak_ptr<PluginEdits> edits) : edits_(std::move(edits)) {}
@@ -409,6 +412,9 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
         std::atomic<bool> listening{false};
         std::atomic<bool> wakeQueued{false};
 
+        /// The plugin reported a new latency, which compensation has not seen yet.
+        std::atomic<bool> latencyMoved{false};
+
         /// Once per burst until the next drain; nothing before listening. Any thread.
         void wakeHost() {
             if (listening.load(std::memory_order_acquire) &&
@@ -494,7 +500,6 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     /// is a no-op.
     int preparedBlockSize_ = 0;
 
-    int latencySamples_ = 0;
     int midiInputBoundBytes_ = magda::engine::kMaxMidiBytesPerPort;
 
     /// What the executor reserved on the output port (#2341, #2345).

@@ -282,6 +282,10 @@ class EngineMidiSource {
     virtual bool raisedAllNotesOff() const {
         return false;
     }
+
+    /// Note-offs at sample 0 for every key this source delivered and has not released, once
+    /// a plan stops rendering it. Asked again, it adds nothing. Audio thread.
+    virtual void releaseHeld(juce::MidiBuffer&) {}
 };
 
 /**

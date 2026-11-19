@@ -269,6 +269,9 @@ class EngineHost {
     juce::String formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
                                        float normalised) const;
 
+    /** @brief The latency the device at @p devicePath declares, in seconds. Message thread. */
+    double deviceLatencySeconds(const ChainNodePath& devicePath) const;
+
     /** @brief Every parameter the plugin at @p devicePath reports (#2629). */
     HostParameters describeDeviceParameters(const ChainNodePath& devicePath) const;
 

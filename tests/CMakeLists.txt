@@ -474,6 +474,8 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES engine/test_render_ahead.cpp)
     # Session tracks rendered ahead from copies of their launch handles (#3316).
     list(APPEND TEST_SOURCES engine/test_render_ahead_session.cpp)
+    # An instrument moving sides as a selection plays it (#1898).
+    list(APPEND TEST_SOURCES engine/test_render_ahead_played.cpp)
     list(APPEND TEST_SOURCES engine/test_tracks_being_played.cpp)
     list(APPEND TEST_SOURCES engine/test_modulation_liveness.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_pad_rack.cpp)

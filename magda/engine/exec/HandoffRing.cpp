@@ -117,6 +117,7 @@ void HandoffRing::publish(std::uint64_t block, const BlockStamp& stamp) {
     // Reached before stamped: a reader between the two takes a miss, never a second render.
     noteWritten(block);
     entry.stamp.store(block + 1, std::memory_order_release);
+    writing_.store(0, std::memory_order_release);
 }
 
 void HandoffRing::publishWhole(std::uint64_t block) {

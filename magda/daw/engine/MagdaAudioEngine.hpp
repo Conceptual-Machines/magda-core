@@ -106,6 +106,7 @@ class MagdaAudioEngine final : public AudioEngine,
     void capturePluginStateAt(const ChainNodePath& devicePath) override;
     void applyPluginStateAt(const ChainNodePath& devicePath) override;
     void projectAuthoredStateAt(const ChainNodePath& devicePath) override;
+    double deviceLatencySeconds(const ChainNodePath& devicePath) const override;
     std::optional<PluginPrograms> getPluginPrograms(const ChainNodePath& devicePath) override;
     bool setPluginCurrentProgram(const ChainNodePath& devicePath, int programIndex) override;
     bool loadPluginPresetFile(const ChainNodePath& devicePath, const juce::File& file) override;

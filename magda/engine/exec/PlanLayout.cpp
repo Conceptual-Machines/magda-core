@@ -149,7 +149,23 @@ PlanLatency resolvePlanLatency(const RenderPlan& plan, const std::vector<int>& p
     // What an input carries before its delay compensates anything. A delay op
     // is transparent here: its own count is what this pass is computing, so
     // the port behind it is what the comparison is between.
-    const auto arriving = [&](const PortRef& input) {
+    // A handoff passes its input on unchanged, so the delay a path is compensated by may sit
+    // behind one (insertHandoffs puts it between the delay and the op the delay feeds). Only a
+    // handoff with one reader: a delay behind a shared one cannot match both of them.
+    std::vector<int> readers(plan.ops.size(), 0);
+    for (const auto& op : plan.ops)
+        for (const auto& input : op.inputs)
+            if (input.valid())
+                ++readers[static_cast<std::size_t>(input.op)];
+    const auto throughHandoffs = [&](PortRef input) {
+        while (plan.ops[static_cast<std::size_t>(input.op)].kind == OpKind::Handoff &&
+               readers[static_cast<std::size_t>(input.op)] == 1 &&
+               plan.ops[static_cast<std::size_t>(input.op)].inputs.front().valid())
+            input = plan.ops[static_cast<std::size_t>(input.op)].inputs.front();
+        return input;
+    };
+    const auto arriving = [&](const PortRef& fed) {
+        const auto input = throughHandoffs(fed);
         const auto& producer = plan.ops[static_cast<std::size_t>(input.op)];
         return producer.kind == OpKind::Delay ? resolved.portLatency[flat(producer.inputs.front())]
                                               : resolved.portLatency[flat(input)];
@@ -170,14 +186,18 @@ PlanLatency resolvePlanLatency(const RenderPlan& plan, const std::vector<int>& p
             if (input.valid())
                 target = std::max(target, arriving(input));
 
-        for (const auto& input : op.inputs) {
-            if (!input.valid())
+        for (const auto& fed : op.inputs) {
+            if (!fed.valid())
                 continue;
+            const auto input = throughHandoffs(fed);
             const auto delayOp = static_cast<std::size_t>(input.op);
             if (plan.ops[delayOp].kind != OpKind::Delay)
                 continue;
             resolved.delaySamples[delayOp] = target - arriving(input);
             resolved.portLatency[flat(PortRef{input.op, 0})] = target;
+            for (auto at = fed; at.op != input.op;
+                 at = plan.ops[static_cast<std::size_t>(at.op)].inputs.front())
+                resolved.portLatency[flat(at)] = target;
         }
 
         // A fade produces the latency of the side it is becoming, not the

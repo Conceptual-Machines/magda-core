@@ -181,6 +181,9 @@ class ClockCore {
     /// Whether the last block rolled the timeline, so the next one is not a start.
     bool rolledLast_ = false;
 
+    /// Whether the next block starts at the loop's wrap and nothing else moved the cursor.
+    bool wrapped_ = false;
+
     /// Musical time rolled through since the clock began, never decreasing.
     /// Accumulated from what each playing segment covered rather than derived
     /// from the cursor, which is the only way it survives the wraps and

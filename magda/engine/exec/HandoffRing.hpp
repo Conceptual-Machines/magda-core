@@ -33,6 +33,7 @@ struct BlockStamp {
     bool playing = false;
     bool continuous = false;
     bool started = false;
+    bool wrapped = false;
     double beatsStart = 0.0;
     double beatsEnd = 0.0;
     double secondsStart = 0.0;
@@ -43,6 +44,7 @@ struct BlockStamp {
                 .playing = block.playing,
                 .continuous = block.continuous,
                 .started = block.started,
+                .wrapped = block.wrapped,
                 .beatsStart = block.beats.start,
                 .beatsEnd = block.beats.end,
                 .secondsStart = block.seconds.start,
@@ -216,11 +218,22 @@ class HandoffRing {
         return callbackWaiting_.load(std::memory_order_acquire);
     }
 
+    /// Writer, holding its claim: its ops are rendering @p block, until it publishes or abandons.
+    void beginWriting(std::uint64_t block) {
+        writing_.store(block + 1, std::memory_order_release);
+    }
+
+    /// Reader: whether the writer's ops are inside @p block right now.
+    bool writing(std::uint64_t block) const {
+        return writing_.load(std::memory_order_acquire) == block + 1;
+    }
+
     /// Writer, holding its claim: @p block was given up halfway, its ops moved past it with
     /// nothing published. Late, too, after the callback stopped waiting for it.
     void abandon(std::uint64_t) {
         // Past every block, so whichever the callback renders next it discards from.
         written_.store(kAbandoned, std::memory_order_release);
+        writing_.store(0, std::memory_order_release);
     }
 
   private:
@@ -265,6 +278,8 @@ class HandoffRing {
     std::atomic<std::uint64_t> discards_{0};
     static constexpr auto kAbandoned = std::numeric_limits<std::uint64_t>::max();
     std::atomic<bool> callbackWaiting_{false};
+    /// The block the writer's ops are inside, plus one, or zero.
+    std::atomic<std::uint64_t> writing_{0};
 
     enum class Owner : std::uint8_t { none, writer, callback };
     std::atomic<Owner> owner_{Owner::none};
