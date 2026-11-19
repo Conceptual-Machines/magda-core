@@ -1448,3 +1448,40 @@ TEST_CASE("Drum Grid facade edits pads and their device chains as undoable steps
 
     tm.clearAllTracks();
 }
+
+TEST_CASE("A device added fresh opens with its default preset; a copy keeps its own state",
+          "[device-api][presets][default][3311]") {
+    PresetDirectoryScope scope;
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Default preset");
+
+    DeviceInfo fresh;
+    fresh.name = "Default Preset Synth";
+    fresh.pluginId = "default-preset-synth";
+    fresh.format = PluginFormat::VST3;
+    fresh.isInstrument = false;
+
+    auto saved = fresh;
+    saved.id = 41;
+    saved.pluginState = "opening-patch";
+    saved.gainDb = -6.0f;
+    REQUIRE(PresetManager::getInstance().saveDefaultDevicePreset(saved));
+
+    const auto freshId = tracks.addDeviceToTrack(trackId, fresh);
+    const auto* opened =
+        tracks.getDeviceInChainByPath(ChainNodePath::topLevelDevice(trackId, freshId));
+    REQUIRE(opened != nullptr);
+    CHECK(opened->pluginState == "opening-patch");
+    CHECK(opened->gainDb == Catch::Approx(-6.0f));
+    CHECK(opened->presetName.isEmpty());
+
+    auto copy = fresh;
+    copy.pluginState = "its-own-patch";
+    const auto copyId = tracks.addDeviceToTrack(trackId, copy);
+    const auto* kept =
+        tracks.getDeviceInChainByPath(ChainNodePath::topLevelDevice(trackId, copyId));
+    REQUIRE(kept != nullptr);
+    CHECK(kept->pluginState == "its-own-patch");
+
+    tracks.clearAllTracks();
+}

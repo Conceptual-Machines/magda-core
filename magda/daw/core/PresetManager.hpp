@@ -209,6 +209,26 @@ class PresetManager {
                             const juce::String& newRelativePath);
 
     // ========================================================================
+    // Default Device Presets (#3311)
+    // ========================================================================
+
+    /**
+     * @brief The patch a new copy of a device opens with.
+     *
+     * Stored as Defaults/<plugin folder>.mps, outside Devices/, so it never
+     * lists among the named presets or in the browser.
+     */
+    juce::File getDefaultDevicePresetFile(const juce::String& pluginFolder) const;
+
+    bool hasDefaultDevicePreset(const juce::String& pluginFolder) const;
+
+    /** @brief Save @p device as its plugin's default, replacing any earlier one. */
+    bool saveDefaultDevicePreset(const DeviceInfo& device);
+
+    /** @brief Load the default for @p pluginFolder. The result carries no preset name. */
+    bool loadDefaultDevicePreset(const juce::String& pluginFolder, DeviceInfo& outDevice);
+
+    // ========================================================================
     // Curve Presets
     // ========================================================================
 
@@ -281,6 +301,9 @@ class PresetManager {
      * @brief Get list of preset files in a directory
      */
     static juce::StringArray getPresetList(const juce::File& directory);
+
+    bool writeDevicePresetFile(const DeviceInfo& device, const juce::File& target);
+    bool readDevicePresetFile(const juce::File& source, DeviceInfo& outDevice);
 
     juce::String lastError_;
     std::unordered_map<DeviceId, juce::String> suggestedNames_;

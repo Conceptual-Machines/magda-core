@@ -714,6 +714,8 @@ int main() {
             const auto bare = itemsOf(buildDevicePresetMenu(device, {}, {}).menu);
             check(bare.contains("(no presets yet)") && bare.contains("Reveal in Finder"),
                   "a device with no presets lost its menu");
+            check(bare.contains("Save as Default Preset") && bare.contains("Load Default Preset"),
+                  "the preset menu lost its default preset items (#3311)");
             for (const auto* absent : {"Plugin Presets", "Built-in Programs", "Rescan"})
                 check(!bare.contains(absent), "a device without plugin presets shows their items");
 
