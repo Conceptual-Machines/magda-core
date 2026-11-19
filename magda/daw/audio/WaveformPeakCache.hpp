@@ -65,9 +65,7 @@ class WaveformPeakCache {
      * [0, endSample]. Returns {0,0} if the clamped range is empty or the
      * channel is out of range.
      */
-    MinMax getMinMaxForRange(int channel, std::int64_t startSample, std::int64_t endSample) const {
-        return peaks_.getMinMaxForRange(channel, startSample, endSample);
-    }
+    MinMax getMinMaxForRange(int channel, std::int64_t startSample, std::int64_t endSample) const;
 
     int getNumChannels() const noexcept {
         return peaks_.numChannels();
@@ -82,9 +80,14 @@ class WaveformPeakCache {
   private:
     static juce::File getCacheRoot();
 
-    explicit WaveformPeakCache(sdk::PeakData peaks) : peaks_(std::move(peaks)) {}
+    /// Buckets of one level summarised by a bucket of the next coarser one.
+    static constexpr std::int64_t COARSE_FACTOR = 16;
+
+    explicit WaveformPeakCache(sdk::PeakData peaks);
 
     sdk::PeakData peaks_;
+    /// coarse_[level][channel]: min, max pairs, so a wide range reads a few buckets per level.
+    std::vector<std::vector<std::vector<std::int16_t>>> coarse_;
 
     JUCE_DECLARE_NON_COPYABLE(WaveformPeakCache)
 };

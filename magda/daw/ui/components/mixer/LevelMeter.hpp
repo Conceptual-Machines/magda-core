@@ -28,7 +28,10 @@ class LevelMeter : public juce::Component, private juce::Timer {
   public:
     enum class Orientation { Vertical, Horizontal };
 
-    LevelMeter() = default;
+    LevelMeter() {
+        // The meter fills its bounds, so a level change need not repaint what is under it.
+        setOpaque(true);
+    }
 
     ~LevelMeter() override {
         stopTimer();
