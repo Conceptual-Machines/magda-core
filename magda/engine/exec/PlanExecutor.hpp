@@ -946,6 +946,10 @@ class PlanExecutor {
     /// a jump, and each MIDI handoff ends the notes that crossed it.
     bool discontinuousAhead_ = false;
 
+    /// From a discard until a block is heard split again; callback thread only. A writer that
+    /// starts from no lead rarely finishes in the grace, which the spin then only takes from it.
+    bool aheadRecovering_ = false;
+
     /// Per MIDI handoff, what crossed it to the callback; callback thread only. Shared with
     /// the executor taking over, like a delay line, and used by one epoch at a time.
     std::vector<int> crossedForOp_;

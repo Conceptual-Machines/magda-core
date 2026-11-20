@@ -125,7 +125,8 @@ void BlockProfile::count(Counter counter, int amount) {
 void BlockProfile::report() {
     static const char* const kPhaseNames[PhaseCount] = {
         "beginBlock", "midiPrefix", "resolveParams", "drain (ops)",
-        "serialTail", "wholeBlock", "callback"};
+        "serialTail", "wholeBlock", "callback",
+        "callbackSide", "writerFinishWait", "claimWait"};
     static const char* const kCounterNames[CounterCount] = {
         "initial ready", "  of them caller-only", "workers signalled",
         "worker sleeps", "wakes without work",    "chains on workers"};

@@ -384,6 +384,7 @@ int PlanExecutor::activeCrossfades() const {
 void PlanExecutor::reset() {
     plan_ = nullptr;
     planFingerprint_ = 0;
+    aheadRecovering_ = false;
     reportedUnboundInputs_.clear();
     latencySamples_ = 0;
     carriedDelayLines_ = 0;
@@ -1803,7 +1804,11 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
         auto claimBy = entered + quarter;
         // A writer inside this very block is let finish it: giving it up costs every ahead track
         // a jump, and rendering it again here costs more than what the writer has left.
-        if (splits && published == HandoffRing::Published::missing && handoffs_.writing(sequence)) {
+        if (splits && !aheadRecovering_ && published == HandoffRing::Published::missing &&
+            handoffs_.writing(sequence)) {
+            const ProfileScope timed([](auto elapsed) {
+                BlockProfile::addPhase(BlockProfile::WriterFinishWait, elapsed);
+            });
             claimBy = entered + 2 * quarter;
             const auto finishBy = claimBy - quarter / 2;
             while (handoffs_.writing(sequence) && std::chrono::steady_clock::now() < finishBy) {
@@ -1813,7 +1818,13 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
         if (published != HandoffRing::Published::split || !splits) {
             // A writer inside its ops gives the block up at the next one, waited for until claimBy,
             // so a writer that has stalled costs a miss, not a gap.
-            if (handoffs_.claimForCallbackBy(claimBy)) {
+            const auto claimed = [&] {
+                const ProfileScope timed([](auto elapsed) {
+                    BlockProfile::addPhase(BlockProfile::CallbackClaimWait, elapsed);
+                });
+                return handoffs_.claimForCallbackBy(claimBy);
+            }();
+            if (claimed) {
                 published = handoffs_.published(sequence, BlockStamp::of(start.block));
                 const bool whole = published != HandoffRing::Published::split || !splits;
                 if (whole) {
@@ -1822,8 +1833,10 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
                     // release (BlockInfo::continuous).
                     discontinuousAhead_ =
                         published != HandoffRing::Published::whole && handoffs_.reached(sequence);
-                    if (discontinuousAhead_)
+                    if (discontinuousAhead_) {
                         handoffs_.discardFrom(sequence);
+                        aheadRecovering_ = true;
+                    }
                     if (callbackRenderer_ != nullptr)
                         callbackRenderer_->renderWhole(values, requestedBlock, output);
                     else
@@ -1845,6 +1858,8 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
                 }
             }
         }
+        if (published == HandoffRing::Published::split)
+            aheadRecovering_ = false;
         if (start.render)
             deliverHandoffs(sequence, start.block.numSamples,
                             published == HandoffRing::Published::split);

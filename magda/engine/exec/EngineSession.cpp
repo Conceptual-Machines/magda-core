@@ -11,6 +11,7 @@
 
 #include "clip/ClipVoicePool.hpp"
 #include "clip/SessionPlayback.hpp"
+#include "exec/BlockProfile.hpp"
 
 namespace magda::engine {
 
@@ -641,10 +642,13 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         if (voices_ != nullptr)
             voices_->announceHandBacks(clips_.sections(), segment.block);
 
-        if (renderAhead_ != nullptr)
+        if (renderAhead_ != nullptr) {
+            const ProfileScope timed(
+                [](auto elapsed) { BlockProfile::addPhase(BlockProfile::CallbackSide, elapsed); });
             (*render)->executor.processSide(1, blockSequence_++, table, segment.block, piece);
-        else
+        } else {
             (*render)->executor.process(table, segment.block, piece);
+        }
 
         if (captureRing_ != nullptr) {
             captureRing_->writeMidi(input.midi, segment.startSample, segment.block.numSamples);
