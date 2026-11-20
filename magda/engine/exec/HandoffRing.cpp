@@ -4,10 +4,33 @@
 #include "exec/HandoffRing.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cstring>
 
 #include "exec/EngineDevice.hpp"
 
 namespace magda::engine {
+
+std::uint64_t BlockStamp::key() const {
+    std::uint64_t key = 14695981039346656037ULL;
+    const auto fold = [&key](const auto& field) {
+        std::array<unsigned char, sizeof(field)> bytes{};
+        std::memcpy(bytes.data(), &field, sizeof(field));
+        for (const auto byte : bytes)
+            key = (key ^ byte) * 1099511628211ULL;
+    };
+    fold(numSamples);
+    fold(playing);
+    fold(continuous);
+    fold(started);
+    fold(wrapped);
+    // Plus zero, so -0.0 keys as 0.0, which it equals.
+    fold(beatsStart + 0.0);
+    fold(beatsEnd + 0.0);
+    fold(secondsStart + 0.0);
+    fold(monotonicStart.sample);
+    return key | 1U;
+}
 
 void CrossedNotes::track(const juce::MidiBuffer& midi) {
     for (const auto event : midi)

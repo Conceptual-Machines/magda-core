@@ -65,15 +65,9 @@ inline constexpr int kTimecodeMaxBars = 99999;
 inline constexpr double kTimecodeMaxBeats =
     static_cast<double>((kTimecodeMaxBars - 1) * MIN_TIME_SIGNATURE_VALUE);
 
-// How far the retained peak has to run ahead of the average before the CPU
-// readout shows it as well.
-inline constexpr int kCpuPeakMargin = 2;
-
-/** The CPU readout: the smoothed average, with the retained peak beside it once
- *  the peak has run far enough ahead to be worth showing. The label and the
- *  width measured for it both format through here, so the slot always fits what
- *  it will be asked to draw. */
-juce::String cpuReadoutText(int averagePercent, int peakPercent);
+/** @brief The CPU readout, the smoothed average alone; the peak is in its tooltip. The label and
+ *  the width measured for it both format through here. */
+juce::String cpuReadoutText(int averagePercent);
 
 // The fewest bar-number digits the readouts make room for, so the bar re-lays
 // itself out only once a value passes bar 999.

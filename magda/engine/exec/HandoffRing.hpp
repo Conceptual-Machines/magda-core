@@ -52,6 +52,9 @@ struct BlockStamp {
     }
 
     bool operator==(const BlockStamp&) const = default;
+
+    /// Every field folded into one word, never zero. Equal stamps share a key.
+    std::uint64_t key() const;
 };
 
 /**
@@ -213,6 +216,11 @@ class HandoffRing {
         return claimed;
     }
 
+    /// Reader: whether the writer holds the claim, inside a block's ops or about to begin them.
+    bool writerHolds() const {
+        return owner_.load(std::memory_order_acquire) == Owner::writer;
+    }
+
     /// Writer: whether the callback is waiting for the block in hand.
     bool callbackWaiting() const {
         return callbackWaiting_.load(std::memory_order_acquire);
@@ -220,12 +228,37 @@ class HandoffRing {
 
     /// Writer, holding its claim: its ops are rendering @p block, until it publishes or abandons.
     void beginWriting(std::uint64_t block) {
+        writingAs_.store(0, std::memory_order_relaxed);
         writing_.store(block + 1, std::memory_order_release);
+    }
+
+    /// Writer, inside a block: what its ops render it as, known once the block has begun.
+    void writingAs(const BlockStamp& stamp) {
+        writingAs_.store(stamp.key(), std::memory_order_release);
+    }
+
+    /** @brief How the writer inside a block is rendering it, against what the reader needs. */
+    enum class Rendering : std::uint8_t { notKnown, asNeeded, otherwise };
+
+    /// Reader: how the writer inside @p block renders it against @p stamp.
+    Rendering rendering(std::uint64_t block, const BlockStamp& stamp) const {
+        if (!writing(block))
+            return Rendering::notKnown;
+        const auto as = writingAs_.load(std::memory_order_acquire);
+        // Read again: a writer that moved on meanwhile may have left the next block's stamp.
+        if (as == 0 || !writing(block))
+            return Rendering::notKnown;
+        return as == stamp.key() ? Rendering::asNeeded : Rendering::otherwise;
     }
 
     /// Reader: whether the writer's ops are inside @p block right now.
     bool writing(std::uint64_t block) const {
         return writing_.load(std::memory_order_acquire) == block + 1;
+    }
+
+    /// Reader: whether the writer's ops are inside a block after @p block.
+    bool writingAfter(std::uint64_t block) const {
+        return writing_.load(std::memory_order_acquire) > block + 1;
     }
 
     /// Writer, holding its claim: @p block was given up halfway, its ops moved past it with
@@ -280,6 +313,7 @@ class HandoffRing {
     std::atomic<bool> callbackWaiting_{false};
     /// The block the writer's ops are inside, plus one, or zero.
     std::atomic<std::uint64_t> writing_{0};
+    std::atomic<std::uint64_t> writingAs_{0};
 
     enum class Owner : std::uint8_t { none, writer, callback };
     std::atomic<Owner> owner_{Owner::none};

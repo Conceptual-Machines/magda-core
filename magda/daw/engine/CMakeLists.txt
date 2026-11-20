@@ -21,6 +21,8 @@ target_sources(magda_daw PRIVATE
 target_sources(magda_daw_app PRIVATE
     PlaybackPositionTimer.cpp
     PlaybackPositionTimer.hpp
+    ProcessCpuMeter.cpp
+    ProcessCpuMeter.hpp
 )
 
 # The app's end of magda::engine (#2551), and the first thing outside the test

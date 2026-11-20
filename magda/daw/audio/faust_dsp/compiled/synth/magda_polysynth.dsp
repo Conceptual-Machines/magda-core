@@ -61,6 +61,9 @@ freqG = freq : msm.smooth(ba.tau2pole(glide));
 // the gate's rising edge (also the Mono retrigger edge) when that oscillator's
 // toggle is on.
 gateRise = gate > gate';
+// Where a free-running oscillator starts, set per voice by the host: voices all starting at
+// zero sum a fresh synth's octaves in phase, louder than once voices are reused.
+voicePhase = hslider("voice_phase", 0, 0, 1, 0.0001);
 osc1Reset = nentry("Osc 1 Reset [idx:33] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
 osc2Reset = nentry("Osc 2 Reset [idx:34] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
 osc3Reset = nentry("Osc 3 Reset [idx:35] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
@@ -100,8 +103,9 @@ with {
 // unison copy's detune and reset phase; `skip` (1 on the extra copies) stops a
 // silent oscillator running. enable costs more than it saves on the main copy.
 oscBank(skip, wave, level, coarse, fine, rstOn, en, cents, ph) =
-    skipping(skip, oscShape(wave, f, ph, (rstOn > 0) * gateRise), gain > 0.0) * gain
+    skipping(skip, oscShape(wave, f, start, (rstOn > 0) * gateRise), gain > 0.0) * gain
 with {
+    start = ma.frac(ph + (rstOn == 0) * voicePhase);
     gain = ((level > -60.0) * ba.db2linear(level) : smoo) * (en : smoo);
     f = freqG * pow(2.0, (coarse + (fine + cents) / 100.0 + bendSemis + noteBend) / 12.0);
 };

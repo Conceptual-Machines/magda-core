@@ -9,6 +9,7 @@
 #include <unordered_map>
 
 #include "../core/ClipTypes.hpp"
+#include "ProcessCpuMeter.hpp"
 
 namespace magda {
 
@@ -42,7 +43,8 @@ class PlaybackPositionTimer : private juce::Timer {
         Only called when at least one session clip has an active playhead. */
     std::function<void(const std::unordered_map<ClipId, double>&)> onSessionPlayheadUpdate;
 
-    /** Callback fired periodically with CPU usage (0.0 to 1.0), xrun count, and device info. */
+    /** Callback fired periodically with MAGDA's share of the machine's CPU (0.0 to 1.0), xrun
+        count, and device info. */
     std::function<void(float, int, const juce::String&, double, int)> onCpuUsageUpdate;
 
     /** Callback fired when a start begins or ends waiting for Ableton Link's downbeat (#3188). */
@@ -61,6 +63,7 @@ class PlaybackPositionTimer : private juce::Timer {
     bool wasRecording_ = false;  // Track engine recording state for change detection
     bool wasWaitingForPhase_ = false;
     int cpuUpdateCounter_ = 0;  // Throttle CPU updates
+    ProcessCpuMeter cpu_;
     int memoryUpdateCounter_ = 0;
 
     static constexpr int UPDATE_INTERVAL_MS = 30;  // ~33fps for smooth playhead

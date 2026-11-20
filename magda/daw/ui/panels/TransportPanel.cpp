@@ -1567,9 +1567,9 @@ void TransportPanel::setCpuUsage(float usage) {
     }
 
     if (cpuValueLabel) {
-        cpuValueLabel->setText(transport::cpuReadoutText(juce::roundToInt(currentCpuUsage * 100.0f),
-                                                         juce::roundToInt(peakCpuUsage * 100.0f)),
-                               juce::dontSendNotification);
+        cpuValueLabel->setText(
+            transport::cpuReadoutText(juce::roundToInt(currentCpuUsage * 100.0f)),
+            juce::dontSendNotification);
     }
     updateCpuTooltip();
     repaint(layout_.cpu);

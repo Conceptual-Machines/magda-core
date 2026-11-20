@@ -19,12 +19,12 @@ std::uint64_t toNanos(std::chrono::steady_clock::duration elapsed) {
 
 }  // namespace
 
-RenderLoad::AheadScope::AheadScope() {
+RenderLoad::AheadScope::AheadScope() : previous_(renderingAhead) {
     renderingAhead = true;
 }
 
 RenderLoad::AheadScope::~AheadScope() {
-    renderingAhead = false;
+    renderingAhead = previous_;
 }
 
 // Track in the high word; the segment, the device plus one and a claimed bit below, so no key is 0.

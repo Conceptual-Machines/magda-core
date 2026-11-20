@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "exec/BlockProfile.hpp"
+#include "exec/RenderLoad.hpp"
 
 namespace magda::engine {
 namespace {
@@ -45,6 +46,11 @@ int widthOf(const RenderPlan& plan) {
 ParallelPlanExecutor::ParallelPlanExecutor(RenderThreadPool* pool) : pool_(pool) {}
 
 void ParallelPlanExecutor::letGoOfPool() {
+    callback_.letGoOfPool();
+    ahead_.letGoOfPool();
+}
+
+void ParallelPlanExecutor::Schedule::letGoOfPool() {
     // A worker can still be inside the last block's takeWork(): render() returns
     // as soon as the block is finished, not as soon as everyone has noticed. It
     // is inside this object while it is, so nothing here may be freed or resized
@@ -54,8 +60,8 @@ void ParallelPlanExecutor::letGoOfPool() {
     // that has not rendered yet. Letting go waits out whatever is in a job right
     // now, and making a publish wait a block for an executor no thread could
     // possibly be inside would be a stall bought for nothing.
-    if (pool_ != nullptr && handedToPool_.load(std::memory_order_relaxed))
-        pool_->release(*this);
+    if (owner_.pool_ != nullptr && handedToPool_.load(std::memory_order_relaxed))
+        owner_.pool_->release(*this);
     handedToPool_.store(false, std::memory_order_relaxed);
 }
 
@@ -103,8 +109,8 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
     }
 
     const auto numOps = plan.ops.size();
-    pending_ = std::vector<std::atomic<std::uint16_t>>(numOps);
-    ready_ = std::make_unique<rigtorp::MPMCQueue<OpId>>(std::max<std::size_t>(1, numOps));
+    callback_.size(numOps);
+    ahead_.size(numOps);
 
     for (std::size_t i = 0; i < numOps; ++i) {
         if (plan.ops[i].kind == OpKind::Output)
@@ -121,36 +127,68 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
     return messages;
 }
 
-void ParallelPlanExecutor::enqueue(OpId op) {
+void ParallelPlanExecutor::Schedule::size(std::size_t numOps) {
+    pending_ = std::vector<std::atomic<std::uint16_t>>(numOps);
+    ready_ = std::make_unique<rigtorp::MPMCQueue<OpId>>(std::max<std::size_t>(1, numOps));
+}
+
+void ParallelPlanExecutor::Schedule::enqueue(OpId op) {
     // Queued before it is counted, so a worker that sees the count finds the op.
     ready_->push(op);
-    pool_->noteQueued(1);
+    if (owner_.pool_ != nullptr)
+        owner_.pool_->noteQueued(1);
 }
 
-void ParallelPlanExecutor::renderInPlanOrder() {
-    for (std::size_t index = 0; index < plan_->ops.size(); ++index)
-        if (const auto op = static_cast<OpId>(index); rendersInDrain(op))
-            renderProfiled(op);
+bool ParallelPlanExecutor::Schedule::givenUp() {
+    if (!abandonable_)
+        return false;
+    if (abandoned_.load(std::memory_order_relaxed))
+        return true;
+    if (!owner_.core_.callbackWaiting())
+        return false;
+    // Sticky: the callback may stop waiting, and a block missing an op must not be published.
+    abandoned_.store(true, std::memory_order_relaxed);
+    return true;
 }
 
-void ParallelPlanExecutor::renderProfiled(OpId op) {
-    const auto kind = plan_->ops[static_cast<std::size_t>(op)].kind;
+void ParallelPlanExecutor::Schedule::renderInPlanOrder() {
+    for (std::size_t index = 0; index < owner_.plan_->ops.size(); ++index) {
+        const auto op = static_cast<OpId>(index);
+        if (!owner_.rendersInDrain(op, side_))
+            continue;
+        if (givenUp())
+            return;
+        renderProfiled(op);
+    }
+}
+
+void ParallelPlanExecutor::Schedule::renderProfiled(OpId op) {
+    // The profile is the callback's (BlockProfile); an ahead op counts as ahead load wherever
+    // it runs.
+    if (slot_ != RenderThreadPool::Slot::callback) {
+        const RenderLoad::AheadScope ahead;
+        owner_.core_.renderOp(op, valueOf(op), block_, *output_);
+        return;
+    }
+    const auto kind = owner_.plan_->ops[static_cast<std::size_t>(op)].kind;
     const ProfileScope timed([kind](auto elapsed) { BlockProfile::addOp(kind, elapsed); });
-    core_.renderOp(op, valueOf(op), block_, *output_);
+    owner_.core_.renderOp(op, valueOf(op), block_, *output_);
 }
 
-void ParallelPlanExecutor::runChain(OpId op) {
+void ParallelPlanExecutor::Schedule::runChain(OpId op) {
+    const auto& plan = *owner_.plan_;
     int ran = 0;
     while (op != INVALID_OP_ID) {
-        if (rendersInDrain(op))
+        // An op given up still releases its consumers, so the block drains and can be abandoned.
+        if (owner_.rendersInDrain(op, side_) && !givenUp())
             renderProfiled(op);
         ++ran;
 
-        const auto first = plan_->consumerOffsets[static_cast<std::size_t>(op)];
-        const auto last = plan_->consumerOffsets[static_cast<std::size_t>(op) + 1];
+        const auto first = plan.consumerOffsets[static_cast<std::size_t>(op)];
+        const auto last = plan.consumerOffsets[static_cast<std::size_t>(op) + 1];
         auto next = INVALID_OP_ID;
         for (auto edge = first; edge < last; ++edge) {
-            const auto consumer = plan_->consumerEdges[static_cast<std::size_t>(edge)];
+            const auto consumer = plan.consumerEdges[static_cast<std::size_t>(edge)];
 
             // Acquire-release: the thread that takes the count to zero has seen everything its
             // other producers wrote, and the queue's release passes it on.
@@ -172,26 +210,28 @@ void ParallelPlanExecutor::runChain(OpId op) {
     remaining_.fetch_sub(ran, std::memory_order_acq_rel);
 }
 
-bool ParallelPlanExecutor::takeOne() {
+bool ParallelPlanExecutor::Schedule::takeOne() {
     auto op = INVALID_OP_ID;
     if (!ready_->try_pop(op))
         return false;
 
-    pool_->noteQueued(-1);
+    if (owner_.pool_ != nullptr)
+        owner_.pool_->noteQueued(-1);
     runChain(op);
     return true;
 }
 
-void ParallelPlanExecutor::finishOnCaller() {
+void ParallelPlanExecutor::Schedule::finishOnCaller() {
     while (remaining_.load(std::memory_order_acquire) > 0)
         if (!takeOne())
             RenderThreadPool::pause();
 }
 
-int ParallelPlanExecutor::startSchedule() {
-    const auto numOps = plan_->ops.size();
+int ParallelPlanExecutor::Schedule::startSchedule() {
+    const auto& plan = *owner_.plan_;
+    const auto numOps = plan.ops.size();
     for (std::size_t i = 0; i < numOps; ++i)
-        pending_[i].store(plan_->dependencyCounts[i], std::memory_order_relaxed);
+        pending_[i].store(plan.dependencyCounts[i], std::memory_order_relaxed);
 
     // Before anything is queued, so no op can finish and count against a total not yet set.
     remaining_.store(static_cast<int>(numOps), std::memory_order_relaxed);
@@ -200,21 +240,21 @@ int ParallelPlanExecutor::startSchedule() {
     // (the MIDI prefix, outputs, taps) only releases its consumers, and a worker woken for it
     // spins through its wait for nothing.
     int renderable = 0;
-    for (const auto op : plan_->initialReadyOps) {
+    for (const auto op : plan.initialReadyOps) {
         enqueue(op);
-        if (rendersInDrain(op))
+        if (owner_.rendersInDrain(op, side_))
             ++renderable;
     }
 
-    if (BlockProfile::enabled()) {
-        const auto ready = static_cast<int>(plan_->initialReadyOps.size());
+    if (BlockProfile::enabled() && slot_ == RenderThreadPool::Slot::callback) {
+        const auto ready = static_cast<int>(plan.initialReadyOps.size());
         BlockProfile::count(BlockProfile::InitialReady, ready);
         BlockProfile::count(BlockProfile::InitialReadyCallerOnly, ready - renderable);
     }
     return renderable;
 }
 
-bool ParallelPlanExecutor::rendersInDrain(OpId op) const {
+bool ParallelPlanExecutor::rendersInDrain(OpId op, int side) const {
     // Two kinds are left for the thread that drove the block, and both for the
     // same reason: each shares a buffer with the others of its kind rather than
     // owning one. Output ops add into the one buffer reaching the hardware, and
@@ -226,7 +266,7 @@ bool ParallelPlanExecutor::rendersInDrain(OpId op) const {
     // because nothing consumes either.
     const auto kind = plan_->ops[static_cast<std::size_t>(op)].kind;
     return kind != OpKind::Output && kind != OpKind::ModSource && kind != OpKind::InsertSend &&
-           !core_.inMidiPrefix(op) && (side_ < 0 || core_.sideOf(op) == side_);
+           !core_.inMidiPrefix(op) && (side < 0 || core_.sideOf(op) == side);
 }
 
 void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,
@@ -266,11 +306,7 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
         core_.resolveParameters(values, start.block);
     }
 
-    block_ = start.block;
-    values_ = &values;
-    applyValues_ = start.applyValues;
-    output_ = &output;
-    renderScheduled();
+    callback_.render(values, start.block, output, start.applyValues, -1, false);
 }
 
 void ParallelPlanExecutor::renderWhole(const PlanValues& values, const BlockInfo& block,
@@ -280,46 +316,67 @@ void ParallelPlanExecutor::renderWhole(const PlanValues& values, const BlockInfo
 
 void ParallelPlanExecutor::renderCallbackSide(const PlanValues& values, const BlockInfo& block,
                                               juce::AudioBuffer<float>& output, bool applyValues) {
+    callback_.render(values, block, output, applyValues, 1, false);
+}
+
+bool ParallelPlanExecutor::renderAheadSide(const PlanValues& values, const BlockInfo& block,
+                                           juce::AudioBuffer<float>& output, bool applyValues) {
+    return ahead_.render(values, block, output, applyValues, 0, true);
+}
+
+void ParallelPlanExecutor::Schedule::renderTail(OpId op) {
+    if (side_ < 0 || owner_.core_.sideOf(op) == side_)
+        owner_.core_.renderOp(op, valueOf(op), block_, *output_);
+}
+
+bool ParallelPlanExecutor::Schedule::render(const PlanValues& values, const BlockInfo& block,
+                                            juce::AudioBuffer<float>& output, bool applyValues,
+                                            int side, bool abandonable) {
     block_ = block;
     values_ = &values;
     applyValues_ = applyValues;
     output_ = &output;
-    side_ = 1;
-    renderScheduled();
-    side_ = -1;
-}
+    side_ = side;
+    abandonable_ = abandonable;
+    abandoned_.store(false, std::memory_order_relaxed);
 
-void ParallelPlanExecutor::renderTail(OpId op) {
-    if (side_ < 0 || core_.sideOf(op) == side_)
-        core_.renderOp(op, valueOf(op), block_, *output_);
-}
-
-void ParallelPlanExecutor::renderScheduled() {
+    const auto profiled = slot_ == RenderThreadPool::Slot::callback;
     {
-        const ProfileScope timed(
-            [](auto elapsed) { BlockProfile::addPhase(BlockProfile::Drain, elapsed); });
-        if (pool_ != nullptr && pool_->numThreads() > 1 && parallelism_ > 1) {
+        const ProfileScope timed([profiled](auto elapsed) {
+            if (profiled)
+                BlockProfile::addPhase(BlockProfile::Drain, elapsed);
+        });
+        auto* pool = owner_.pool_;
+        if (pool != nullptr && pool->numThreads() > 1 && owner_.parallelism_ > 1) {
             const auto ready = startSchedule();
             handedToPool_.store(true, std::memory_order_relaxed);
-            pool_->render(*this, ready);
+            pool->render(*this, ready, slot_);
+        } else if (abandonable) {
+            // Queued even alone, so the callback can help it finish (helpAheadSide).
+            startSchedule();
+            finishOnCaller();
         } else {
             renderInPlanOrder();
         }
     }
-    const ProfileScope tail(
-        [](auto elapsed) { BlockProfile::addPhase(BlockProfile::SerialTail, elapsed); });
+    if (abandoned_.load(std::memory_order_relaxed))
+        return false;
+
+    const ProfileScope timed([profiled](auto elapsed) {
+        if (profiled)
+            BlockProfile::addPhase(BlockProfile::SerialTail, elapsed);
+    });
 
     // The graph has drained, so this thread is the only one with anything to
     // do. In plan order: the taps detect one at a time, and the sum reaching
     // the hardware is compiled like every other sum in the plan.
-    for (const auto op : modSourceOps_)
-        renderTail(op);
-
-    for (const auto op : insertSendOps_)
-        renderTail(op);
-
-    for (const auto op : outputOps_)
-        renderTail(op);
+    for (const auto* ops : {&owner_.modSourceOps_, &owner_.insertSendOps_, &owner_.outputOps_})
+        for (const auto op : *ops) {
+            if (givenUp())
+                return false;
+            renderTail(op);
+        }
+    return true;
 }
 
 }  // namespace magda::engine

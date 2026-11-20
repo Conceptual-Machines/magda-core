@@ -473,6 +473,31 @@ TEST_CASE("A handoff ring hands back MIDI, fractions and panic as written",
     CHECK(ring.canWrite(9, true));
 }
 
+TEST_CASE("The callback helps only a writer rendering the block as it needs it",
+          "[engine][plan][1898]") {
+    // A block rendered for another moment is discarded, so helping it finish is wasted time.
+    using Rendering = magda::engine::HandoffRing::Rendering;
+    const auto stamp = magda::engine::BlockStamp::of;
+    magda::engine::HandoffRing ring;
+    BlockInfo seven;
+    seven.numSamples = kBlock;
+    auto shorter = seven;
+    shorter.numSamples = kBlock / 2;
+
+    CHECK(ring.rendering(7, stamp(seven)) == Rendering::notKnown);
+    ring.beginWriting(7);
+    CHECK(ring.rendering(7, stamp(seven)) == Rendering::notKnown);
+    ring.writingAs(stamp(seven));
+    CHECK(ring.rendering(7, stamp(seven)) == Rendering::asNeeded);
+    CHECK(ring.rendering(7, stamp(shorter)) == Rendering::otherwise);
+    CHECK(ring.rendering(8, stamp(seven)) == Rendering::notKnown);
+
+    auto negativeZero = seven;
+    negativeZero.beats.start = -0.0;
+    REQUIRE(stamp(negativeZero) == stamp(seven));
+    CHECK(stamp(negativeZero).key() == stamp(seven).key());
+}
+
 TEST_CASE("A block the ahead side never reached renders whole", "[engine][plan][1898]") {
     constexpr int kBlocks = 6;
     const auto whole = renderLagged(kBlocks);

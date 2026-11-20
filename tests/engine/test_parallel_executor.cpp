@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Conceptual Machines
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <condition_variable>
@@ -12,10 +13,12 @@
 #include <thread>
 #include <vector>
 
+#include "../../magda/daw/engine/host/RenderLoadShares.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
 #include "exec/ParallelPlanExecutor.hpp"
 #include "exec/PlanExecutor.hpp"
+#include "exec/RenderLoad.hpp"
 #include "exec/RenderThreadPool.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanDump.hpp"
@@ -52,6 +55,7 @@ using magda::engine::PlanBindings;
 using magda::engine::PlanExecutor;
 using magda::engine::PlanValues;
 using magda::engine::RenderContext;
+using magda::engine::RenderLoad;
 using magda::engine::RenderPlan;
 using magda::engine::RenderThreadPool;
 
@@ -899,6 +903,115 @@ TEST_CASE("A block split for render-ahead renders on the pool what the whole blo
     REQUIRE(split.samples.size() == reference.samples.size());
     CHECK(firstDifference(reference.samples, split.samples) == -1);
     CHECK(split.meters == reference.meters);
+}
+
+TEST_CASE("The ahead side of a block runs across the pool", "[engine][exec][parallel][3361]") {
+    Meeting meeting;
+    auto scene = liveRendezvousScene(meeting);
+    scene.options.sessionTracks = {3};
+    Rig rig(std::move(scene));
+    guard(rig);
+    RenderThreadPool pool(3, false);
+    ParallelPlanExecutor executor(&pool);
+    REQUIRE(
+        executor.prepare(rig.plan, rig.scene.bindings, rig.context, nullptr, &rig.values).empty());
+    REQUIRE(executor.reference().aheadTracks() == std::vector<TrackId>{1, 2});
+    RenderLoad load;
+    executor.setRenderLoad(&load);
+
+    juce::AudioBuffer<float> ahead(2, kBlockSize);
+    {
+        const RenderLoad::AheadScope renderAhead;
+        REQUIRE(executor.processSide(0, 0, rig.values, blockAt(0, kBlockSize), ahead));
+    }
+
+    CHECK(meeting.mostAtOnce == 2);
+    CHECK(meeting.met);
+
+    // At least one of the two met on a worker, and still counts as ahead load.
+    load.addBudget(kBlockSize, rig.context.sampleRate);
+    RenderLoadShares shares;
+    REQUIRE(shares.update(load));
+    for (TrackId id = 1; id <= 2; ++id) {
+        CHECK(shares.track(id).ahead > 0.0);
+        CHECK(shares.track(id).callback == 0.0);
+    }
+}
+
+namespace {
+
+/// Holds the ahead side inside its first block until the callback waits to claim it.
+class HoldUntilClaimed final : public EngineDevice {
+  public:
+    void process(DeviceBlock&) override {
+        if (held_.exchange(true))
+            return;
+        entered.store(true);
+        const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (!executor->reference().callbackWaiting() &&
+               std::chrono::steady_clock::now() < until) {
+        }
+    }
+
+    const ParallelPlanExecutor* executor = nullptr;
+    std::atomic<bool> entered{false};
+
+  private:
+    std::atomic<bool> held_{false};
+};
+
+}  // namespace
+
+TEST_CASE("The callback's claim stops the ahead side between ops",
+          "[engine][exec][parallel][3361]") {
+    for (const bool pooled : {true, false}) {
+        INFO("pooled " << pooled);
+        Scene scene;
+        HoldUntilClaimed* hold = nullptr;
+        GainDevice* after = nullptr;
+        for (TrackId id = 1; id <= 3; ++id) {
+            auto track = makeTrack(id);
+            track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(900 + id)));
+            if (id == 1)
+                track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(910)));
+            scene.tracks.push_back(track);
+            scene.bindings.clipAudio[id] = scene.own(std::make_unique<RampSource>(id));
+        }
+        auto holdDevice = std::make_unique<HoldUntilClaimed>();
+        hold = holdDevice.get();
+        scene.bindings.devices[DeviceKey{901}] = scene.own(std::move(holdDevice));
+        auto afterDevice = std::make_unique<GainDevice>(0.5f);
+        after = afterDevice.get();
+        scene.bindings.devices[DeviceKey{910}] = scene.own(std::move(afterDevice));
+        scene.bindings.devices[DeviceKey{902}] = scene.own(std::make_unique<GainDevice>(0.5f));
+        scene.bindings.devices[DeviceKey{903}] = scene.own(std::make_unique<GainDevice>(0.5f));
+        scene.options.sessionTracks = {3};
+
+        Rig rig(std::move(scene));
+        guard(rig);
+        RenderThreadPool pool(3, false);
+        ParallelPlanExecutor executor(pooled ? &pool : nullptr);
+        REQUIRE(executor.prepare(rig.plan, rig.scene.bindings, rig.context, nullptr, &rig.values)
+                    .empty());
+        hold->executor = &executor;
+
+        juce::AudioBuffer<float> ahead(2, kBlockSize);
+        std::atomic<bool> published{true};
+        std::thread aheadThread([&] {
+            published.store(executor.processSide(0, 0, rig.values, blockAt(0, kBlockSize), ahead));
+        });
+        while (!hold->entered.load())
+            std::this_thread::yield();
+        REQUIRE(executor.processSide(1, 0, rig.values, blockAt(0, kBlockSize), rig.output));
+        aheadThread.join();
+
+        // A claim that timed out (a preempted ahead thread) leaves the block to the ahead side.
+        const auto missed = executor.reference().handoffMisses();
+        if (missed == 0) {
+            CHECK_FALSE(published.load());
+            CHECK(after->processedBlocks == 1);  // the callback's whole render, not the ahead side
+        }
+    }
 }
 
 namespace {

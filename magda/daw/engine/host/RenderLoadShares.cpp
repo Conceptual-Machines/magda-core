@@ -27,6 +27,7 @@ bool RenderLoadShares::update(const engine::RenderLoad& load) {
 
     shares_.clear();
     tracks_.clear();
+    all_ = {};
     load.forEach([&](const engine::RenderLoad::Entry& entry) {
         const Key key{entry.track, entry.segment, entry.device};
         auto& before = previous_[key];
@@ -38,6 +39,8 @@ bool RenderLoadShares::update(const engine::RenderLoad& load) {
         auto& track = tracks_[entry.track];
         track.callback += share.callback;
         track.ahead += share.ahead;
+        all_.callback += share.callback;
+        all_.ahead += share.ahead;
     });
     return true;
 }

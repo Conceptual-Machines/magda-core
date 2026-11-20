@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <set>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -13,6 +14,7 @@
 #include "core/TrackInfo.hpp"
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
+#include "exec/RenderThreadPool.hpp"
 #include "exec/RuntimeStateStore.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanHandoff.hpp"
@@ -141,17 +143,22 @@ std::shared_ptr<const ClipSnapshot> everyBeat(int beats) {
 
 struct Rig {
     Factory factory;
-    EngineSession session{factory};
+    std::unique_ptr<RenderThreadPool> pool;
+    EngineSession session;
 
-    explicit Rig(bool played = false, bool pressKey = false) {
+    explicit Rig(bool played = false, bool pressKey = false, bool playing = true,
+                 bool inBackground = false, int threads = 0)
+        : pool(threads > 0 ? std::make_unique<RenderThreadPool>(threads, false) : nullptr),
+          session(factory, pool.get()),
+          inBackground(inBackground) {
         factory.clips = &session.clipFeed();
         factory.pressKey = pressKey;
-        session.setRenderAhead(3, false);
+        session.setRenderAhead(3, inBackground);
         session.publishClips(everyBeat(64));
         publish(played);
         TransportSnapshot transport;
         transport.request.generation = 1;
-        transport.request.playing = true;
+        transport.request.playing = playing;
         session.publishTransport(transport);
     }
 
@@ -170,13 +177,19 @@ struct Rig {
                     .published);
     }
 
-    void roll(int callbacks) {
+    void roll(int callbacks, bool paced = true) {
         juce::AudioBuffer<float> out(2, kBlockSize);
         for (int i = 0; i < callbacks; ++i) {
             session.process(kBlockSize, out);
-            session.renderAheadOnce();
+            if (!inBackground) {
+                session.renderAheadOnce();
+                continue;
+            }
+            while (paced && !session.renderAheadCaughtUp())
+                std::this_thread::yield();
         }
     }
+    bool inBackground;
 };
 
 }  // namespace
@@ -245,4 +258,32 @@ TEST_CASE("A key held as the selection moves off its instrument is released, and
     rig.roll(100);
     CHECK(rig.factory.heard.keyOffs.size() == 2);
     CHECK(rig.factory.heard.panics.empty());
+}
+
+TEST_CASE("The first note after playing from stopped is struck once and not cut",
+          "[engine][1898]") {
+    // The ahead thread starts the roll's second block from no lead; the callback finding it
+    // inside that block helps it finish rather than taking it over as a jump.
+    for (const int threads : {0, 3}) {
+        for (int trial = 0; trial < 50; ++trial) {
+            Rig rig(false, false, /*playing=*/false, /*inBackground=*/true, threads);
+            rig.roll(50);
+            rig.factory.heard = {};
+            TransportSnapshot transport;
+            transport.request.generation = 2;
+            transport.request.playing = true;
+            rig.session.publishTransport(transport);
+            const int perBeat = static_cast<int>(kRate / 2.0) / kBlockSize;
+            // Back to back, faster than real time, so the thread is behind from the start.
+            rig.roll(4, /*paced=*/false);
+            rig.roll(3 * perBeat);
+
+            INFO("threads " << threads << ", trial " << trial);
+            const auto& heard = rig.factory.heard;
+            REQUIRE(heard.noteOns.size() == 4);
+            CHECK(heard.noteOns[0] == 0);
+            CHECK(heard.noteOns[1] == static_cast<std::int64_t>(kRate / 2.0));
+            CHECK(heard.panics.empty());
+        }
+    }
 }

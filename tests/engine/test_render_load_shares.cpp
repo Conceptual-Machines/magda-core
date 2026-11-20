@@ -50,6 +50,8 @@ TEST_CASE("RenderLoadShares turns two reads into each track's share", "[engine][
     CHECK(shares.track(1).ahead == 0.0);
     CHECK(shares.track(2).ahead == Catch::Approx(0.3));
     CHECK(shares.track(2).callback == 0.0);
+    CHECK(shares.all().callback == Catch::Approx(0.3));
+    CHECK(shares.all().ahead == Catch::Approx(0.3));
 
     // The next read counts only what came after the first.
     load.addBudget(480, kRate);
@@ -61,6 +63,23 @@ TEST_CASE("RenderLoadShares turns two reads into each track's share", "[engine][
     // No audio time, no new shares.
     CHECK_FALSE(shares.update(load));
     CHECK(shares.track(1).callback == Catch::Approx(0.05));
+}
+
+TEST_CASE("An ahead scope inside another leaves the thread rendering ahead",
+          "[engine][cpu][3361]") {
+    using std::chrono::microseconds;
+    RenderLoad load;
+    RenderLoadShares shares;
+    load.addBudget(480, kRate);
+    {
+        const RenderLoad::AheadScope thread;
+        { const RenderLoad::AheadScope op; }
+        load.addOp(opOf(OpKind::Device, 2, 8), microseconds(1000));
+    }
+    load.addOp(opOf(OpKind::Device, 1, 7), microseconds(1000));
+    REQUIRE(shares.update(load));
+    CHECK(shares.track(2).ahead == Catch::Approx(0.1));
+    CHECK(shares.track(1).callback == Catch::Approx(0.1));
 }
 
 TEST_CASE("RenderLoad files the master and devices on other chains apart", "[engine][cpu][3357]") {

@@ -319,7 +319,18 @@ class PlanExecutor {
         /// The callback side's ops, once its MIDI prefix and parameters are resolved.
         virtual void renderCallbackSide(const PlanValues& values, const BlockInfo& block,
                                         juce::AudioBuffer<float>& output, bool applyValues) = 0;
+        /// The ahead side's, likewise. False when the callback's claim stopped it between ops.
+        virtual bool renderAheadSide(const PlanValues& values, const BlockInfo& block,
+                                     juce::AudioBuffer<float>& output, bool applyValues) = 0;
+        /// Callback: renders an op of the ahead side's block in hand on this thread. False when
+        /// none is ready.
+        virtual bool helpAheadSide() = 0;
     };
+
+    /// Whether the callback is waiting to claim the block the ahead side is writing.
+    bool callbackWaiting() const {
+        return handoffs_.callbackWaiting();
+    }
 
     /// Null renders the callback's side here, one op after another.
     void setCallbackRenderer(CallbackRenderer* renderer) {
@@ -954,10 +965,6 @@ class PlanExecutor {
     /// a jump, and each MIDI handoff ends the notes that crossed it.
     bool discontinuousAhead_ = false;
 
-    /// From a discard until a block is heard split again; callback thread only. A writer that
-    /// starts from no lead rarely finishes in the grace, which the spin then only takes from it.
-    bool aheadRecovering_ = false;
-
     /// Per MIDI handoff, what crossed it to the callback; callback thread only. Shared with
     /// the executor taking over, like a delay line, and used by one epoch at a time.
     std::vector<int> crossedForOp_;
@@ -970,6 +977,10 @@ class PlanExecutor {
     void trackCrossing(std::size_t op, const juce::MidiBuffer& midi, bool panic);
 
     /// Handoff @p op's input into the ahead block's entry; silence when not @p required.
+    /// Callback: helps the writer holding @p sequence finish it, idling no later than
+    /// @p finishBy. Answers what the block's entry then holds.
+    HandoffRing::Published helpWriter(std::uint64_t sequence, const BlockStamp& stamp,
+                                      std::chrono::steady_clock::time_point finishBy);
     void writeHandoff(std::size_t op, int numSamples, bool required);
 
     /// renderOp without the timing.

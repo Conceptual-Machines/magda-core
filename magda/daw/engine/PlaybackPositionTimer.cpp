@@ -113,8 +113,8 @@ void PlaybackPositionTimer::timerCallback() {
         cpuUpdateCounter_ = 0;
         if (auto* audioIO = engine_.getAudioIO()) {
             const auto status = audioIO->status();
-            onCpuUsageUpdate(static_cast<float>(status.cpuUsage), status.xruns,
-                             status.interfaceName, status.sampleRate, status.bufferSize);
+            onCpuUsageUpdate(static_cast<float>(cpu_.sample()), status.xruns, status.interfaceName,
+                             status.sampleRate, status.bufferSize);
         }
     }
 }

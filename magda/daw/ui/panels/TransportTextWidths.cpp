@@ -14,9 +14,7 @@
 
 namespace magda::daw::ui::transport {
 
-juce::String cpuReadoutText(int averagePercent, int peakPercent) {
-    if (peakPercent > averagePercent + kCpuPeakMargin)
-        return juce::String(averagePercent) + "/" + juce::String(peakPercent) + "%";
+juce::String cpuReadoutText(int averagePercent) {
     return juce::String(averagePercent) + "%";
 }
 
@@ -80,13 +78,9 @@ TextWidths measureTextWidths(int barDigits, int numerator) {
     text.timeSigNumerator = widthOf(headlineFont, juce::String(MAX_TIME_SIGNATURE_VALUE) + "/");
     text.timeSigDenominator = widthOf(headlineFont, juce::String(MAX_TIME_SIGNATURE_VALUE));
     text.cpuTitle = widthOf(cpuTitleFont, tr("transport.cpu.cpu"));
-    // The readout gains a second number once the peak runs ahead of the average,
-    // so measure every digit-count combination it can reach rather than just
-    // "100%". A run of the widest digit stands in for each length.
+    // A run of the widest digit stands in for each length.
     for (int average : {8, 88, 100})
-        for (int peak : {8, 88, 100})
-            text.cpuValue =
-                juce::jmax(text.cpuValue, widthOf(cpuValueFont, cpuReadoutText(average, peak)));
+        text.cpuValue = juce::jmax(text.cpuValue, widthOf(cpuValueFont, cpuReadoutText(average)));
     text.gridToggle =
         juce::jmax(widthOf(toggleFont, kAutoGridCaption), widthOf(toggleFont, kSnapCaption));
     const auto rangeCaptionFont = fonts.getUIFontBold(kRangeCaptionFontSize);

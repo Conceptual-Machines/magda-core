@@ -44,8 +44,6 @@ class RenderThreadPool::Worker final : public juce::Thread {
             joinWorkgroupIfChanged(token);
 
             if (pool_.takeWork(*this)) {
-                if (BlockProfile::enabled())
-                    BlockProfile::count(BlockProfile::ChainsOnWorkers);
                 wokenEmpty_ = false;
             } else {
                 if (wokenEmpty_ && BlockProfile::enabled())
@@ -101,7 +99,7 @@ void RenderThreadPool::render(Job& job, int ready, Slot slot) {
     jobs_[static_cast<std::size_t>(slot)].store(&job, std::memory_order_seq_cst);
 
     const auto signalled = std::clamp(ready, 0, numThreads() - 1);
-    if (BlockProfile::enabled())
+    if (BlockProfile::enabled() && slot == Slot::callback)
         BlockProfile::count(BlockProfile::WorkersSignalled, signalled);
     if (signalled > 0)
         semaphore_.signal(signalled);
@@ -146,8 +144,13 @@ bool RenderThreadPool::takeWork(Worker& worker) {
     if (queued_.load(std::memory_order_acquire) <= 0)
         return false;
 
-    return takeFrom(jobs_[static_cast<std::size_t>(Slot::callback)], worker) ||
-           takeFrom(jobs_[static_cast<std::size_t>(Slot::ahead)], worker);
+    // The profile is the callback's, so only its chains are counted.
+    if (takeFrom(jobs_[static_cast<std::size_t>(Slot::callback)], worker)) {
+        if (BlockProfile::enabled())
+            BlockProfile::count(BlockProfile::ChainsOnWorkers);
+        return true;
+    }
+    return takeFrom(jobs_[static_cast<std::size_t>(Slot::ahead)], worker);
 }
 
 bool RenderThreadPool::takeFrom(std::atomic<Job*>& slot, Worker& worker) {
@@ -179,9 +182,46 @@ void RenderThreadPool::startRenderThread(juce::Thread& thread) {
     thread.startThread(juce::Thread::Priority::highest);
 }
 
+#if JUCE_WINDOWS
+namespace {
+
+/// The calling thread's MMCSS "Pro Audio" task, reverted when the thread ends (#3369).
+struct ProAudioTask {
+    using Set = HANDLE(WINAPI*)(LPCWSTR, LPDWORD);
+    using Revert = BOOL(WINAPI*)(HANDLE);
+
+    ProAudioTask() {
+        auto* avrt = LoadLibraryW(L"avrt.dll");
+        if (avrt == nullptr)
+            return;
+        const auto set =
+            reinterpret_cast<Set>(GetProcAddress(avrt, "AvSetMmThreadCharacteristicsW"));
+        revert = reinterpret_cast<Revert>(GetProcAddress(avrt, "AvRevertMmThreadCharacteristics"));
+        DWORD taskIndex = 0;
+        if (set != nullptr && revert != nullptr)
+            handle = set(L"Pro Audio", &taskIndex);
+    }
+
+    ~ProAudioTask() {
+        if (handle != nullptr)
+            revert(handle);
+    }
+
+    ProAudioTask(const ProAudioTask&) = delete;
+    ProAudioTask& operator=(const ProAudioTask&) = delete;
+
+    HANDLE handle = nullptr;
+    Revert revert = nullptr;
+};
+
+}  // namespace
+#endif
+
 void RenderThreadPool::raiseToRenderPriority() {
 #if JUCE_WINDOWS
+    // The fallback when MMCSS is unavailable; a registered task schedules above it.
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+    thread_local const ProAudioTask task;
 #elif !JUCE_MAC
     sched_param param{};
     param.sched_priority = sched_get_priority_max(SCHED_RR);
