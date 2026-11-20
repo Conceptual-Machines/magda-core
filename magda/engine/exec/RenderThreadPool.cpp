@@ -23,21 +23,6 @@
 
 namespace magda::engine {
 
-namespace {
-
-/// Raises the calling thread to render-worker priority.
-void setRenderWorkerPriority() {
-#if JUCE_WINDOWS
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-#else
-    sched_param param{};
-    param.sched_priority = sched_get_priority_max(SCHED_RR);
-    pthread_setschedparam(pthread_self(), SCHED_RR, &param);
-#endif
-}
-
-}  // namespace
-
 class RenderThreadPool::Worker final : public juce::Thread {
   public:
     Worker(RenderThreadPool& pool, int index, bool realtime)
@@ -49,7 +34,7 @@ class RenderThreadPool::Worker final : public juce::Thread {
         const juce::ScopedNoDenormals noDenormals;
 
         if (realtime_)
-            setRenderWorkerPriority();
+            raiseToRenderPriority();
 
         // On this thread for as long as it runs: a token has to die on the thread it joined.
         juce::WorkgroupToken token;
@@ -81,17 +66,7 @@ class RenderThreadPool::Worker final : public juce::Thread {
 
   private:
     void joinWorkgroupIfChanged(juce::WorkgroupToken& token) {
-        const auto generation = pool_.workgroupGeneration_.load(std::memory_order_acquire);
-        if (generation == workgroupSeen_)
-            return;
-
-        juce::AudioWorkgroup workgroup;
-        {
-            const juce::SpinLock::ScopedLockType lock(pool_.workgroupLock_);
-            workgroup = pool_.workgroup_;
-        }
-        workgroup.join(token);
-        workgroupSeen_ = generation;
+        pool_.joinWorkgroupIfChanged(token, workgroupSeen_);
     }
 
     RenderThreadPool& pool_;
@@ -184,6 +159,31 @@ bool RenderThreadPool::takeWork(Worker& worker) {
     const auto took = job->takeOne();
     job->workersInside.fetch_sub(1, std::memory_order_seq_cst);
     return took;
+}
+
+void RenderThreadPool::raiseToRenderPriority() {
+#if JUCE_WINDOWS
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+#else
+    sched_param param{};
+    param.sched_priority = sched_get_priority_max(SCHED_RR);
+    pthread_setschedparam(pthread_self(), SCHED_RR, &param);
+#endif
+}
+
+void RenderThreadPool::joinWorkgroupIfChanged(juce::WorkgroupToken& token,
+                                              std::uint64_t& seen) const {
+    const auto generation = workgroupGeneration_.load(std::memory_order_acquire);
+    if (generation == seen)
+        return;
+
+    juce::AudioWorkgroup workgroup;
+    {
+        const juce::SpinLock::ScopedLockType lock(workgroupLock_);
+        workgroup = workgroup_;
+    }
+    workgroup.join(token);
+    seen = generation;
 }
 
 void RenderThreadPool::configure(double blockSeconds, juce::AudioWorkgroup workgroup) {

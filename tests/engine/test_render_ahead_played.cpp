@@ -200,6 +200,32 @@ TEST_CASE("Selecting an instrument neither repeats nor drops its notes", "[engin
     CHECK(heard.panics.empty());
 }
 
+TEST_CASE("A tempo change neither panics nor repeats an instrument rendered ahead",
+          "[engine][1898]") {
+    // A tempo drag publishes a transport per step; the blocks rendered ahead at the old tempo
+    // are heard rather than thrown away as a jump.
+    Rig rig;
+    const int perBeat = static_cast<int>(kRate / 2.0) / kBlockSize;
+    rig.roll(perBeat / 2);
+    for (int step = 1; step <= 10; ++step) {
+        TransportSnapshot transport;
+        transport.tempo = magda::engine::TempoMap({{0.0, 120.0 + 2.0 * step, 0.0f}}, {{0.0, 4, 4}});
+        transport.request.generation = 1;
+        transport.request.playing = true;
+        rig.session.publishTransport(transport);
+        // Faster than the look-ahead drains as well as slower, as a tempo drag goes.
+        rig.roll(step % 3);
+    }
+    rig.roll(4 * perBeat);
+
+    const auto& heard = rig.factory.heard;
+    const std::set<std::int64_t> unique(heard.noteOns.begin(), heard.noteOns.end());
+    CHECK(heard.noteOns.size() >= 4);
+    CHECK(unique.size() == heard.noteOns.size());
+    CHECK(heard.panics.empty());
+    CHECK(rig.session.renderAheadDiscards() == 0);
+}
+
 TEST_CASE("A key held as the selection moves off its instrument is released, and only it",
           "[engine][1898]") {
     Rig rig(/*played=*/true, /*pressKey=*/true);

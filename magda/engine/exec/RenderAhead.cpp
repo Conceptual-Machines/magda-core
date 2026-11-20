@@ -10,11 +10,14 @@
 #include "clip/ClipStreamFeed.hpp"
 #include "exec/AheadLaunches.hpp"
 #include "exec/ParallelPlanExecutor.hpp"
+#include "exec/RenderThreadPool.hpp"
 
 namespace magda::engine {
 
-RenderAhead::RenderAhead(bool runInBackground)
-    : juce::Thread("MAGDA render ahead"), runsInBackground_(runInBackground) {
+RenderAhead::RenderAhead(bool runInBackground, const RenderThreadPool* scheduling)
+    : juce::Thread("MAGDA render ahead"),
+      runsInBackground_(runInBackground),
+      scheduling_(scheduling) {
     if (runsInBackground_)
         startThread(juce::Thread::Priority::high);
 }
@@ -44,7 +47,17 @@ void RenderAhead::setValues(std::shared_ptr<const PlanValues> values) {
     values_ = std::move(values);
 }
 
-void RenderAhead::setTransport(std::shared_ptr<const TransportSnapshot> transport) {
+std::uint64_t RenderAhead::firstUnrendered() {
+    decltype(clock_)::ScopedAccess<farbot::ThreadType::nonRealtime> clock(clock_);
+    return std::max(rendered_, clock->valid ? clock->nextSequence : 0);
+}
+
+std::uint64_t RenderAhead::firstPending() {
+    decltype(clock_)::ScopedAccess<farbot::ThreadType::nonRealtime> clock(clock_);
+    return clock->valid ? clock->nextSequence : 0;
+}
+
+void RenderAhead::setTransport(std::shared_ptr<const SequencedTransport> transport) {
     const std::lock_guard<std::mutex> guard(lock_);
     transport_ = std::move(transport);
 }
@@ -86,7 +99,7 @@ int RenderAhead::renderOnce() {
 
     Epoch epoch;
     std::shared_ptr<const PlanValues> values;
-    std::shared_ptr<const TransportSnapshot> transport;
+    std::shared_ptr<const SequencedTransport> transport;
     std::shared_ptr<const ClipSnapshot> clips;
     const ClipStreamFeed* streamFeed = nullptr;
     int depth = 1;
@@ -134,7 +147,8 @@ int RenderAhead::renderOnce() {
     auto core = clock.core;
     auto sequence = clock.nextSequence;
     while (sequence < limit) {
-        const auto segments = core.advance(*transport, clock.sampleRate, clock.numSamples);
+        const auto segments =
+            core.advance(transport->at(sequence), clock.sampleRate, clock.numSamples);
         if (segments.empty())
             break;
         for (const auto& segment : segments) {
@@ -180,8 +194,16 @@ int RenderAhead::renderOnce() {
 }
 
 void RenderAhead::run() {
+    if (scheduling_ != nullptr)
+        RenderThreadPool::raiseToRenderPriority();
+    // A token has to die on the thread it joined.
+    juce::WorkgroupToken token;
+    std::uint64_t workgroupSeen = 0;
+
     auto seen = wakes_.load(std::memory_order_acquire);
     while (!stopping_.load(std::memory_order_acquire)) {
+        if (scheduling_ != nullptr)
+            scheduling_->joinWorkgroupIfChanged(token, workgroupSeen);
         renderOnce();
         served_.store(seen, std::memory_order_release);
         wakes_.wait(seen, std::memory_order_acquire);

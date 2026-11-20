@@ -118,6 +118,13 @@ class RenderThreadPool {
      */
     void configure(double blockSeconds, juce::AudioWorkgroup workgroup);
 
+    /// The calling thread's scheduling raised to a render worker's. Once, on that thread.
+    static void raiseToRenderPriority();
+
+    /// Joins the calling thread to the device's workgroup when it changed since @p seen. Each
+    /// round, with a @p token that lives on that thread.
+    void joinWorkgroupIfChanged(juce::WorkgroupToken& token, std::uint64_t& seen) const;
+
   private:
     class Worker;
 
@@ -131,7 +138,7 @@ class RenderThreadPool {
     std::atomic<int> queued_{0};
     moodycamel::LightweightSemaphore semaphore_;
 
-    juce::SpinLock workgroupLock_;
+    mutable juce::SpinLock workgroupLock_;
     juce::AudioWorkgroup workgroup_;
     std::atomic<std::uint64_t> workgroupGeneration_{0};
 
