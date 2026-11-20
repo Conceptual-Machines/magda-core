@@ -778,5 +778,20 @@
     "section.device": "设备",
     "label.preview_output": "试听浏览器文件的输出",
     "status.channels": "{0} 入 · {1} 出"
+  },
+  "cpu_load": {
+    "title": "",
+    "callback": "",
+    "ahead": "",
+    "other": "",
+    "last_30s": "",
+    "where_callback": "",
+    "where_ahead": "",
+    "where_both": "",
+    "devices": "",
+    "armed": "",
+    "monitoring": "",
+    "in_editor": "",
+    "latency": ""
   }
 }
