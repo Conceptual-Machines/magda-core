@@ -13,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "../../audio/DeviceMeters.hpp"
@@ -276,6 +277,9 @@ class EngineHost {
     juce::String formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
                                        float normalised) const;
 
+    /** @brief The latency the device at @p devicePath declares, in seconds. Message thread. */
+    double deviceLatencySeconds(const ChainNodePath& devicePath) const;
+
     /** @brief Every parameter the plugin at @p devicePath reports (#2629). */
     HostParameters describeDeviceParameters(const ChainNodePath& devicePath) const;
 
@@ -296,6 +300,9 @@ class EngineHost {
     /// Moves whenever what renderedDevice() answers may have changed: every publish, and a
     /// project closing. Message thread.
     std::uint64_t publishCount() const;
+
+    /// The live session's render-ahead misses and discards; zeros without one. Message thread.
+    std::pair<int, std::uint64_t> renderAheadCounters() const;
 
     /// @brief Rewrites every parameter of the MAGDA device at @p devicePath on its next block.
     /// For a state restored onto the rendered instance, which resets its parameters.

@@ -133,6 +133,22 @@
               ],
               "minimum": 0
             },
+            "renderAheadMisses": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "renderAheadDiscards": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 2147483647
+            },
             "problemCoverage": {
               "type": "string",
               "enum": [
@@ -187,6 +203,8 @@
             "xrunCount",
             "dropoutCount",
             "callbackLoad",
+            "renderAheadMisses",
+            "renderAheadDiscards",
             "problemCoverage",
             "problems",
             "discardedProblemCount"

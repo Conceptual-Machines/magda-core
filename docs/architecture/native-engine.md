@@ -348,6 +348,35 @@ in compiled order rather than in the order its inputs finished, and buffers are 
 over the dependency graph rather than over the op list. The schedule costs nothing at run time,
 because the dependency counts were baked into the plan when it was compiled.
 
+### Rendering ahead
+
+Most of a project does not need to render at the moment the device asks for it. The render-ahead
+thread renders those tracks about 20 ms early (rounded up to whole blocks) and leaves each block in
+a handoff ring. The callback renders only what is being played and reads the rest from the ring
+([#1898](https://github.com/Conceptual-Machines/magda-core/issues/1898)).
+
+A track renders at the callback when someone may be playing it (`tracksBeingPlayed`):
+
+- it is record-armed or monitoring its input;
+- it holds the clip open in the expanded editor (piano roll, Drum Grid, chord or waveform), where
+  auditions come from;
+- it holds the selected device or chain node.
+
+A track also renders at the callback when it records into a session slot, holds a session clip
+that launches unquantized, or sends MIDI to hardware. Every other track renders ahead. A selected track header on its own does
+not move a track, because the keyboard reaches a track only through its arm or monitor. Nor does
+a selected clip or note selection while the editor is collapsed.
+
+Moving a track between the two sides publishes a new plan. In that plan, a handoff sits between
+each track that renders ahead and the mix that reads it, and the compensation delay for that track
+sits in front of the handoff. The latency pass looks through handoffs to size that delay, so a
+track keeps the same compensation on either side. If it did not, every switch next to a latent
+device (a lookahead limiter) would move that track by the device's latency.
+
+The CPU readout measures the audio callback only. Work done on the render-ahead thread is not in
+it. So the readout drops when the selection moves to a track with no instrument: everything
+then renders ahead, and the callback only reads the ring and mixes. The total work is the same.
+
 ---
 
 ## 6. How a clip plays

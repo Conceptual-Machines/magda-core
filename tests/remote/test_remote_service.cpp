@@ -75,6 +75,8 @@ TEST_CASE("Diagnostic reads are bounded, schema-valid, and revision neutral",
                            {"xrunCount", 2},
                            {"dropoutCount", juce::var()},
                            {"callbackLoad", 0.25},
+                           {"renderAheadMisses", 0},
+                           {"renderAheadDiscards", 1},
                            {"problemCoverage", "audioIoObservations"},
                            {"problems", juce::Array<juce::var>{}},
                            {"discardedProblemCount", 0}});

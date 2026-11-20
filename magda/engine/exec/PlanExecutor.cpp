@@ -70,6 +70,38 @@ std::map<DeviceKey, std::set<OpKey>> midiBehindDevices(const RenderPlan& plan) {
     return behind;
 }
 
+/// Whether every MIDI source behind @p key in @p plan is @p source, as for the delay on its edge.
+bool carriesOnly(const RenderPlan& plan, const OpKey& key, const OpKey& source) {
+    std::vector<std::size_t> pending;
+    for (std::size_t i = 0; i < plan.ops.size(); ++i)
+        if (plan.ops[i].key == key)
+            pending.push_back(i);
+    std::vector<char> seen(plan.ops.size(), 0);
+    auto reached = false;
+    while (!pending.empty()) {
+        const auto id = pending.back();
+        pending.pop_back();
+        if (std::exchange(seen[id], static_cast<char>(1)) != 0)
+            continue;
+        const auto& op = plan.ops[id];
+        if (op.key == source) {
+            reached = true;
+            continue;
+        }
+        auto fed = false;
+        for (const auto& input : op.inputs)
+            if (input.valid() &&
+                plan.ops[static_cast<std::size_t>(input.op)]
+                        .outputs[static_cast<std::size_t>(input.port)] == SignalKind::Midi) {
+                pending.push_back(static_cast<std::size_t>(input.op));
+                fed = true;
+            }
+        if (!fed)
+            return false;
+    }
+    return reached;
+}
+
 /// Per-channel gain for a stereo pair. Anything wider alternates, which keeps
 /// the pairs correct if a device ever reports more than two channels; the model
 /// has no way to express one today.
@@ -352,6 +384,7 @@ int PlanExecutor::activeCrossfades() const {
 void PlanExecutor::reset() {
     plan_ = nullptr;
     planFingerprint_ = 0;
+    aheadRecovering_ = false;
     reportedUnboundInputs_.clear();
     latencySamples_ = 0;
     carriedDelayLines_ = 0;
@@ -380,6 +413,7 @@ void PlanExecutor::reset() {
     deviceForOp_.clear();
     midiPanicForOp_.clear();
     reroutedOps_.clear();
+    heldReleaseForOp_.clear();
     epoch_ = 0;
     audioSourceForOp_.clear();
     sessionSourceForOp_.clear();
@@ -460,6 +494,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     deviceForOp_.assign(numOps, nullptr);
     midiPanicForOp_.assign(numOps, nullptr);
     reroutedOps_.clear();
+    heldReleaseForOp_.clear();
+    heldReleaseForOp_.resize(numOps);
     insertForOp_.assign(numOps, nullptr);
     audioSourceForOp_.assign(numOps, nullptr);
     sessionSourceForOp_.assign(numOps, nullptr);
@@ -530,11 +566,37 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
             const auto key = op.key.deviceKey();
             const auto before = was.find(key);
             const auto after = now.find(key);
+            if (before == was.end() || after == now.end())
+                continue;
 
-            const auto lost = before != was.end() && after != now.end() &&
-                              std::ranges::any_of(before->second, [&after](const OpKey& source) {
-                                  return !after->second.contains(source);
-                              });
+            // Its own track's live input leaving takes back only the keys it holds, which the
+            // input knows: a panic there cut every clip note the instrument was playing (#1898).
+            auto release = std::make_unique<HeldRelease>();
+            for (const auto& source : before->second)
+                if (!after->second.contains(source) && source.trackId == op.key.trackId)
+                    if (auto* input = previous->midiSourceOfKind(OpKind::MidiInput, source)) {
+                        release->source = input;
+                        release->input = source;
+                        break;
+                    }
+            const auto lost = std::ranges::any_of(before->second, [&](const OpKey& source) {
+                return !after->second.contains(source) &&
+                       (release->source == nullptr ||
+                        !carriesOnly(*previous->plan_, source, release->input));
+            });
+
+            // One the plan it replaces never got to render goes on to this one.
+            if (auto* unspent = owedRelease(*previous, key);
+                release->source == nullptr && unspent != nullptr &&
+                !after->second.contains(unspent->input)) {
+                release->source = unspent->source;
+                release->input = unspent->input;
+            }
+
+            if (release->source != nullptr) {
+                release->midi.ensureSize(static_cast<std::size_t>(2 * kMaxMidiBytesPerPort));
+                heldReleaseForOp_[i] = std::move(release);
+            }
 
             // Recorded, not raised: this plan may still be refused, and a
             // debt raised for a routing change that was never published is a
@@ -1330,6 +1392,23 @@ void PlanExecutor::commitReroutes(std::uint64_t epoch) {
             owed->store(epoch, std::memory_order_relaxed);
 }
 
+PlanExecutor::HeldRelease* PlanExecutor::owedRelease(const PlanExecutor& previous,
+                                                     const DeviceKey& key) {
+    for (std::size_t j = 0; j < previous.heldReleaseForOp_.size(); ++j)
+        if (auto* release = previous.heldReleaseForOp_[j].get();
+            release != nullptr && release->owed.load(std::memory_order_relaxed) &&
+            previous.plan_->ops[j].key.deviceKey() == key)
+            return release;
+    return nullptr;
+}
+
+EngineMidiSource* PlanExecutor::midiSourceOfKind(OpKind kind, const OpKey& key) const {
+    for (std::size_t j = 0; j < plan_->ops.size(); ++j)
+        if (plan_->ops[j].kind == kind && plan_->ops[j].key == key)
+            return midiSourceForOp_[j];
+    return nullptr;
+}
+
 bool PlanExecutor::takeOwedPanic(std::atomic<std::uint64_t>* owed) const {
     if (owed == nullptr)
         return false;
@@ -1699,6 +1778,7 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
         }
         if (aheadState_ != nullptr)
             aheadState_->beginAheadBlock(requestedBlock);
+        handoffs_.beginWriting(sequence);
     }
 
     const juce::ScopedNoDenormals noDenormals;
@@ -1714,15 +1794,37 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
         // moment (a jump, a different callback size, a skip) costs what it rendered from here
         // on: forgotten, and rendered again after this one.
         auto published = handoffs_.published(sequence, BlockStamp::of(start.block));
+        const auto rate = start.block.rate() > 0.0 ? start.block.rate() : context_.sampleRate;
+        const auto quarter = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::duration<double>(0.25 * static_cast<double>(start.block.numSamples) /
+                                          rate));
+        const auto entered = std::chrono::steady_clock::now();
+        // How long the writer gets before the block is claimed from it; half the block in all, so
+        // at least half is left for the callback's own render.
+        auto claimBy = entered + quarter;
+        // A writer inside this very block is let finish it: giving it up costs every ahead track
+        // a jump, and rendering it again here costs more than what the writer has left.
+        if (splits && !aheadRecovering_ && published == HandoffRing::Published::missing &&
+            handoffs_.writing(sequence)) {
+            const ProfileScope timed([](auto elapsed) {
+                BlockProfile::addPhase(BlockProfile::WriterFinishWait, elapsed);
+            });
+            claimBy = entered + 2 * quarter;
+            const auto finishBy = claimBy - quarter / 2;
+            while (handoffs_.writing(sequence) && std::chrono::steady_clock::now() < finishBy) {
+            }
+            published = handoffs_.published(sequence, BlockStamp::of(start.block));
+        }
         if (published != HandoffRing::Published::split || !splits) {
-            // A writer inside its ops gives the block up at the next one; waited for no longer
-            // than a quarter of this block, so a writer that has stalled costs a miss, not a gap.
-            const auto rate = start.block.rate() > 0.0 ? start.block.rate() : context_.sampleRate;
-            const auto patience = std::chrono::duration<double>(
-                0.25 * static_cast<double>(start.block.numSamples) / rate);
-            if (handoffs_.claimForCallbackBy(
-                    std::chrono::steady_clock::now() +
-                    std::chrono::duration_cast<std::chrono::steady_clock::duration>(patience))) {
+            // A writer inside its ops gives the block up at the next one, waited for until claimBy,
+            // so a writer that has stalled costs a miss, not a gap.
+            const auto claimed = [&] {
+                const ProfileScope timed([](auto elapsed) {
+                    BlockProfile::addPhase(BlockProfile::CallbackClaimWait, elapsed);
+                });
+                return handoffs_.claimForCallbackBy(claimBy);
+            }();
+            if (claimed) {
                 published = handoffs_.published(sequence, BlockStamp::of(start.block));
                 const bool whole = published != HandoffRing::Published::split || !splits;
                 if (whole) {
@@ -1731,8 +1833,10 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
                     // release (BlockInfo::continuous).
                     discontinuousAhead_ =
                         published != HandoffRing::Published::whole && handoffs_.reached(sequence);
-                    if (discontinuousAhead_)
+                    if (discontinuousAhead_) {
                         handoffs_.discardFrom(sequence);
+                        aheadRecovering_ = true;
+                    }
                     if (callbackRenderer_ != nullptr)
                         callbackRenderer_->renderWhole(values, requestedBlock, output);
                     else
@@ -1754,6 +1858,8 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
                 }
             }
         }
+        if (published == HandoffRing::Published::split)
+            aheadRecovering_ = false;
         if (start.render)
             deliverHandoffs(sequence, start.block.numSamples,
                             published == HandoffRing::Published::split);
@@ -2397,29 +2503,40 @@ void PlanExecutor::renderOpUntimed(OpId id, const OpValue& published, const Bloc
             // operand of an || it would be skipped on a block that already
             // carried a panic, and fire again on a later one (#2418).
             const auto rerouted = takeOwedPanic(midiPanicForOp_[static_cast<std::size_t>(i)]);
-            DeviceBlock deviceBlock{.audio = audio.getSubsetChannelBlock(0, blockWidth),
-                                    .midiIn = &midiIn(op.inputs[1]),
-                                    .midiInFractions = &fractionsIn(op.inputs[1]),
-                                    // What reached the port, plus the block's
-                                    // own playhead jump, which both hosts raise
-                                    // per device rather than passing it along a
-                                    // chain.
-                                    //
-                                    // Deliberately not this track going quiet. A
-                                    // panic says the host is about to re-assert
-                                    // what should sound, and only a jump does
-                                    // (playLane chases on !continuous); mute here
-                                    // is a gain with the track still rendering, so
-                                    // nothing is withheld and nothing would come
-                                    // back (#2418).
-                                    .midiInAllNotesOff = (!block.continuous && !block.started) ||
-                                                         midiInPanic(op.inputs[1]) || rerouted,
-                                    .midiOut = deviceMidiOut,
-                                    .midiOutFractions =
-                                        producesMidi ? &fractionsOut(id, 1) : nullptr,
-                                    .sidechain = {},
-                                    .params = deviceParams(i, window),
-                                    .block = block};
+
+            // Ahead of the block's own events, so a clip note struck on sample 0 survives them.
+            const juce::MidiBuffer* deviceMidi = &midiIn(op.inputs[1]);
+            if (auto* release = heldReleaseForOp_[static_cast<std::size_t>(i)].get();
+                release != nullptr && release->owed.exchange(false, std::memory_order_relaxed)) {
+                release->midi.clear();
+                release->source->releaseHeld(release->midi);
+                if (!release->midi.isEmpty()) {
+                    release->midi.addEvents(*deviceMidi, 0, -1, 0);
+                    deviceMidi = &release->midi;
+                }
+            }
+            DeviceBlock deviceBlock{
+                .audio = audio.getSubsetChannelBlock(0, blockWidth),
+                .midiIn = deviceMidi,
+                .midiInFractions = &fractionsIn(op.inputs[1]),
+                // What reached the port, plus the block's
+                // own playhead jump, which both hosts raise
+                // per device rather than passing it along a
+                // chain.
+                //
+                // Deliberately not this track going quiet. A
+                // panic says the host is about to re-assert
+                // what should sound, and only a jump does
+                // (playLane chases on !continuous); mute here
+                // is a gain with the track still rendering, so
+                // nothing is withheld and nothing would come
+                // back (#2418).
+                .midiInAllNotesOff = block.owesPanic() || midiInPanic(op.inputs[1]) || rerouted,
+                .midiOut = deviceMidiOut,
+                .midiOutFractions = producesMidi ? &fractionsOut(id, 1) : nullptr,
+                .sidechain = {},
+                .params = deviceParams(i, window),
+                .block = block};
             if (op.inputs[2].valid())
                 deviceBlock.sidechain = audioIn(op.inputs[2], numSamples);
 
@@ -2570,8 +2687,8 @@ void PlanExecutor::renderOpUntimed(OpId id, const OpValue& published, const Bloc
             // Where a device would be handed an all-notes-off, and also when the
             // chain falls silent: a muted track sends nothing more, including the
             // note-offs for what it started.
-            if (op.inputs[1].valid() && (value.silent || (!block.continuous && !block.started) ||
-                                         midiInPanic(op.inputs[1])))
+            if (op.inputs[1].valid() &&
+                (value.silent || block.owesPanic() || midiInPanic(op.inputs[1])))
                 insert->releaseNotes(block);
 
             if (value.silent)

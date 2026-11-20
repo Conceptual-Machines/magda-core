@@ -717,6 +717,8 @@ HandlerResult engineHealth(MagdaApi&, const juce::var&, const RequestContext& co
     result->setProperty("xrunCount", juce::var());
     result->setProperty("dropoutCount", juce::var());
     result->setProperty("callbackLoad", juce::var());
+    result->setProperty("renderAheadMisses", juce::var());
+    result->setProperty("renderAheadDiscards", juce::var());
     result->setProperty("problemCoverage", "unavailable");
     result->setProperty("problems", juce::Array<juce::var>{});
     result->setProperty("discardedProblemCount", 0);

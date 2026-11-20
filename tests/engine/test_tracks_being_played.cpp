@@ -25,9 +25,11 @@ struct Project {
         for (int i = 0; i < 4; ++i)
             ids.push_back(tracks.createTrack("Track " + std::to_string(i), TrackType::Media));
         selection.clearSelection();
+        selection.setClipInEditor(INVALID_CLIP_ID);
     }
     ~Project() {
         selection.clearSelection();
+        selection.setClipInEditor(INVALID_CLIP_ID);
         clips.clearAllClips();
         tracks.clearAllTracks();
     }
@@ -63,24 +65,30 @@ TEST_CASE("An armed or monitoring track is being played", "[engine][1898]") {
     CHECK(project.played() == std::set<TrackId>{project.ids[0], project.ids[1]});
 }
 
-TEST_CASE("The selected track, clip, notes or device are being played", "[engine][1898]") {
+TEST_CASE("A selected track, clip or notes alone are not being played", "[engine][1898]") {
     Project project;
+    const auto clip = project.clips.createMidiClip(project.ids[2], 0.0, 2.0, ClipView::Arrangement);
 
     SECTION("a track") {
         project.selection.selectTrack(project.ids[1]);
-        CHECK(project.played() == std::set<TrackId>{project.ids[1]});
     }
     SECTION("a clip") {
-        const auto clip =
-            project.clips.createMidiClip(project.ids[2], 0.0, 2.0, ClipView::Arrangement);
         project.selection.selectClip(clip);
-        CHECK(project.played().contains(project.ids[2]));
     }
     SECTION("notes in a clip") {
-        const auto clip =
-            project.clips.createMidiClip(project.ids[3], 0.0, 2.0, ClipView::Arrangement);
         project.selection.selectNotes(clip, {0});
-        CHECK(project.played().contains(project.ids[3]));
+    }
+    CHECK(project.played().empty());
+}
+
+TEST_CASE("The clip open in an editor and the selected device are being played", "[engine][1898]") {
+    Project project;
+
+    SECTION("a clip in an editor") {
+        const auto clip =
+            project.clips.createMidiClip(project.ids[2], 0.0, 2.0, ClipView::Arrangement);
+        project.selection.setClipInEditor(clip);
+        CHECK(project.played() == std::set<TrackId>{project.ids[2]});
     }
     SECTION("a device") {
         project.selection.selectDevice(project.ids[0], 7);

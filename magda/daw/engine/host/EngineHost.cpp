@@ -453,6 +453,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // A device that applied edits wakes the same drain (#2651).
         loader_.onWoken([this] { plane_.settleParameterEdits(); });
 
+        // Compensation is sized at prepare, so a plugin's new latency needs a new plan.
+        loader_.onLatencyMoved([this](engine::DeviceKey) { wantPlan(); });
+
         // An ARA plugin is bound to its document before the engine prepares it (#1579).
         loader_.onExternalLoaded([this](engine::DeviceKey key,
                                         adapter::EngineExternalDevice& device) {
@@ -827,6 +830,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     }
 
     void selectionTypeChanged(SelectionType) override {
+        selectionMoved();
+    }
+    void clipInEditorChanged(ClipId) override {
         selectionMoved();
     }
     void trackSelectionChanged(TrackId) override {
@@ -3826,6 +3832,15 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                    : juce::String{};
     }
 
+    /** @brief The latency the device at @p devicePath declares, or 0. Message thread. */
+    double deviceLatencySeconds(const ChainNodePath& devicePath) const {
+        const auto key = keyOfDeviceAt(devicePath);
+        if (!key.has_value() || session_ == nullptr || context_.sampleRate <= 0.0)
+            return 0.0;
+        const auto held = session_->device(*key);
+        return held != nullptr ? held->latencySamples() / context_.sampleRate : 0.0;
+    }
+
     /** @brief The plugin rendering at @p devicePath, or null. Message thread. */
     adapter::EngineExternalDevice* externalDeviceAt(const ChainNodePath& devicePath) const {
         const auto key = keyOfDeviceAt(devicePath);
@@ -3905,6 +3920,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     std::uint64_t publishCount() const {
         return publishCount_;
+    }
+
+    std::pair<int, std::uint64_t> renderAheadCounters() const {
+        if (session_ == nullptr)
+            return {0, 0};
+        return {session_->renderAheadMisses(), session_->renderAheadDiscards()};
     }
 
     std::optional<float> observedParameter(const ChainNodePath& devicePath, int paramIndex) const {
@@ -4559,6 +4580,10 @@ juce::String EngineHost::formatDeviceParameter(const ChainNodePath& devicePath, 
     return impl_->formatDeviceParameter(devicePath, paramIndex, normalised);
 }
 
+double EngineHost::deviceLatencySeconds(const ChainNodePath& devicePath) const {
+    return impl_->deviceLatencySeconds(devicePath);
+}
+
 HostParameters EngineHost::describeDeviceParameters(const ChainNodePath& devicePath) const {
     return impl_->describeDeviceParameters(devicePath);
 }
@@ -4570,6 +4595,10 @@ std::shared_ptr<audio::MagdaDevice> EngineHost::renderedDevice(
 
 std::uint64_t EngineHost::publishCount() const {
     return impl_->publishCount();
+}
+
+std::pair<int, std::uint64_t> EngineHost::renderAheadCounters() const {
+    return impl_->renderAheadCounters();
 }
 
 void EngineHost::invalidateParameterWritesAt(const ChainNodePath& devicePath) const {

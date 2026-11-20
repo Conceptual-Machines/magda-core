@@ -313,6 +313,8 @@ class TrackLiveMidiInput final : public EngineMidiSource {
         return panicked_;
     }
 
+    void releaseHeld(juce::MidiBuffer& out) override;
+
     /**
      * @brief Events dropped for want of room in the port's byte budget
      *        (kMaxMidiBytesPerPort). Read from any thread.
