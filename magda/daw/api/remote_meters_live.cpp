@@ -130,7 +130,8 @@ class LiveDiagnosticsSource final : public DiagnosticsSource {
         const auto ahead = engine_.renderAheadCounters();
         obj->setProperty("renderAheadMisses", ahead ? juce::var(ahead->misses) : juce::var());
         obj->setProperty("renderAheadDiscards",
-                         ahead ? juce::var(static_cast<juce::int64>(ahead->discards)) : juce::var());
+                         ahead ? juce::var(static_cast<juce::int64>(ahead->discards))
+                               : juce::var());
         obj->setProperty("problemCoverage", "audioIoObservations");
         juce::Array<juce::var> problems;
         for (const auto& problem : problems_)
