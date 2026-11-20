@@ -18,7 +18,9 @@ RenderAhead::RenderAhead(bool runInBackground, const RenderThreadPool* schedulin
     : juce::Thread("MAGDA render ahead"),
       runsInBackground_(runInBackground),
       scheduling_(scheduling) {
-    if (runsInBackground_)
+    if (runsInBackground_ && scheduling_ != nullptr)
+        RenderThreadPool::startRenderThread(*this);
+    else if (runsInBackground_)
         startThread(juce::Thread::Priority::high);
 }
 

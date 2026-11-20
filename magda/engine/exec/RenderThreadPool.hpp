@@ -118,7 +118,10 @@ class RenderThreadPool {
      */
     void configure(double blockSeconds, juce::AudioWorkgroup workgroup);
 
-    /// The calling thread's scheduling raised to a render worker's. Once, on that thread.
+    /// Starts @p thread real-time, as the workers run.
+    static void startRenderThread(juce::Thread& thread);
+
+    /// The rest of the real-time scheduling, off macOS. Once, on the thread itself.
     static void raiseToRenderPriority();
 
     /// Joins the calling thread to the device's workgroup when it changed since @p seen. Each

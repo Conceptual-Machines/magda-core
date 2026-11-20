@@ -16,7 +16,7 @@
 
 #if JUCE_WINDOWS
     #include <windows.h>
-#else
+#elif !JUCE_MAC
     #include <pthread.h>
     #include <sched.h>
 #endif
@@ -80,7 +80,10 @@ RenderThreadPool::RenderThreadPool(int numWorkers, bool realtime) {
     workers_.reserve(static_cast<std::size_t>(std::max(0, numWorkers)));
     for (int index = 0; index < numWorkers; ++index) {
         auto worker = std::make_unique<Worker>(*this, index, realtime);
-        worker->startThread(juce::Thread::Priority::high);
+        if (realtime)
+            startRenderThread(*worker);
+        else
+            worker->startThread(juce::Thread::Priority::high);
         workers_.push_back(std::move(worker));
     }
 }
@@ -161,10 +164,20 @@ bool RenderThreadPool::takeWork(Worker& worker) {
     return took;
 }
 
+void RenderThreadPool::startRenderThread(juce::Thread& thread) {
+#if JUCE_MAC
+    // The time-constraint policy, which a workgroup join needs and a pthread priority is not.
+    if (thread.startRealtimeThread(juce::Thread::RealtimeOptions{}.withPriority(10)))
+        return;
+#endif
+    // Not JUCE's realtime start on Windows: it moves the whole process to the realtime class.
+    thread.startThread(juce::Thread::Priority::highest);
+}
+
 void RenderThreadPool::raiseToRenderPriority() {
 #if JUCE_WINDOWS
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-#else
+#elif !JUCE_MAC
     sched_param param{};
     param.sched_priority = sched_get_priority_max(SCHED_RR);
     pthread_setschedparam(pthread_self(), SCHED_RR, &param);
