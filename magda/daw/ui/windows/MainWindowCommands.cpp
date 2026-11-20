@@ -432,9 +432,11 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         // File menu
         case newProject:
             result.setInfo("New Project", "Create a new project", "File", 0);
+            result.addDefaultKeypress('n', juce::ModifierKeys::commandModifier);
             break;
         case openProject:
             result.setInfo("Open Project", "Open an existing project", "File", 0);
+            result.addDefaultKeypress('o', juce::ModifierKeys::commandModifier);
             break;
         case closeProject:
             result.setInfo("Close Project", "Close the current project", "File", 0);
