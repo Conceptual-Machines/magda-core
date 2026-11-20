@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Conceptual Machines
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <map>
 #include <set>
@@ -11,6 +12,7 @@
 #include "exec/PlanLayout.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanDump.hpp"
+#include "plan/PlanHandoff.hpp"
 
 using namespace magda;
 using magda::engine::BufferLayout;
@@ -316,6 +318,47 @@ TEST_CASE("Latency accumulates along a chain and meets at a fan-in",
     REQUIRE(delays.size() == 2);
     CHECK(delays[0] == 0);
     CHECK(delays[1] == 120);
+}
+
+TEST_CASE("A track rendered ahead waits for a latent one rendered at the callback",
+          "[engine][exec][layout][pdc]") {
+    // A latent track on either side of the handoff: the master's delay for the other track
+    // sits behind a handoff when that track renders ahead, and must hold the same samples.
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+
+    for (const TrackId live : {TrackId{1}, TrackId{2}}) {
+        magda::engine::CompileOptions options;
+        options.sessionTracks = {live};
+        const auto plan = magda::engine::insertHandoffs(
+            magda::engine::compileRenderPlan(tracks, makeMaster(), options));
+        const auto portOffsets = magda::engine::portOffsetsOf(plan);
+
+        std::vector<int> deviceLatency(plan.ops.size(), 0);
+        for (std::size_t i = 0; i < plan.ops.size(); ++i)
+            if (plan.ops[i].kind == OpKind::Device && plan.ops[i].key.deviceId == 7)
+                deviceLatency[i] = 3115;
+
+        const auto latency = magda::engine::resolvePlanLatency(plan, portOffsets, deviceLatency);
+        INFO("live track " << live << "\n" << magda::engine::dumpPlan(plan));
+        REQUIRE(std::any_of(plan.ops.begin(), plan.ops.end(),
+                            [](const auto& op) { return op.kind == OpKind::Handoff; }));
+
+        std::map<TrackId, int> delays;
+        for (std::size_t i = 0; i < plan.ops.size(); ++i) {
+            const auto& op = plan.ops[i];
+            if (op.key.role != OpRole::MixInputDelay || op.key.trackId != MASTER_TRACK_ID)
+                continue;
+            // Named by the track whose fader it delays, through any handoff.
+            auto input = op.inputs.front();
+            while (plan.ops[static_cast<std::size_t>(input.op)].key.trackId == MASTER_TRACK_ID)
+                input = plan.ops[static_cast<std::size_t>(input.op)].inputs.front();
+            delays[plan.ops[static_cast<std::size_t>(input.op)].key.trackId] =
+                latency.delaySamples[i];
+        }
+        CHECK(delays[1] == 0);
+        CHECK(delays[2] == 3115);
+    }
 }
 
 TEST_CASE("A delta solo's dry edge waits for the processing it is measured against",

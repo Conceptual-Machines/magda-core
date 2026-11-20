@@ -30,6 +30,10 @@ class BlockProfile {
         WholeBlock,
         /// The whole device callback, as the parity bench's pump times it, whichever engine.
         Callback,
+        /// The callback's side of a render-ahead block, and inside it the waits on the writer.
+        CallbackSide,
+        WriterFinishWait,
+        CallbackClaimWait,
         PhaseCount
     };
 

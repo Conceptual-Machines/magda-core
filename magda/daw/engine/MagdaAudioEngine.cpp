@@ -463,6 +463,10 @@ void MagdaAudioEngine::projectAuthoredStateAt(const ChainNodePath& devicePath) {
 }
 
 // The window opens onto the instance this renders through (#2580).
+double MagdaAudioEngine::deviceLatencySeconds(const ChainNodePath& devicePath) const {
+    return host_ != nullptr ? host_->deviceLatencySeconds(devicePath) : 0.0;
+}
+
 std::optional<PluginPrograms> MagdaAudioEngine::getPluginPrograms(const ChainNodePath& path) {
     return host_->getPluginPrograms(path);
 }
@@ -498,6 +502,13 @@ std::shared_ptr<daw::audio::MagdaDevice> MagdaAudioEngine::renderedDevice(
 
 std::uint64_t MagdaAudioEngine::publishCount() const {
     return host_ != nullptr ? host_->publishCount() : 0;
+}
+
+std::optional<AudioEngine::RenderAheadCounters> MagdaAudioEngine::renderAheadCounters() const {
+    if (host_ == nullptr)
+        return std::nullopt;
+    const auto [misses, discards] = host_->renderAheadCounters();
+    return RenderAheadCounters{misses, discards};
 }
 
 /** @brief The host's instances, which are the only ones there are (#2579). */

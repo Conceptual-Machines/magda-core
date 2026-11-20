@@ -250,7 +250,12 @@ void TrackLiveMidiInput::render(const BlockInfo& /*block*/, juce::MidiBuffer& ou
     // it is no longer here to send one. Sent as ordinary events rather than
     // left to the panic flag beside them: an instrument that reads its MIDI and
     // nothing else still stops (#2612).
-    if (!panicked_ || held_.none())
+    if (panicked_)
+        releaseHeld(out);
+}
+
+void TrackLiveMidiInput::releaseHeld(juce::MidiBuffer& out) {
+    if (held_.none())
         return;
 
     for (int channel = 1; channel <= 16; ++channel)

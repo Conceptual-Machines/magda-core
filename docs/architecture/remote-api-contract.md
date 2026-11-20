@@ -77,7 +77,10 @@ state. `observedAtMs` is a Unix millisecond timestamp for the read.
 `engine.health` reports the running engine, whether a project is bound, whether
 an audio interface is open, callback load, and xruns since the current project
 was loaded. `callbackLoad` is JUCE's approximate 0–1 share of the callback
-deadline. `sinceMs` marks the project boundary. The bounded `problems` list
+deadline. `renderAheadMisses` and `renderAheadDiscards` count, for the live
+plan since it was published, callback blocks render-ahead could not hand over and
+times the callback dropped what was rendered ahead to render a block itself; both
+are `null` without render-ahead. `sinceMs` marks the project boundary. The bounded `problems` list
 records observed xrun increments, counter resets, and unavailable audio devices;
 `discardedProblemCount` reports older entries removed after 32. A separate
 dropout count is currently unavailable from either audio I/O backend and is

@@ -206,7 +206,16 @@ TEST_CASE("A loop wrap cuts the callback rather than the timeline",
     CHECK(crossing.segments[1].block.beats.start == approx(0.0));
     CHECK(!crossing.segments[1].block.continuous);
 
+    // A wrap, which clips chase but no device is panicked for.
+    CHECK(!crossing.segments[0].block.wrapped);
+    CHECK(crossing.segments[1].block.wrapped);
+    CHECK(!crossing.segments[1].block.owesPanic());
+
     CHECK(clock.loopWrapOverflows() == 0);
+
+    const auto after = advance(clock, snapshot, 512);
+    REQUIRE(after.segments.size() == 1);
+    CHECK(!after.segments[0].block.wrapped);
 }
 
 TEST_CASE("A loop is entered from before it and left where it ends",

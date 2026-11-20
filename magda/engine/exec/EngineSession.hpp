@@ -615,7 +615,7 @@ class EngineSession {
     using PublishedValues =
         farbot::RealtimeObject<PlanValues, farbot::RealtimeObjectOptions::nonRealtimeMutatable>;
     using PublishedTransport =
-        farbot::RealtimeObject<TransportSnapshot,
+        farbot::RealtimeObject<SequencedTransport,
                                farbot::RealtimeObjectOptions::nonRealtimeMutatable>;
 
     RuntimeStateStore store_;
@@ -634,6 +634,9 @@ class EngineSession {
     PublishedRender published_;
     PublishedValues values_;
     PublishedTransport transport_;
+    /// The last one published and the steps queued blocks still need, publishing thread only.
+    TransportSnapshot lastTransport_;
+    SequencedTransport sequenced_;
 
     /// Not swapped with a plan and not keyed to one: what a track plays is a
     /// property of the model, and a structural edit is not a reason to lose it.

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Pre-commit hook to enforce file size policy
 # Warns at WARN_THRESHOLD LOC, fails at FAIL_THRESHOLD LOC
 

@@ -11,6 +11,7 @@
 
 #include "clip/ClipVoicePool.hpp"
 #include "clip/SessionPlayback.hpp"
+#include "exec/BlockProfile.hpp"
 
 namespace magda::engine {
 
@@ -73,7 +74,7 @@ void EngineSession::setRenderAhead(int depth, bool inBackground) {
     if (renderAheadDepth_ == 0)
         return;
 
-    renderAhead_ = std::make_unique<RenderAhead>(inBackground);
+    renderAhead_ = std::make_unique<RenderAhead>(inBackground, pool_);
     renderAhead_->setDepth(renderAheadDepth_);
     if (voices_ != nullptr)
         renderAhead_->setStreamFeed(&voices_->feed());
@@ -381,9 +382,28 @@ EngineSession::Result EngineSession::publishValues(PlanValues values) {
 void EngineSession::publishTransport(TransportSnapshot transport) {
     if (voices_ != nullptr)
         voices_->setTransport(transport.loop, transport.tempo);
-    if (renderAhead_ != nullptr)
-        renderAhead_->setTransport(std::make_shared<const TransportSnapshot>(transport));
-    transport_.nonRealtimeReplace(std::move(transport));
+
+    // A tempo or click change lands where nothing was rendered ahead yet, as a knob's does;
+    // a request, a loop or a punch is a jump the queued blocks did not predict.
+    const auto movesNothing = lastTransport_.request.generation == transport.request.generation &&
+                              lastTransport_.loop == transport.loop &&
+                              lastTransport_.punch == transport.punch;
+    lastTransport_ = transport;
+    if (renderAhead_ == nullptr || !movesNothing) {
+        sequenced_.steps.clear();
+        sequenced_.steps.push_back({0, std::move(transport)});
+    }
+    if (renderAhead_ == nullptr) {
+        transport_.nonRealtimeReplace(sequenced_);
+        return;
+    }
+    renderAhead_->whileIdle([&] {
+        if (movesNothing)
+            sequenced_.stepTo(std::move(transport), renderAhead_->firstUnrendered(),
+                              renderAhead_->firstPending());
+        renderAhead_->setTransport(std::make_shared<const SequencedTransport>(sequenced_));
+        transport_.nonRealtimeReplace(sequenced_);
+    });
 }
 
 void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
@@ -470,7 +490,9 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
     PublishedValues::ScopedAccess<farbot::ThreadType::realtime> values(values_);
     const auto& table = (*render)->executor.appliesValues(*values) ? *values : (*render)->values;
 
-    PublishedTransport::ScopedAccess<farbot::ThreadType::realtime> transport(transport_);
+    PublishedTransport::ScopedAccess<farbot::ThreadType::realtime> sequenced(transport_);
+    // The callback's first block decides, as it does for the ahead side's prediction of it.
+    const auto* transport = &sequenced->at(blockSequence_);
 
     // Held for the callback rather than fetched per block: what is being
     // recorded cannot change in the middle of one.
@@ -620,10 +642,13 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         if (voices_ != nullptr)
             voices_->announceHandBacks(clips_.sections(), segment.block);
 
-        if (renderAhead_ != nullptr)
+        if (renderAhead_ != nullptr) {
+            const ProfileScope timed(
+                [](auto elapsed) { BlockProfile::addPhase(BlockProfile::CallbackSide, elapsed); });
             (*render)->executor.processSide(1, blockSequence_++, table, segment.block, piece);
-        else
+        } else {
             (*render)->executor.process(table, segment.block, piece);
+        }
 
         if (captureRing_ != nullptr) {
             captureRing_->writeMidi(input.midi, segment.startSample, segment.block.numSamples);

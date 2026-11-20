@@ -171,6 +171,9 @@ class BottomPanel : public daw::ui::TabbedPanel,
     // Clip id of the clip currently open in the active editor (MIDI or waveform),
     // or INVALID_CLIP_ID if the active content isn't a clip editor.
     ClipId getActiveEditingClipId() const;
+    /// Tells SelectionManager which clip the panel shows once whatever moved it has settled.
+    void queueClipInEditor();
+    bool clipInEditorQueued_ = false;
     // Reflect the active clip's source-loop state on the header loop toggle.
     void syncLoopButtonState();
     void syncGainEnvelopeButtonState();

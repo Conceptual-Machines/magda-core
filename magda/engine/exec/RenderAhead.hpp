@@ -26,10 +26,43 @@
 namespace magda::engine {
 
 class AheadLaunches;
+class RenderThreadPool;
 class ParallelPlanExecutor;
 struct ClipSnapshot;
 struct ClipStreamTable;
 class ClipStreamFeed;
+
+/**
+ * @brief The transport each callback renders under, by the sequence it starts at (#1898).
+ *
+ * A change that moves nothing (a tempo, the click) takes effect at the first block not rendered
+ * ahead when it arrived, so both sides agree on every block's beats and the blocks already
+ * rendered are heard rather than thrown away. A step stays until the callback passes the next.
+ */
+struct SequencedTransport {
+    struct Step {
+        std::uint64_t from = 0;
+        TransportSnapshot transport;
+    };
+    std::vector<Step> steps = std::vector<Step>(1);
+
+    const TransportSnapshot& at(std::uint64_t sequence) const {
+        for (auto step = steps.rbegin(); step != steps.rend(); ++step)
+            if (step->from <= sequence)
+                return step->transport;
+        return steps.front().transport;
+    }
+
+    /// @p transport from @p from on, dropping what it supersedes and what the callback, next at
+    /// @p pending, has passed.
+    void stepTo(TransportSnapshot transport, std::uint64_t from, std::uint64_t pending) {
+        while (!steps.empty() && steps.back().from >= from)
+            steps.pop_back();
+        while (steps.size() > 1 && steps[1].from <= pending)
+            steps.erase(steps.begin());
+        steps.push_back({from, std::move(transport)});
+    }
+};
 
 /**
  * @brief Renders the ahead side of the blocks the callback is predicted to ask for next.
@@ -60,7 +93,9 @@ class RenderAhead final : private juce::Thread {
         AheadLaunches* launches = nullptr;
     };
 
-    explicit RenderAhead(bool runInBackground = true);
+    /// With @p scheduling, the thread renders as that pool's workers do: their priority and the
+    /// device's workgroup, which is what keeps it on time under load from other processes.
+    explicit RenderAhead(bool runInBackground = true, const RenderThreadPool* scheduling = nullptr);
     ~RenderAhead() override;
 
     RenderAhead(const RenderAhead&) = delete;
@@ -73,7 +108,12 @@ class RenderAhead final : private juce::Thread {
     /// in progress, so once it returns nothing renders through the epoch it replaced.
     void setEpoch(Epoch epoch);
     void setValues(std::shared_ptr<const PlanValues> values);
-    void setTransport(std::shared_ptr<const TransportSnapshot> transport);
+    void setTransport(std::shared_ptr<const SequencedTransport> transport);
+
+    /// The first block nothing has been rendered ahead for. Only inside @ref whileIdle.
+    std::uint64_t firstUnrendered();
+    /// The block the callback renders next.
+    std::uint64_t firstPending();
     void setClips(std::shared_ptr<const ClipSnapshot> clips);
     void setStreamFeed(const ClipStreamFeed* streams);
 
@@ -125,11 +165,12 @@ class RenderAhead final : private juce::Thread {
     std::atomic<std::uint64_t> served_{0};
     std::atomic<bool> stopping_{false};
     const bool runsInBackground_;
+    const RenderThreadPool* scheduling_;
 
     std::mutex lock_;
     Epoch epoch_;
     std::shared_ptr<const PlanValues> values_;
-    std::shared_ptr<const TransportSnapshot> transport_;
+    std::shared_ptr<const SequencedTransport> transport_;
     std::shared_ptr<const ClipSnapshot> clips_;
     const ClipStreamFeed* streamFeed_ = nullptr;
     int depth_ = 1;

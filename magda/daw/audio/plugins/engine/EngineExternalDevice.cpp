@@ -228,6 +228,12 @@ class EngineExternalDevice::PluginListener final : public juce::AudioProcessorLi
     void audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails& details) override {
         if (details.parameterInfoChanged)
             catalogStale_.store(true, std::memory_order_release);
+
+        // Pro-L 2 reports 0 when prepared and its lookahead once it has processed.
+        if (details.latencyChanged) {
+            edits_->latencyMoved.store(true, std::memory_order_release);
+            edits_->wakeHost();
+        }
     }
 
   private:
@@ -388,6 +394,11 @@ void EngineExternalDevice::listenForPluginEdits(std::function<void()> wake) {
 
 EngineExternalDevice::PluginEditSource EngineExternalDevice::pluginEdits() const {
     return PluginEditSource{edits_};
+}
+
+bool EngineExternalDevice::PluginEditSource::takeLatencyMoved() const {
+    const auto edits = edits_.lock();
+    return edits != nullptr && edits->latencyMoved.exchange(false, std::memory_order_acq_rel);
 }
 
 bool EngineExternalDevice::PluginEditSource::drain(
@@ -630,8 +641,6 @@ void EngineExternalDevice::prepare(const magda::engine::RenderContext& context) 
     preparedBlockSize_ = context.maxBlockSize;
     sampleRate_ = context.sampleRate;
 
-    latencySamples_ = instance_->getLatencySamples();
-
     const auto totalInputs = instance_->getTotalNumInputChannels();
     const auto totalOutputs = instance_->getTotalNumOutputChannels();
 
@@ -682,7 +691,8 @@ void EngineExternalDevice::setMidiOutputBoundBytes(int bytes) {
 }
 
 int EngineExternalDevice::latencySamples() const {
-    return latencySamples_;
+    // Read live: a plugin may change it after prepare, and says so (PluginListener).
+    return std::max(0, instance_->getLatencySamples());
 }
 
 double EngineExternalDevice::tailSeconds() const {

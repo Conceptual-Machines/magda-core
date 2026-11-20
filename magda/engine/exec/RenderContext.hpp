@@ -174,6 +174,15 @@ struct BlockInfo {
     /// live into the start keeps sounding (#2949).
     bool started = false;
 
+    /// The first block after the transport loop's wrap. Discontinuous, so clips chase, but not a
+    /// jump: each clip ends its own notes there, and no device is panicked.
+    bool wrapped = false;
+
+    /** @brief A jump that owes every device an all-notes-off: not a start, not a loop wrap. */
+    bool owesPanic() const {
+        return !continuous && !started && !wrapped;
+    }
+
     /**
      * @brief What one sample of this block is worth, in seconds.
      *

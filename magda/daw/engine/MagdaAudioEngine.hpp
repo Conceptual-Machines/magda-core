@@ -106,6 +106,7 @@ class MagdaAudioEngine final : public AudioEngine,
     void capturePluginStateAt(const ChainNodePath& devicePath) override;
     void applyPluginStateAt(const ChainNodePath& devicePath) override;
     void projectAuthoredStateAt(const ChainNodePath& devicePath) override;
+    double deviceLatencySeconds(const ChainNodePath& devicePath) const override;
     std::optional<PluginPrograms> getPluginPrograms(const ChainNodePath& devicePath) override;
     bool setPluginCurrentProgram(const ChainNodePath& devicePath, int programIndex) override;
     bool loadPluginPresetFile(const ChainNodePath& devicePath, const juce::File& file) override;
@@ -119,6 +120,7 @@ class MagdaAudioEngine final : public AudioEngine,
     std::shared_ptr<daw::audio::MagdaDevice> renderedDevice(
         const ChainNodePath& devicePath) const override;
     std::uint64_t publishCount() const override;
+    std::optional<RenderAheadCounters> renderAheadCounters() const override;
     HostParameters describeDeviceParameters(const ChainNodePath& devicePath) const override;
     std::optional<float> observedParameter(const ChainNodePath& devicePath,
                                            int paramIndex) const override;

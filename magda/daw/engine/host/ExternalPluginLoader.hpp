@@ -89,6 +89,9 @@ class ExternalPluginLoader final : private juce::AsyncUpdater {
     /// plugin is drained in one pass (#2632).
     void onPluginEdit(PluginEdit sink);
 
+    /// Where a plugin reporting a new latency is announced, from the same drain.
+    void onLatencyMoved(std::function<void(engine::DeviceKey key)> moved);
+
     /// Hand every loaded plugin's unread reports to the sink, forgetting a
     /// plugin that has gone. What a wake runs; public for tests.
     void drainPluginEdits();
@@ -176,6 +179,7 @@ class ExternalPluginLoader final : private juce::AsyncUpdater {
     audio::engine_adapter::CurrentDeviceLookup currentDevice_;
     Loaded loaded_;
     PluginEdit pluginEdit_;
+    std::function<void(engine::DeviceKey)> latencyMoved_;
     std::function<void()> woken_;
     ExternalLoaded externalLoaded_;
     std::function<void(engine::DeviceKey, const juce::String&)> failed_;

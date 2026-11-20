@@ -165,13 +165,14 @@ struct ChainHarness {
         REQUIRE(messages.empty());
     }
 
-    void render(bool continuous = true, bool started = false) {
+    void render(bool continuous = true, bool started = false, bool wrapped = false) {
         output.clear();
         BlockInfo block;
         block.numSamples = kBlockSize;
         block.playing = true;
         block.continuous = continuous;
         block.started = started;
+        block.wrapped = wrapped;
         executor.process(values, block, output);
     }
 };
@@ -530,7 +531,7 @@ TEST_CASE("a republish that did not move the MIDI leaves the notes alone",
 
 TEST_CASE("a locate raises the panic on every device it reaches", "[engine][exec][2418]") {
     // BlockInfo::continuous is the engine's playhead jump: false on the first
-    // block after a start, a locate or a loop wrap. Both devices hear it,
+    // block after a start, a locate or a loop wrap. A locate panics both devices,
     // including the one the source does not reach.
     ChainHarness harness;
     harness.prepare();
@@ -540,6 +541,16 @@ TEST_CASE("a locate raises the panic on every device it reaches", "[engine][exec
     CHECK(harness.second.lastHeard());
 
     harness.render();
+    CHECK_FALSE(harness.first.lastHeard());
+    CHECK_FALSE(harness.second.lastHeard());
+}
+
+TEST_CASE("a loop wrap raises no panic", "[engine][exec][2418]") {
+    // Each clip ends its own notes at the wrap with note-offs, so nothing is left to clear.
+    ChainHarness harness;
+    harness.prepare();
+
+    harness.render(/*continuous=*/false, /*started=*/false, /*wrapped=*/true);
     CHECK_FALSE(harness.first.lastHeard());
     CHECK_FALSE(harness.second.lastHeard());
 }

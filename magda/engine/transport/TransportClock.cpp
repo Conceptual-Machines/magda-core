@@ -167,15 +167,19 @@ void ClockCore::applyRequest(const TransportSnapshot& snapshot) {
         samplesCounted_ = 0;
 
         // Arriving somewhere else is a jump.
-        if (std::abs(target - wasAt) > kBeatEpsilon)
+        if (std::abs(target - wasAt) > kBeatEpsilon) {
             continuous_ = false;
+            wrapped_ = false;
+        }
     }
 
     // As is starting. Stopping where the cursor already was is neither, and
     // neither is a request that only repeated what the transport was already
     // doing.
-    if (playing_ && !wasPlaying)
+    if (playing_ && !wasPlaying) {
         continuous_ = false;
+        wrapped_ = false;
+    }
 
     startedNow_ = playing_ && !wasPlaying;
     if (!playing_)
@@ -222,6 +226,7 @@ void ClockCore::followPhase(const TempoMap& tempo, const PhaseReference& phase) 
     if (std::abs(error) * secondsPerBeat > kPhaseJumpSeconds) {
         anchorTo(tempo, positionBeat_ + error);
         continuous_ = false;
+        wrapped_ = false;
         error = 0.0;
     }
     phaseError_ = error;
@@ -373,6 +378,7 @@ std::span<const ClockCore::Segment> ClockCore::advance(const TransportSnapshot& 
         // taken from past the end.
         if (insideLoop && untilLoopEnd <= 0) {
             anchorTo(tempo, snapshot.loop.startBeat);
+            wrapped_ = continuous_;
             continuous_ = false;
             untilLoopEnd = samplesUntil(tempo, snapshot.loop.endBeat);
         }
@@ -456,6 +462,7 @@ std::span<const ClockCore::Segment> ClockCore::advance(const TransportSnapshot& 
 
         segment.block.continuous = continuous_;
         segment.block.started = !rolledLast_;
+        segment.block.wrapped = wrapped_;
         segment.block.tempo = &tempo;
         segment.startSample = offset;
         segment.countingIn = false;
@@ -467,6 +474,7 @@ std::span<const ClockCore::Segment> ClockCore::advance(const TransportSnapshot& 
         offset += static_cast<int>(samples);
         remaining -= static_cast<int>(samples);
         continuous_ = true;
+        wrapped_ = false;
 
         // Rendering straight through left the cursor past the loop end, which
         // is where a cursor that was put there deliberately also sits, and the
@@ -476,6 +484,7 @@ std::span<const ClockCore::Segment> ClockCore::advance(const TransportSnapshot& 
         // the cursor again.
         if (overflowed && snapshot.loop.valid()) {
             anchorTo(tempo, snapshot.loop.startBeat);
+            wrapped_ = continuous_;
             continuous_ = false;
         }
     }

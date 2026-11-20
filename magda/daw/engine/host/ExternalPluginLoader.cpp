@@ -86,6 +86,8 @@ void ExternalPluginLoader::drainPluginEdits() {
                 if (wanted && pluginEdit_)
                     pluginEdit_(key, observation);
             });
+        if (alive && wanted && source->second.edits.takeLatencyMoved() && latencyMoved_)
+            latencyMoved_(key);
 
         source = alive && wanted ? std::next(source) : editSources_.erase(source);
     }
@@ -108,6 +110,10 @@ void ExternalPluginLoader::onExternalLoaded(ExternalLoaded loaded) {
 
 void ExternalPluginLoader::onPluginEdit(PluginEdit sink) {
     pluginEdit_ = std::move(sink);
+}
+
+void ExternalPluginLoader::onLatencyMoved(std::function<void(engine::DeviceKey key)> moved) {
+    latencyMoved_ = std::move(moved);
 }
 
 void ExternalPluginLoader::setContext(const engine::RenderContext& context) {
