@@ -44,6 +44,7 @@
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
 #include "AppShortcuts.hpp"
+#include "CpuLoadWindow.hpp"
 #include "FloatingWindows.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/midi/QwertyMidiKeyboard.hpp"
@@ -1245,6 +1246,15 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
             transportPanel->setAudioDeviceInfo(deviceName, sampleRate, bufferSize);
         }
     };
+    transportPanel->onCpuReadoutClicked = [this] {
+        auto* engine = getAudioEngine();
+        if (engine == nullptr)
+            return;
+        if (cpuLoadWindow_ == nullptr)
+            cpuLoadWindow_ = std::make_unique<daw::ui::CpuLoadWindow>(*engine);
+        cpuLoadWindow_->setVisible(true);
+        cpuLoadWindow_->toFront(true);
+    };
     positionTimer_->onMemoryUpdate = [this](const RecentCaptureMeter& meter) {
         if (transportPanel)
             transportPanel->setMemoryMeter(meter);
@@ -1505,6 +1515,7 @@ MainWindow::MainComponent::~MainComponent() {
     SettingsWindow::closeIfOpen();
     SettingsWindow::setContext(nullptr, nullptr);
     focusTracker_.reset();
+    cpuLoadWindow_.reset();
 
     // The stem service outlives us (static singleton); drop its reference to
     // this before members die.

@@ -475,6 +475,8 @@ set(TEST_SOURCES
     # Session tracks rendered ahead from copies of their launch handles (#3316).
     list(APPEND TEST_SOURCES engine/test_render_ahead_session.cpp)
     list(APPEND TEST_SOURCES engine/test_tracks_being_played.cpp)
+    # Each track's share of the period, for the CPU view (#3357).
+    list(APPEND TEST_SOURCES engine/test_render_load_shares.cpp)
     list(APPEND TEST_SOURCES engine/test_modulation_liveness.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_pad_rack.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_insert.cpp)

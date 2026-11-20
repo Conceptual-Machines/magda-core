@@ -114,6 +114,8 @@ TransportPanel::TransportPanel() {
     cpuValueLabel->setJustificationType(juce::Justification::centredRight);
     cpuValueLabel->setBorderSize({});
     addAndMakeVisible(*cpuValueLabel);
+    cpuTitleLabel->addMouseListener(this, false);
+    cpuValueLabel->addMouseListener(this, false);
 
     // Automation write indicator label — purple text, visible only when write mode on
     automationWriteLabel = std::make_unique<juce::Label>("automationWrite", "AUTOMATION WRITE");
@@ -1639,7 +1641,14 @@ juce::String TransportPanel::getTooltip() {
 }
 
 void TransportPanel::mouseDown(const juce::MouseEvent& e) {
-    if (e.originalComponent == this && transport::memorySwitch(layout_).contains(e.getPosition())) {
+    const auto onCpu = e.originalComponent == cpuTitleLabel.get() ||
+                       e.originalComponent == cpuValueLabel.get() ||
+                       (e.originalComponent == this && layout_.cpu.contains(e.getPosition()));
+    if (onCpu && !e.mods.isPopupMenu()) {
+        if (onCpuReadoutClicked)
+            onCpuReadoutClicked();
+    } else if (e.originalComponent == this &&
+               transport::memorySwitch(layout_).contains(e.getPosition())) {
         auto& config = Config::getInstance();
         config.setCaptureEnabled(!config.getCaptureEnabled());
         config.save();

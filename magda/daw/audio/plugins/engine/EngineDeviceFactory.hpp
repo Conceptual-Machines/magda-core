@@ -74,6 +74,16 @@ std::map<magda::engine::DeviceKey, magda::DeviceInfo*> devicesIn(magda::TrackInf
 std::map<magda::engine::DeviceKey, magda::ChainNodePath> devicePathsIn(
     const std::vector<magda::TrackInfo>& tracks, const magda::TrackInfo& master);
 
+/** @brief One device of a track, with the key its Device op carries and its address. */
+struct DeviceInTrack {
+    magda::engine::DeviceKey key;
+    const magda::DeviceInfo* device = nullptr;
+    magda::ChainNodePath path;
+};
+
+/// Every device of @p track in chain order, pads included.
+std::vector<DeviceInTrack> devicesInTrack(const magda::TrackInfo& track);
+
 /**
  * @brief Whether @p device is a plugin somebody else shipped.
  *

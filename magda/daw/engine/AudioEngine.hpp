@@ -28,6 +28,10 @@ namespace juce {
 class AudioDeviceManager;
 }
 
+namespace magda::engine {
+class RenderLoad;
+}
+
 namespace magda::daw::audio {
 class MagdaDevice;
 class TrackMeasurementTap;
@@ -439,6 +443,11 @@ class AudioEngine : public AudioEngineListener {
     /// holds none or cannot say.
     virtual double deviceLatencySeconds(const ChainNodePath& /*devicePath*/) const {
         return 0.0;
+    }
+
+    /// Each track's and device's render time so far (#3357); null when this engine keeps none.
+    virtual const engine::RenderLoad* renderLoad() const {
+        return nullptr;
     }
 
     /// Whether an edit to this parameter was accepted and has not completed.

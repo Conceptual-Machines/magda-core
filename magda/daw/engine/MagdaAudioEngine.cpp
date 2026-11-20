@@ -489,6 +489,14 @@ bool MagdaAudioEngine::isDeviceEditorOpen(const ChainNodePath& devicePath) const
     return host_->isDeviceEditorOpen(devicePath);
 }
 
+double MagdaAudioEngine::deviceLatencySeconds(const ChainNodePath& devicePath) const {
+    return host_->deviceLatencySeconds(devicePath);
+}
+
+const engine::RenderLoad* MagdaAudioEngine::renderLoad() const {
+    return &host_->renderLoad();
+}
+
 /** @brief The host's instance is the one filling the ring a faceplate draws (#2585). */
 std::shared_ptr<daw::audio::MagdaDevice> MagdaAudioEngine::renderedDevice(
     const ChainNodePath& devicePath) const {

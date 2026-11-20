@@ -106,6 +106,14 @@ class EngineSession {
         captureRing_ = ring;
     }
 
+    /// Where each callback's budget and each op's time go (#3357); the host's, outliving this.
+    /// Before the first publish; null keeps none.
+    void setRenderLoad(RenderLoad* load) {
+        load_ = load;
+        if (renderAhead_ != nullptr)
+            renderAhead_->setRenderLoad(load);
+    }
+
     /// One round of the ahead thread's work, where it does not run in the background.
     int renderAheadOnce();
 
@@ -702,6 +710,7 @@ class EngineSession {
     /// callback.
     std::unique_ptr<RenderAhead> renderAhead_;
     CaptureRing* captureRing_ = nullptr;
+    RenderLoad* load_ = nullptr;
     int renderAheadDepth_ = 0;
 
     /// The callback's count of the blocks it has rendered, which numbers each block's

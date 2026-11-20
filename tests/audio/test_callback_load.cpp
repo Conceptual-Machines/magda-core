@@ -33,3 +33,18 @@ TEST_CASE("CallbackLoad reads a beat's spikes as their mean, at any phase", "[au
             CHECK(load.lastWindow() == Catch::Approx(expected).epsilon(0.02));
     }
 }
+
+TEST_CASE("CallbackLoad adds the render-ahead thread's time to the callback's",
+          "[audio][cpu][3357]") {
+    magda::CallbackLoad load;
+    for (int block = 0; block < 400; ++block)
+        load.record(kBlockMs * 0.1, kBlock, kRate, kBlockMs * (block == 7 ? 0.9 : 0.3),
+                    block == 7 ? 0.9 : 0.3);
+
+    const auto window = load.window();
+    REQUIRE(window.index == 2);
+    CHECK(window.callback == Catch::Approx(0.1));
+    CHECK(window.ahead == Catch::Approx(0.3).epsilon(0.02));
+    CHECK(window.worstCallback == Catch::Approx(0.1));
+    CHECK(load.lastWindow() == Catch::Approx(window.callback + window.ahead));
+}

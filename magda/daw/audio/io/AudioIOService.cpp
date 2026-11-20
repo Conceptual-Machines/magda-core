@@ -210,7 +210,8 @@ AudioIOControl::Status AudioIOService::status() const {
         status.sampleRate = device->getCurrentSampleRate();
         status.bufferSize = device->getCurrentBufferSizeSamples();
     }
-    status.cpuUsage = callbackLoad_.lastWindow();
+    status.cpuWindow = callbackLoad_.window();
+    status.cpuUsage = status.cpuWindow.total();
     status.xruns = manager_.getXRunCount();
     return status;
 }

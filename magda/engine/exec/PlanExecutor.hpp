@@ -25,6 +25,7 @@
 #include "exec/PlanLayout.hpp"
 #include "exec/PlanValues.hpp"
 #include "exec/RenderContext.hpp"
+#include "exec/RenderLoad.hpp"
 #include "param/ParamResolve.hpp"
 #include "plan/PlanDiff.hpp"
 #include "plan/RenderPlan.hpp"
@@ -475,6 +476,12 @@ class PlanExecutor {
     void renderOp(OpId op, const OpValue& value, const BlockInfo& block,
                   juce::AudioBuffer<float>& output);
 
+    /// Where each op's render time goes (#3357); null for an executor that does not play live.
+    /// Off the audio thread, before either side renders.
+    void setRenderLoad(RenderLoad* load) {
+        load_ = load;
+    }
+
     /// Meter ops whose tap the bindings filled. The rest still render; they
     /// just publish nothing, since nothing is reading them.
     int boundMeterCount() const {
@@ -920,6 +927,7 @@ class PlanExecutor {
     int renderAheadDepth_ = 1;
     CallbackRenderer* callbackRenderer_ = nullptr;
     AheadState* aheadState_ = nullptr;
+    RenderLoad* load_ = nullptr;
 
     /// The block the ahead side is rendering, while it is: a Handoff op writes into its entry.
     std::optional<std::uint64_t> aheadBlock_;
@@ -943,6 +951,10 @@ class PlanExecutor {
 
     /// Handoff @p op's input into the ahead block's entry; silence when not @p required.
     void writeHandoff(std::size_t op, int numSamples, bool required);
+
+    /// renderOp without the timing.
+    void renderOpUntimed(OpId id, const OpValue& published, const BlockInfo& block,
+                         juce::AudioBuffer<float>& output);
 
     /// Every handoff's output slot from @p sequence's entry, or silence when it is not @p ready.
     void deliverHandoffs(std::uint64_t sequence, int numSamples, bool ready);

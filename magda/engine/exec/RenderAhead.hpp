@@ -16,6 +16,7 @@
 #include "core/TypeIds.hpp"
 #include "exec/PlanValues.hpp"
 #include "exec/RenderContext.hpp"
+#include "exec/RenderLoad.hpp"
 #include "transport/TransportClock.hpp"
 
 /**
@@ -77,6 +78,9 @@ class RenderAhead final : private juce::Thread {
     void setClips(std::shared_ptr<const ClipSnapshot> clips);
     void setStreamFeed(const ClipStreamFeed* streams);
 
+    /// Where this thread's render time goes (#3357); null for none.
+    void setRenderLoad(RenderLoad* load);
+
     /// Run @p fn between rounds, so nothing renders through the epoch meanwhile. Not on the
     /// audio thread.
     template <typename Fn> void whileIdle(Fn&& fn) {
@@ -132,6 +136,7 @@ class RenderAhead final : private juce::Thread {
     std::shared_ptr<const TransportSnapshot> transport_;
     std::shared_ptr<const ClipSnapshot> clips_;
     const ClipStreamFeed* streamFeed_ = nullptr;
+    RenderLoad* load_ = nullptr;
     int depth_ = 1;
 
     /// Held for a whole round, so a new epoch waits for the one in flight.

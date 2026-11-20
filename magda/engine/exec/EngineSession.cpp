@@ -75,6 +75,7 @@ void EngineSession::setRenderAhead(int depth, bool inBackground) {
 
     renderAhead_ = std::make_unique<RenderAhead>(inBackground);
     renderAhead_->setDepth(renderAheadDepth_);
+    renderAhead_->setRenderLoad(load_);
     if (voices_ != nullptr)
         renderAhead_->setStreamFeed(&voices_->feed());
 }
@@ -103,6 +104,7 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
 
     auto prepared = std::make_shared<PreparedRender>(pool_);
     prepared->executor.setRenderAheadDepth(renderAheadDepth_);
+    prepared->executor.setRenderLoad(load_);
     prepared->plan = std::move(plan);
     prepared->values = std::move(values);
     prepared->context = context;
@@ -457,6 +459,8 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
     // still asked at the next real one.
     if (numSamples <= 0)
         return;
+    if (load_ != nullptr)
+        load_->addBudget(numSamples, (*render)->context.sampleRate);
 
     // Values and plans travel separately and are swapped one after the other,
     // so for the moment between the two the ones in flight can belong to the

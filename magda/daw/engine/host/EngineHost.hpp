@@ -29,6 +29,10 @@ class MidiMessage;
 class String;
 }  // namespace juce
 
+namespace magda::engine {
+class RenderLoad;
+}
+
 namespace magda {
 class CallbackLoad;
 class PhaseSource;
@@ -209,6 +213,9 @@ class EngineHost {
     /// The published plan's output latency, in samples. On the message thread.
     int latencySamples() const;
 
+    /// Each track's and device's render time so far, on both render threads (#3357).
+    const engine::RenderLoad& renderLoad() const;
+
     // ===== Live MIDI (#2579) =====
     //
     // Both queue one message for the next callback, from the message thread or
@@ -332,6 +339,9 @@ class EngineHost {
     bool hideDeviceEditor(const ChainNodePath& devicePath);
     bool toggleDeviceEditor(const ChainNodePath& devicePath);
     bool isDeviceEditorOpen(const ChainNodePath& devicePath);
+
+    /// The latency the live instance at @p devicePath reports, in seconds. Message thread.
+    double deviceLatencySeconds(const ChainNodePath& devicePath) const;
 
     // ===== Transport =====
     //

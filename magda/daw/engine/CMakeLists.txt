@@ -54,6 +54,7 @@ target_sources(magda_daw_app PRIVATE
         host/StemRender.cpp
         host/TrackFreeze.cpp
         host/TracksBeingPlayed.cpp
+        host/RenderLoadShares.cpp
         host/EngineHost.hpp
         host/EngineInsertCapture.hpp
         host/EngineOfflineRender.hpp
