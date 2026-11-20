@@ -92,8 +92,7 @@ class RenderThreadPool {
     }
 
     /**
-     * @brief Render @p job in @p slot, signalling up to @p ready workers, and return when it is
-     * done.
+     * @brief Render @p job in @p slot, signalling up to @p ready workers, until it is done.
      *
      * @p ready is how many ops the job has ready to take, which is how many workers
      * are signalled. One caller per slot: the audio thread, and the render-ahead thread.
