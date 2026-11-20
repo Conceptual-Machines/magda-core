@@ -3051,6 +3051,8 @@ OperationRegistry::OperationRegistry() {
                 "xrunCount":{"type":["integer","null"],"minimum":0},
                 "dropoutCount":{"type":["integer","null"],"minimum":0},
                 "callbackLoad":{"type":["number","null"],"minimum":0},
+                "renderAheadMisses":{"type":["integer","null"],"minimum":0},
+                "renderAheadDiscards":{"type":["integer","null"],"minimum":0},
                 "problemCoverage":{"type":"string","enum":["audioIoObservations","unavailable"]},
                 "problems":{"type":"array","maxItems":32,"items":{
                     "type":"object","properties":{
@@ -3064,6 +3066,7 @@ OperationRegistry::OperationRegistry() {
             },
             "required":["engine","observedAtMs","sinceMs","projectBound",
                         "audioDeviceOpen","xrunCount","dropoutCount","callbackLoad",
+                        "renderAheadMisses","renderAheadDiscards",
                         "problemCoverage","problems","discardedProblemCount"],
             "additionalProperties":false
         })json"));

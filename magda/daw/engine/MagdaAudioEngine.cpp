@@ -504,6 +504,13 @@ std::uint64_t MagdaAudioEngine::publishCount() const {
     return host_ != nullptr ? host_->publishCount() : 0;
 }
 
+std::optional<AudioEngine::RenderAheadCounters> MagdaAudioEngine::renderAheadCounters() const {
+    if (host_ == nullptr)
+        return std::nullopt;
+    const auto [misses, discards] = host_->renderAheadCounters();
+    return RenderAheadCounters{misses, discards};
+}
+
 /** @brief The host's instances, which are the only ones there are (#2579). */
 HostParameters MagdaAudioEngine::describeDeviceParameters(const ChainNodePath& devicePath) const {
     return host_ != nullptr ? host_->describeDeviceParameters(devicePath) : HostParameters{};

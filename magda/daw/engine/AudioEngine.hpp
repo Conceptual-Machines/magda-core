@@ -409,6 +409,16 @@ class AudioEngine : public AudioEngineListener {
         return 0;
     }
 
+    /// The live plan's render-ahead misses and discards (#1898), from zero at each publish.
+    /// Message thread; nullopt for an engine without render-ahead.
+    struct RenderAheadCounters {
+        int misses = 0;
+        std::uint64_t discards = 0;
+    };
+    virtual std::optional<RenderAheadCounters> renderAheadCounters() const {
+        return std::nullopt;
+    }
+
     /**
      * @brief Every parameter the plugin at @p devicePath reports (#2629).
      *

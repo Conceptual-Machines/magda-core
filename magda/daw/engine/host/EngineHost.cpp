@@ -3918,6 +3918,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         return publishCount_;
     }
 
+    std::pair<int, std::uint64_t> renderAheadCounters() const {
+        if (session_ == nullptr)
+            return {0, 0};
+        return {session_->renderAheadMisses(), session_->renderAheadDiscards()};
+    }
+
     std::optional<float> observedParameter(const ChainNodePath& devicePath, int paramIndex) const {
         const auto key = keyOfDeviceAt(devicePath);
         if (!key.has_value())
@@ -4572,6 +4578,10 @@ std::shared_ptr<audio::MagdaDevice> EngineHost::renderedDevice(
 
 std::uint64_t EngineHost::publishCount() const {
     return impl_->publishCount();
+}
+
+std::pair<int, std::uint64_t> EngineHost::renderAheadCounters() const {
+    return impl_->renderAheadCounters();
 }
 
 void EngineHost::invalidateParameterWritesAt(const ChainNodePath& devicePath) const {

@@ -127,6 +127,10 @@ class LiveDiagnosticsSource final : public DiagnosticsSource {
                          deviceOpen && std::isfinite(status.cpuUsage) && status.cpuUsage >= 0.0
                              ? juce::var(status.cpuUsage)
                              : juce::var());
+        const auto ahead = engine_.renderAheadCounters();
+        obj->setProperty("renderAheadMisses", ahead ? juce::var(ahead->misses) : juce::var());
+        obj->setProperty("renderAheadDiscards",
+                         ahead ? juce::var(static_cast<juce::int64>(ahead->discards)) : juce::var());
         obj->setProperty("problemCoverage", "audioIoObservations");
         juce::Array<juce::var> problems;
         for (const auto& problem : problems_)
