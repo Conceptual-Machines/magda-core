@@ -347,9 +347,6 @@ class EngineHost {
     bool toggleDeviceEditor(const ChainNodePath& devicePath);
     bool isDeviceEditorOpen(const ChainNodePath& devicePath);
 
-    /// The latency the live instance at @p devicePath reports, in seconds. Message thread.
-    double deviceLatencySeconds(const ChainNodePath& devicePath) const;
-
     // ===== Transport =====
     //
     // Play, stop and locate are a request the clock applies once, so each of

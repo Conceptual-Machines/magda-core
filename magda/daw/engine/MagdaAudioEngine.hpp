@@ -116,7 +116,6 @@ class MagdaAudioEngine final : public AudioEngine,
     bool hideDeviceEditor(const ChainNodePath& devicePath) override;
     bool toggleDeviceEditor(const ChainNodePath& devicePath) override;
     bool isDeviceEditorOpen(const ChainNodePath& devicePath) const override;
-    double deviceLatencySeconds(const ChainNodePath& devicePath) const override;
     const engine::RenderLoad* renderLoad() const override;
 
     std::shared_ptr<daw::audio::MagdaDevice> renderedDevice(

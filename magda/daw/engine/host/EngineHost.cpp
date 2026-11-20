@@ -4567,14 +4567,6 @@ bool EngineHost::isDeviceEditorOpen(const ChainNodePath& devicePath) {
     return external != nullptr && external->isEditorOpen();
 }
 
-double EngineHost::deviceLatencySeconds(const ChainNodePath& devicePath) const {
-    const auto key = keyOfDeviceAt(devicePath);
-    if (!key.has_value() || impl_->session_ == nullptr || impl_->context_.sampleRate <= 0.0)
-        return 0.0;
-    const auto held = impl_->session_->device(*key);
-    return held != nullptr ? held->latencySamples() / impl_->context_.sampleRate : 0.0;
-}
-
 juce::String EngineHost::formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
                                                float normalised) const {
     return impl_->formatDeviceParameter(devicePath, paramIndex, normalised);

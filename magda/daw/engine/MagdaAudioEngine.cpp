@@ -493,10 +493,6 @@ bool MagdaAudioEngine::isDeviceEditorOpen(const ChainNodePath& devicePath) const
     return host_->isDeviceEditorOpen(devicePath);
 }
 
-double MagdaAudioEngine::deviceLatencySeconds(const ChainNodePath& devicePath) const {
-    return host_->deviceLatencySeconds(devicePath);
-}
-
 const engine::RenderLoad* MagdaAudioEngine::renderLoad() const {
     return &host_->renderLoad();
 }
