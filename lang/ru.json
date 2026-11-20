@@ -778,5 +778,20 @@
     "section.device": "Устройство",
     "label.preview_output": "Прослушивать файлы браузера через",
     "status.channels": "входов: {0} · выходов: {1}"
+  },
+  "cpu_load": {
+    "title": "",
+    "callback": "",
+    "ahead": "",
+    "other": "",
+    "last_30s": "",
+    "where_callback": "",
+    "where_ahead": "",
+    "where_both": "",
+    "devices": "",
+    "armed": "",
+    "monitoring": "",
+    "in_editor": "",
+    "latency": ""
   }
 }

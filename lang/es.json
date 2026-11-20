@@ -778,5 +778,20 @@
     "section.device": "Dispositivo",
     "label.preview_output": "Previsualizar archivos del navegador en",
     "status.channels": "{0} entradas · {1} salidas"
+  },
+  "cpu_load": {
+    "title": "",
+    "callback": "",
+    "ahead": "",
+    "other": "",
+    "last_30s": "",
+    "where_callback": "",
+    "where_ahead": "",
+    "where_both": "",
+    "devices": "",
+    "armed": "",
+    "monitoring": "",
+    "in_editor": "",
+    "latency": ""
   }
 }

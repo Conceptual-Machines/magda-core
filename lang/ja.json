@@ -778,5 +778,20 @@
     "section.device": "デバイス",
     "label.preview_output": "ブラウザファイルの試聴オン",
     "status.channels": "{0} 入力· {1} 出力"
+  },
+  "cpu_load": {
+    "title": "",
+    "callback": "",
+    "ahead": "",
+    "other": "",
+    "last_30s": "",
+    "where_callback": "",
+    "where_ahead": "",
+    "where_both": "",
+    "devices": "",
+    "armed": "",
+    "monitoring": "",
+    "in_editor": "",
+    "latency": ""
   }
 }
