@@ -97,8 +97,8 @@ RenderThreadPool::~RenderThreadPool() {
         worker->stopThread(2000);
 }
 
-void RenderThreadPool::render(Job& job, int ready) {
-    job_.store(&job, std::memory_order_seq_cst);
+void RenderThreadPool::render(Job& job, int ready, Slot slot) {
+    jobs_[static_cast<std::size_t>(slot)].store(&job, std::memory_order_seq_cst);
 
     const auto signalled = std::clamp(ready, 0, numThreads() - 1);
     if (BlockProfile::enabled())
@@ -146,11 +146,16 @@ bool RenderThreadPool::takeWork(Worker& worker) {
     if (queued_.load(std::memory_order_acquire) <= 0)
         return false;
 
+    return takeFrom(jobs_[static_cast<std::size_t>(Slot::callback)], worker) ||
+           takeFrom(jobs_[static_cast<std::size_t>(Slot::ahead)], worker);
+}
+
+bool RenderThreadPool::takeFrom(std::atomic<Job*>& slot, Worker& worker) {
     // Arrival is marked before the job is read, so release() cannot look at an idle-seeming
     // pool and conclude that a worker on its way in will not arrive.
     worker.arrival.fetch_add(1, std::memory_order_seq_cst);
 
-    auto* job = job_.load(std::memory_order_seq_cst);
+    auto* job = slot.load(std::memory_order_seq_cst);
     if (job != nullptr)
         job->workersInside.fetch_add(1, std::memory_order_seq_cst);
 
@@ -216,9 +221,11 @@ void RenderThreadPool::configure(double blockSeconds, juce::AudioWorkgroup workg
 
 // Modelled in specs/tla/plan_swap, with takeWork() and render().
 void RenderThreadPool::release(Job& job) {
-    // Only this job: another one may have been published since.
-    auto* expected = &job;
-    job_.compare_exchange_strong(expected, nullptr, std::memory_order_seq_cst);
+    // Only this job, in whichever slot holds it: another one may have been published since.
+    for (auto& slot : jobs_) {
+        auto* expected = &job;
+        slot.compare_exchange_strong(expected, nullptr, std::memory_order_seq_cst);
+    }
 
     // First the workers that read the job pointer before it was taken away and have not yet
     // counted themselves against it, each by the mark it was on; then the ones inside.

@@ -30,6 +30,9 @@
  * lightweight semaphore. A block signals as many workers as it has ops ready. Which op a
  * thread takes is the job's business; all this owns is the threads.
  *
+ * Two jobs can render at once, the callback's and the one rendered ahead (#3360). A worker
+ * takes from the callback's first after every chain, so the ahead job runs on what it leaves.
+ *
  * It outlives plans. Threads are made once and every plan published afterwards renders on the
  * same ones.
  */
@@ -38,6 +41,9 @@ namespace magda::engine {
 
 class RenderThreadPool {
   public:
+    /// Which of the two jobs a render() is: the callback's, or the one rendered ahead of it.
+    enum class Slot { callback, ahead };
+
     /// One block of one plan, as the threads see it.
     class Job {
       public:
@@ -68,8 +74,8 @@ class RenderThreadPool {
     /**
      * @brief @p numWorkers threads, besides whoever calls render().
      *
-     * @p realtime sets them realtime scheduling (SCHED_RR at the top of its
-     * range); false leaves them at an ordinary high priority, for an offline render.
+     * @p realtime starts them as startRenderThread() does; false leaves them at an ordinary
+     * high priority, for an offline render.
      */
     explicit RenderThreadPool(int numWorkers, bool realtime = true);
     ~RenderThreadPool();
@@ -86,12 +92,12 @@ class RenderThreadPool {
     }
 
     /**
-     * @brief Render @p job, signalling up to @p ready workers, and return when it is done.
+     * @brief Render @p job in @p slot, signalling up to @p ready workers, until it is done.
      *
      * @p ready is how many ops the job has ready to take, which is how many workers
-     * are signalled. Audio thread.
+     * are signalled. One caller per slot: the audio thread, and the render-ahead thread.
      */
-    void render(Job& job, int ready);
+    void render(Job& job, int ready, Slot slot = Slot::callback);
 
     /// A CPU pause, twice: what a thread with nothing ready does before yielding.
     static void pause();
@@ -131,8 +137,11 @@ class RenderThreadPool {
   private:
     class Worker;
 
-    /// Take one op of the current job on @p worker, if any is ready.
+    /// Take one op on @p worker, the callback's job first, if any is ready.
     bool takeWork(Worker& worker);
+
+    /// Take one op of the job in @p slot on @p worker, if it has one ready.
+    bool takeFrom(std::atomic<Job*>& slot, Worker& worker);
 
     /// Pause, yield, then sleep. Returns at once while work
     /// is queued, and true when it slept.
@@ -150,9 +159,9 @@ class RenderThreadPool {
 
     std::vector<std::unique_ptr<Worker>> workers_;
 
-    /// The job the workers render, or null between epochs. Sequentially consistent, and so are
-    /// the workers' arrival marks: release() reads the two against each other.
-    std::atomic<Job*> job_{nullptr};
+    /// The jobs the workers render by Slot, or null between epochs. Sequentially consistent, and
+    /// so are the workers' arrival marks: release() reads the two against each other.
+    std::atomic<Job*> jobs_[2] = {nullptr, nullptr};
 };
 
 }  // namespace magda::engine

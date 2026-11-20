@@ -452,6 +452,7 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES engine/test_render_plan_compiler.cpp)
     list(APPEND TEST_SOURCES engine/test_render_plan_executor.cpp)
     list(APPEND TEST_SOURCES engine/test_parallel_executor.cpp)
+    list(APPEND TEST_SOURCES engine/test_render_thread_pool.cpp)
     list(APPEND TEST_SOURCES engine/test_render_denormals.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_layout.cpp)
     # Value-driven liveness: muted and unused pure audio work is omitted while
