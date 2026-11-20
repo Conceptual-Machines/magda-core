@@ -384,7 +384,6 @@ int PlanExecutor::activeCrossfades() const {
 void PlanExecutor::reset() {
     plan_ = nullptr;
     planFingerprint_ = 0;
-    aheadRecovering_ = false;
     reportedUnboundInputs_.clear();
     latencySamples_ = 0;
     carriedDelayLines_ = 0;
@@ -1786,6 +1785,8 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
     // The ahead side drives no hardware, so it has nothing to write into the callback's buffer.
     auto& target = side == 1 ? output : aheadOutput_;
     const auto start = beginBlock(values, requestedBlock, target);
+    if (side == 0)
+        handoffs_.writingAs(BlockStamp::of(start.block));
 
     if (side == 1) {
         // Heard through the handoffs when it was rendered ahead for this very block and these
@@ -1802,28 +1803,27 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
         // How long the writer gets before the block is claimed from it; half the block in all, so
         // at least half is left for the callback's own render.
         auto claimBy = entered + quarter;
-        // A writer inside this very block is let finish it: giving it up costs every ahead track
-        // a jump, and rendering it again here costs more than what the writer has left.
-        if (splits && !aheadRecovering_ && published == HandoffRing::Published::missing &&
-            handoffs_.writing(sequence)) {
-            const ProfileScope timed([](auto elapsed) {
-                BlockProfile::addPhase(BlockProfile::WriterFinishWait, elapsed);
-            });
-            claimBy = entered + 2 * quarter;
-            const auto finishBy = claimBy - quarter / 2;
-            while (handoffs_.writing(sequence) && std::chrono::steady_clock::now() < finishBy) {
+        // A writer holding this very block is helped finish it: taking it over costs every ahead
+        // track a jump, which panics and re-strikes their notes.
+        bool claimed = false;
+        if (splits && published == HandoffRing::Published::missing) {
+            claimed = handoffs_.claimForCallback();
+            if (!claimed) {
+                published = helpWriter(sequence, BlockStamp::of(start.block),
+                                       entered + 2 * quarter - quarter / 2);
+                claimBy =
+                    std::max(entered + 2 * quarter, std::chrono::steady_clock::now() + quarter / 2);
             }
-            published = handoffs_.published(sequence, BlockStamp::of(start.block));
         }
         if (published != HandoffRing::Published::split || !splits) {
             // A writer inside its ops gives the block up at the next one, waited for until claimBy,
             // so a writer that has stalled costs a miss, not a gap.
-            const auto claimed = [&] {
+            if (!claimed) {
                 const ProfileScope timed([](auto elapsed) {
                     BlockProfile::addPhase(BlockProfile::CallbackClaimWait, elapsed);
                 });
-                return handoffs_.claimForCallbackBy(claimBy);
-            }();
+                claimed = handoffs_.claimForCallbackBy(claimBy);
+            }
             if (claimed) {
                 published = handoffs_.published(sequence, BlockStamp::of(start.block));
                 const bool whole = published != HandoffRing::Published::split || !splits;
@@ -1833,10 +1833,8 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
                     // release (BlockInfo::continuous).
                     discontinuousAhead_ =
                         published != HandoffRing::Published::whole && handoffs_.reached(sequence);
-                    if (discontinuousAhead_) {
+                    if (discontinuousAhead_)
                         handoffs_.discardFrom(sequence);
-                        aheadRecovering_ = true;
-                    }
                     if (callbackRenderer_ != nullptr)
                         callbackRenderer_->renderWhole(values, requestedBlock, output);
                     else
@@ -1858,8 +1856,6 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
                 }
             }
         }
-        if (published == HandoffRing::Published::split)
-            aheadRecovering_ = false;
         if (start.render)
             deliverHandoffs(sequence, start.block.numSamples,
                             published == HandoffRing::Published::split);
@@ -1871,6 +1867,16 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
         renderMidiPrefix(values, start.block, side);
         resolveParameters(values, start.block, side);
         callbackRenderer_->renderCallbackSide(values, start.block, target, start.applyValues);
+    } else if (start.render && side == 0 && callbackRenderer_ != nullptr) {
+        renderMidiPrefix(values, start.block, side);
+        resolveParameters(values, start.block, side);
+        // The callback needs the ops this block is in: given up once what is running finishes.
+        if (!callbackRenderer_->renderAheadSide(values, start.block, target, start.applyValues)) {
+            aheadBlock_.reset();
+            handoffs_.abandon(sequence);
+            handoffs_.releaseClaim();
+            return false;
+        }
     } else if (start.render) {
         renderMidiPrefix(values, start.block, side);
         resolveParameters(values, start.block, side);
@@ -1901,6 +1907,28 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
         handoffs_.release(sequence);
     }
     return true;
+}
+
+HandoffRing::Published PlanExecutor::helpWriter(std::uint64_t sequence, const BlockStamp& stamp,
+                                                std::chrono::steady_clock::time_point finishBy) {
+    const ProfileScope timed(
+        [](auto elapsed) { BlockProfile::addPhase(BlockProfile::WriterFinishWait, elapsed); });
+    // Each op of a block that will be heard is one a whole render would run anyway, so only
+    // idling has a deadline. One rendered for another moment is discarded: not waited for.
+    auto published = handoffs_.published(sequence, stamp);
+    while (published == HandoffRing::Published::missing && handoffs_.writerHolds() &&
+           !handoffs_.writingAfter(sequence)) {
+        const auto rendering = handoffs_.rendering(sequence, stamp);
+        if (rendering == HandoffRing::Rendering::otherwise)
+            break;
+        const bool helped = rendering == HandoffRing::Rendering::asNeeded &&
+                            callbackRenderer_ != nullptr && callbackRenderer_->helpAheadSide();
+        if (!helped && std::chrono::steady_clock::now() >= finishBy)
+            break;
+        published = handoffs_.published(sequence, stamp);
+    }
+    // Afresh: the writer may have published the block just as the loop gave up on it.
+    return handoffs_.published(sequence, stamp);
 }
 
 void PlanExecutor::writeHandoff(std::size_t op, int numSamples, bool required) {

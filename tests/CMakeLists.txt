@@ -91,6 +91,7 @@ set(TEST_SOURCES
     devices/test_mpe_per_voice.cpp
     # An idle instrument skips its render, exactly (#2786)
     devices/test_instrument_idle.cpp
+    devices/test_polysynth_fresh.cpp
     devices/test_device_sdk_handles.cpp
     devices/test_device_sdk_state.cpp
     devices/test_external_insert_registry.cpp
@@ -1091,6 +1092,7 @@ target_sources(magda_juce_tests PRIVATE
 
         # A Session playhead and the timeline notification from the same UI timer tick.
         ../magda/daw/engine/PlaybackPositionTimer.cpp
+        ../magda/daw/engine/ProcessCpuMeter.cpp
         engine/test_playback_position_timer_juce.cpp
 
         # The message-thread half of the control executor (#2581). Here because

@@ -56,6 +56,11 @@ class RenderLoadShares {
     LoadShare track(TrackId track) const;
     LoadShare device(TrackId track, ChainSegment segment, DeviceId device) const;
 
+    /// Every op's together.
+    LoadShare all() const {
+        return all_;
+    }
+
   private:
     using Key = std::tuple<TrackId, ChainSegment, DeviceId>;
 
@@ -63,6 +68,7 @@ class RenderLoadShares {
     std::uint64_t previousBudget_ = 0;
     std::map<Key, LoadShare> shares_;
     std::map<TrackId, LoadShare> tracks_;
+    LoadShare all_;
 };
 
 }  // namespace magda

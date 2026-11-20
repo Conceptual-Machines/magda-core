@@ -43,8 +43,7 @@
 
 namespace magda::engine {
 
-class ParallelPlanExecutor final : private RenderThreadPool::Job,
-                                   private PlanExecutor::CallbackRenderer {
+class ParallelPlanExecutor final : private PlanExecutor::CallbackRenderer {
   public:
     /**
      * @brief Render on @p pool, or on the calling thread alone when it is null.
@@ -90,8 +89,8 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job,
     void process(const PlanValues& values, const BlockInfo& block,
                  juce::AudioBuffer<float>& output);
 
-    /// One side of one block (PlanExecutor::processSide): the ahead side on the calling thread,
-    /// the callback's across the pool like process().
+    /// One side of one block (PlanExecutor::processSide), across the pool like process(): the
+    /// callback's in its slot, and the ahead side's in the other, given up between ops (#3361).
     bool processSide(int side, std::uint64_t sequence, const PlanValues& values,
                      const BlockInfo& block, juce::AudioBuffer<float>& output,
                      const std::function<bool()>& underClaim = {}) {
@@ -190,82 +189,111 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job,
     }
 
   private:
-    /// One ready op and the chain it releases, on a worker (RenderThreadPool::Job).
-    bool takeOne() override;
+    /**
+     * @brief One side's schedule of a block, which the pool renders as a job.
+     *
+     * Two, so the ahead side drains beside the callback's (#3361): the callback's also renders
+     * whole blocks, and the ahead side's is given up once the callback waits for its claim.
+     */
+    class Schedule final : public RenderThreadPool::Job {
+      public:
+        Schedule(ParallelPlanExecutor& owner, RenderThreadPool::Slot slot)
+            : owner_(owner), slot_(slot) {}
 
-    /// Ready ops until the block is finished, on the thread that called render(), pausing
-    /// while none is ready.
-    void finishOnCaller() override;
+        /// Sized for a plan of @p numOps ops. Off the audio thread, once no worker is inside.
+        void size(std::size_t numOps);
+
+        /// The drain of @p side (-1 for the whole block), then its tail. False when given up,
+        /// with nothing of the tail rendered.
+        bool render(const PlanValues& values, const BlockInfo& block,
+                    juce::AudioBuffer<float>& output, bool applyValues, int side, bool abandonable);
+
+        /// Wait until no worker can be inside this job. Off the audio thread.
+        void letGoOfPool();
+
+        /// One ready op of the block in hand, on the calling thread. False when none is ready.
+        bool help() {
+            return takeOne();
+        }
+
+      private:
+        bool takeOne() override;
+        void finishOnCaller() override;
+
+        /// Render @p op and everything it releases that this thread carries straight on with.
+        /// A released consumer is carried when it is the op's only consumer or
+        /// its last one, and queued for another thread otherwise.
+        void runChain(OpId op);
+        void renderProfiled(OpId op);
+        void renderTail(OpId op);
+        /// The drain on this thread alone, in plan order, which is dependency order.
+        void renderInPlanOrder();
+        /// Seed the counts and queue the ops ready at the top of a block. Answers how many of
+        /// them a worker would render.
+        int startSchedule();
+        void enqueue(OpId op);
+        /// Whether the callback is waiting for this block, which stops what is not running yet.
+        bool givenUp();
+
+        const OpValue& valueOf(OpId op) const {
+            return applyValues_ ? values_->ops[static_cast<std::size_t>(op)] : kUnityValue;
+        }
+
+        ParallelPlanExecutor& owner_;
+        const RenderThreadPool::Slot slot_;
+
+        /// Whether the pool has ever been handed this job. Relaxed: the plan swap that took
+        /// the callers off this executor already orders the read after the write.
+        std::atomic<bool> handedToPool_{false};
+
+        /// This block, as every thread reads it. Written before the ready set is seeded and
+        /// read only by a thread that has taken an op out of it.
+        BlockInfo block_;
+        const PlanValues* values_ = nullptr;
+        bool applyValues_ = false;
+        juce::AudioBuffer<float>* output_ = nullptr;
+
+        /// The side this drain renders (PlanExecutor::sideOf), or -1 for the whole block. The
+        /// other side's ops still pass through, unrendered, to release their consumers.
+        int side_ = -1;
+        bool abandonable_ = false;
+        std::atomic<bool> abandoned_{false};
+
+        /// Producers each op is still waiting for, copied from the plan every block.
+        std::vector<std::atomic<std::uint16_t>> pending_;
+
+        /// The ready set, first in first out, sized so an op is queued at most once a block.
+        std::unique_ptr<rigtorp::MPMCQueue<OpId>> ready_;
+
+        /// Ops still to finish this block. Zero is what "the block is done" means.
+        alignas(64) std::atomic<int> remaining_{0};
+    };
 
     void renderWhole(const PlanValues& values, const BlockInfo& block,
                      juce::AudioBuffer<float>& output) override;
     void renderCallbackSide(const PlanValues& values, const BlockInfo& block,
                             juce::AudioBuffer<float>& output, bool applyValues) override;
-
-    /// The drain, then the ops left for this thread, for the block set in block_ and output_.
-    void renderScheduled();
-
-    /// Render @p op on this thread if it is on the side being rendered.
-    void renderTail(OpId op);
-
-    /// Render @p op and everything it releases that this thread carries straight on with.
-    /// A released consumer is carried when it is the op's only consumer or
-    /// its last one, and queued for another thread otherwise.
-    void runChain(OpId op);
-
-    /// Render @p op, counted into the profile.
-    void renderProfiled(OpId op);
-
-    /// Whether @p op renders in the drain rather than in the prefix or the serial tail.
-    bool rendersInDrain(OpId op) const;
-
-    /// The drain on this thread alone, in plan order, which is dependency order.
-    void renderInPlanOrder();
-
-    /// Seed the counts and queue the ops ready at the top of a block. Answers how many of them
-    /// a worker would render.
-    int startSchedule();
-
-    void enqueue(OpId op);
-
-    /// Wait until no worker can be inside this job, so what it owns may be
-    /// resized or destroyed. Off the audio thread.
-    void letGoOfPool();
-
-    const OpValue& valueOf(OpId op) const {
-        return applyValues_ ? values_->ops[static_cast<std::size_t>(op)] : kUnityValue;
+    bool renderAheadSide(const PlanValues& values, const BlockInfo& block,
+                         juce::AudioBuffer<float>& output, bool applyValues) override;
+    bool helpAheadSide() override {
+        return ahead_.help();
     }
+
+    /// Whether @p op renders in the drain of @p side rather than in the prefix or the tail.
+    bool rendersInDrain(OpId op, int side) const;
+
+    /// Wait until no worker can be inside either schedule, so what they own may be resized
+    /// or destroyed. Off the audio thread.
+    void letGoOfPool();
 
     PlanExecutor core_;
     RenderThreadPool* pool_ = nullptr;
     int parallelism_ = 1;
 
-    /// Whether the pool has ever been handed this job. Until it has, no worker
-    /// can be inside it and there is nothing to wait out.
-    ///
-    /// Written on the audio thread and read on the thread that retires an
-    /// epoch, so it is an atomic rather than a bool. Relaxed is enough: what
-    /// makes the read see the write is the plan swap that took the audio thread
-    /// off this executor, which is an ordering this flag does not have to
-    /// establish a second time.
-    std::atomic<bool> handedToPool_{false};
-
     /// Null until a plan with a usable schedule has been prepared. Not the same
     /// question as core_.isPrepared(): a plan can bind cleanly and still arrive
     /// without the constants this needs.
     const RenderPlan* plan_ = nullptr;
-
-    /// This block, as every thread reads it. Written before the ready set is
-    /// seeded and read only by a thread that has taken an op out of it, so the
-    /// publication is the same release the schedule already needs.
-    BlockInfo block_;
-    const PlanValues* values_ = nullptr;
-    bool applyValues_ = false;
-    juce::AudioBuffer<float>* output_ = nullptr;
-
-    /// The side this drain renders (PlanExecutor::sideOf), or -1 for the whole block. The other
-    /// side's ops still pass through the schedule, unrendered, to release their consumers.
-    int side_ = -1;
 
     /// Ops that drive the hardware output. Run by whoever drove the block, in
     /// plan order, once the graph has drained: they all accumulate into the one
@@ -283,16 +311,8 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job,
     /// the same callback channels and push into the same MIDI port.
     std::vector<OpId> insertSendOps_;
 
-    /// Producers each op is still waiting for. The plan's dependencyCounts,
-    /// copied in at the top of every block.
-    std::vector<std::atomic<std::uint16_t>> pending_;
-
-    /// The ready set, first in first out. Sized to the plan at
-    /// prepare: an op is queued at most once a block.
-    std::unique_ptr<rigtorp::MPMCQueue<OpId>> ready_;
-
-    /// Ops still to finish this block. Zero is what "the block is done" means.
-    alignas(64) std::atomic<int> remaining_{0};
+    Schedule callback_{*this, RenderThreadPool::Slot::callback};
+    Schedule ahead_{*this, RenderThreadPool::Slot::ahead};
 };
 
 }  // namespace magda::engine

@@ -14,6 +14,7 @@
 #include "../../core/StringTable.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../engine/AudioEngine.hpp"
+#include "../../engine/ProcessCpuMeter.hpp"
 #include "../../engine/host/RenderLoadShares.hpp"
 #include "../../engine/host/TracksBeingPlayed.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -40,6 +41,16 @@ juce::String whereOf(const LoadShare& share) {
         return tr("cpu_load.where_both");
     return share.callback >= share.ahead ? tr("cpu_load.where_callback")
                                          : tr("cpu_load.where_ahead");
+}
+
+/// @p share of one core as a share of the whole machine, the unit the transport reads in.
+LoadShare ofMachine(const LoadShare& share) {
+    const auto cores = static_cast<double>(std::max(juce::SystemStats::getNumCpus(), 1));
+    return {.callback = share.callback / cores, .ahead = share.ahead / cores};
+}
+
+juce::Colour otherColour() {
+    return ActiveTheme::getColour(ActiveTheme::TEXT_DIM);
 }
 
 juce::Colour callbackColour() {
@@ -80,7 +91,7 @@ class TrackLoadList : public juce::Component {
                 detail.add(tr("cpu_load.in_editor"));
             rows_.push_back({.track = track.id,
                              .name = track.name,
-                             .share = shares.track(track.id),
+                             .share = ofMachine(shares.track(track.id)),
                              .detail = detail.joinIntoString(" \xc2\xb7 ")});
             if (!expanded_.contains(track.id))
                 return;
@@ -90,7 +101,7 @@ class TrackLoadList : public juce::Component {
                     {.isDevice = true,
                      .track = track.id,
                      .name = device.name,
-                     .share = shares.device(track.id, device.segment, device.id),
+                     .share = ofMachine(shares.device(track.id, device.segment, device.id)),
                      .detail = tr("cpu_load.latency") + " " + juce::String(latencyMs, 1) + " ms"});
             }
         };
@@ -222,12 +233,15 @@ class CpuLoadView : public juce::Component, private juce::Timer {
         if (window.index == lastWindow_)
             return;
         lastWindow_ = window.index;
-        history_.push_back(window);
+
+        Sample sample{.cpu = cpu_.sample()};
+        if (const auto* load = engine_.renderLoad(); load != nullptr && shares_.update(*load)) {
+            sample.render = ofMachine(shares_.all());
+            refreshList();
+        }
+        history_.push_back(sample);
         while (history_.size() > kHistoryWindows)
             history_.pop_front();
-
-        if (const auto* load = engine_.renderLoad(); load != nullptr && shares_.update(*load))
-            refreshList();
         repaint(summary_.getUnion(graph_));
     }
 
@@ -238,16 +252,13 @@ class CpuLoadView : public juce::Component, private juce::Timer {
 
     void paintSummary(juce::Graphics& g) const {
         auto& fonts = FontManager::getInstance();
-        const auto latest = history_.empty() ? CallbackLoad::Window{} : history_.back();
-        double worst = 0.0;
-        for (const auto& window : history_)
-            worst = std::max({worst, window.worstCallback, window.worstAhead});
+        const auto latest = history_.empty() ? Sample{} : history_.back();
 
         auto area = summary_;
         auto top = area.removeFromTop(24);
         g.setFont(fonts.getUIFontBold(16.0f));
         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        g.drawText(tr("transport.cpu.cpu") + " " + percent(latest.total()), top,
+        g.drawText(tr("transport.cpu.cpu") + " " + percent(latest.cpu), top,
                    juce::Justification::centredLeft);
 
         g.setFont(fonts.getUIFont(12.0f));
@@ -260,10 +271,9 @@ class CpuLoadView : public juce::Component, private juce::Timer {
             g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             g.drawText(text, slot, juce::Justification::centredLeft);
         };
-        item(callbackColour(), tr("cpu_load.callback") + " " + percent(latest.callback));
-        item(aheadColour(), tr("cpu_load.ahead") + " " + percent(latest.ahead));
-        item(ActiveTheme::getColour(ActiveTheme::STATUS_WARNING),
-             tr("cpu_load.worst_block") + " " + percent(worst));
+        item(callbackColour(), tr("cpu_load.callback") + " " + percent(latest.render.callback));
+        item(aheadColour(), tr("cpu_load.ahead") + " " + percent(latest.render.ahead));
+        item(otherColour(), tr("cpu_load.other") + " " + percent(latest.other()));
     }
 
     void paintGraph(juce::Graphics& g) const {
@@ -285,15 +295,6 @@ class CpuLoadView : public juce::Component, private juce::Timer {
                                      static_cast<float>(kHistoryWindows - 1);
         };
 
-        double worst = 0.0;
-        for (const auto& window : history_)
-            worst = std::max({worst, window.worstCallback, window.worstAhead});
-        if (worst > 0.0) {
-            g.setColour(ActiveTheme::getColour(ActiveTheme::STATUS_WARNING).withAlpha(0.7f));
-            const float dashes[] = {4.0f, 3.0f};
-            g.drawDashedLine({area.getX(), y(worst), area.getRight(), y(worst)}, dashes, 2);
-        }
-
         const auto line = [&](juce::Colour colour, auto share) {
             if (history_.size() < 2)
                 return;
@@ -308,8 +309,11 @@ class CpuLoadView : public juce::Component, private juce::Timer {
             g.setColour(colour);
             g.strokePath(path, juce::PathStrokeType(1.5f));
         };
-        line(aheadColour(), [](const CallbackLoad::Window& window) { return window.ahead; });
-        line(callbackColour(), [](const CallbackLoad::Window& window) { return window.callback; });
+        // The headline's figure, in its colour, over the two the render spent.
+        line(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY),
+             [](const Sample& sample) { return sample.cpu; });
+        line(aheadColour(), [](const Sample& sample) { return sample.render.ahead; });
+        line(callbackColour(), [](const Sample& sample) { return sample.render.callback; });
 
         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -317,10 +321,22 @@ class CpuLoadView : public juce::Component, private juce::Timer {
         g.drawText(tr("cpu_load.last_30s"), graph_.reduced(4, 2), juce::Justification::bottomRight);
     }
 
+    /** @brief One half-second window, every figure a share of the machine's CPU. */
+    struct Sample {
+        double cpu = 0.0;
+        LoadShare render;
+
+        /// What MAGDA spent outside the render: the UI, and waiting between blocks.
+        double other() const {
+            return std::max(cpu - render.total(), 0.0);
+        }
+    };
+
     AudioEngine& engine_;
-    std::deque<CallbackLoad::Window> history_;
+    std::deque<Sample> history_;
     std::uint64_t lastWindow_ = 0;
     RenderLoadShares shares_;
+    ProcessCpuMeter cpu_;
     juce::Rectangle<int> summary_, graph_;
     juce::Viewport viewport_;
     TrackLoadList list_;

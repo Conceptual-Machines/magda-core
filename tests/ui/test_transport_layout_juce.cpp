@@ -172,16 +172,11 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
                        "segment " + juce::String(i) + " clips the largest position");
         }
 
-        beginTest("The CPU slot holds the peak form, not just the average");
+        beginTest("The CPU slot holds 100%");
         {
-            // setCpuUsage shows the retained peak beside the average once it
-            // runs ahead, so the widest readout is two numbers, not "100%".
-            expect(cpuReadoutText(50, 51) == "50%", "a peak within the margin is not shown");
-            expect(cpuReadoutText(88, 100) == "88/100%");
-
             const auto cpuFont = fonts.getMonoFont(kCpuValueFontSize);
-            expect(wide.cpuValue.getWidth() >= widthOf(cpuFont, cpuReadoutText(88, 100)),
-                   "the CPU readout clips once the peak runs ahead");
+            expect(wide.cpuValue.getWidth() >= widthOf(cpuFont, cpuReadoutText(100)),
+                   "the CPU readout clips at 100%");
         }
 
         beginTest("The playhead clock reads minutes, seconds and milliseconds");

@@ -113,7 +113,8 @@ class PolyVoiceHarvester : public ::UI {
         } else {
             const auto name = juce::String(parsed.cleanLabel).toLowerCase();
             if (name == "freq" || name == "gain" || name == "gate" || name == "bend" ||
-                name == "mpe_bend" || name == "timbre" || name == "pressure")
+                name == "mpe_bend" || name == "timbre" || name == "pressure" ||
+                name == "voice_phase")
                 reservedByName[name].push_back(zone);
         }
     }
@@ -272,6 +273,9 @@ void MagdaCompiledPolyInstrument::rebuildEngineState(int sampleRate) {
         voiceExpression_[i] = {firstReserved(voiceHarvester, "mpe_bend"),
                                firstReserved(voiceHarvester, "timbre"),
                                firstReserved(voiceHarvester, "pressure")};
+        // Spread so a chord's fresh voices do not start in phase.
+        if (auto* phase = firstReserved(voiceHarvester, "voice_phase"))
+            *phase = static_cast<FAUSTFLOAT>(std::fmod(static_cast<double>(i) * 0.6180339887, 1.0));
     }
     mpeChannels_.reset();
 

@@ -76,13 +76,17 @@ class RenderLoad {
         }
     }
 
-    /// Marks the current thread as the ahead thread for its lifetime.
+    /// Marks the current thread as rendering ahead for the scope's lifetime: the render-ahead
+    /// thread, or a worker inside an ahead op. Nests.
     class AheadScope {
       public:
         AheadScope();
         ~AheadScope();
         AheadScope(const AheadScope&) = delete;
         AheadScope& operator=(const AheadScope&) = delete;
+
+      private:
+        bool previous_;
     };
 
   private:
