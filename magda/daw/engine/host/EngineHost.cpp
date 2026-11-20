@@ -77,6 +77,7 @@
 #include "exec/EngineSession.hpp"
 #include "exec/ModulationLiveness.hpp"
 #include "exec/PlanValues.hpp"
+#include "exec/RenderLoad.hpp"
 #include "exec/RenderThreadPool.hpp"
 #include "io/CaptureHistory.hpp"
 #include "io/LiveInput.hpp"
@@ -3187,6 +3188,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         voiceThread_ = std::make_unique<engine::ClipVoiceThread>(*voices_);
 
         session_ = std::make_unique<engine::EngineSession>(factory_, &renderPool_, voices_.get());
+        session_->setRenderLoad(&renderLoad_);
         prepareCapture(context.sampleRate);
         session_->setCaptureRing(captureRing_.get());
         sessionRendersAhead_ = renderAheadBlocks(context) > 0;
@@ -3533,9 +3535,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                           const juce::AudioIODeviceCallbackContext&) override {
         const auto entered = juce::Time::getMillisecondCounterHiRes();
         const juce::ScopeGuard recordLoad{[&] {
-            if (load_ != nullptr)
-                load_->record(juce::Time::getMillisecondCounterHiRes() - entered, numSamples,
-                              rate_.load(std::memory_order_relaxed));
+            if (load_ == nullptr)
+                return;
+            const auto ahead = renderLoad_.takeAhead();
+            load_->record(juce::Time::getMillisecondCounterHiRes() - entered, numSamples,
+                          rate_.load(std::memory_order_relaxed), ahead.busyMs, ahead.worstBlock);
         }};
 
         for (auto channel = 0; channel < numOutputChannels; ++channel)
@@ -4181,6 +4185,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     juce::AudioDeviceManager* devices_ = nullptr;
     CallbackLoad* load_ = nullptr;
+    engine::RenderLoad renderLoad_;
 
     /// Plugin services an offline render loads a plugin with when no live instance exists.
     juce::AudioPluginFormatManager* formats_ = nullptr;
@@ -4485,6 +4490,10 @@ std::size_t EngineHost::pluginsLoading() const {
 
 int EngineHost::latencySamples() const {
     return impl_->planRecordingAdjustmentSamples();
+}
+
+const engine::RenderLoad& EngineHost::renderLoad() const {
+    return impl_->renderLoad_;
 }
 
 void EngineHost::stop() {

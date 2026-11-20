@@ -778,5 +778,20 @@
     "section.device": "Device",
     "label.preview_output": "Audition browser files on",
     "status.channels": "{0} in · {1} out"
+  },
+  "cpu_load": {
+    "title": "CPU Load",
+    "callback": "Callback",
+    "ahead": "Render ahead",
+    "worst_block": "Worst block",
+    "last_30s": "Last 30 s",
+    "where_callback": "Callback",
+    "where_ahead": "Ahead",
+    "where_both": "Both",
+    "devices": "devices",
+    "armed": "Armed",
+    "monitoring": "Monitoring",
+    "in_editor": "In the editor",
+    "latency": "Latency"
   }
 }

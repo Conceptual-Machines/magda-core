@@ -3,9 +3,11 @@
 
 #include <algorithm>
 #include <atomic>
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <set>
 #include <thread>
@@ -14,6 +16,7 @@
 #include "core/TrackInfo.hpp"
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
+#include "exec/RenderLoad.hpp"
 #include "exec/RuntimeStateStore.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanHandoff.hpp"
@@ -114,7 +117,9 @@ struct Rig {
     EngineSession session{factory};
     int renderedAhead = 0;
 
-    explicit Rig(int depth, bool inBackground = false) : depth(depth), inBackground(inBackground) {
+    explicit Rig(int depth, bool inBackground = false, magda::engine::RenderLoad* load = nullptr)
+        : depth(depth), inBackground(inBackground) {
+        session.setRenderLoad(load);
         if (depth > 0)
             session.setRenderAhead(depth, inBackground);
         publish();
@@ -440,6 +445,63 @@ TEST_CASE("A callback that finds the ahead thread mid-block takes the block over
 }
 
 namespace {
+
+namespace {
+
+/// Each device's time on @p thread, by device id.
+std::map<DeviceId, std::uint64_t> deviceNanos(const magda::engine::RenderLoad& load,
+                                              magda::engine::RenderLoad::Thread thread) {
+    std::map<DeviceId, std::uint64_t> nanos;
+    load.forEach([&](const magda::engine::RenderLoad::Entry& entry) {
+        if (entry.device != INVALID_DEVICE_ID)
+            nanos[entry.device] += entry.nanos[static_cast<std::size_t>(thread)];
+    });
+    return nanos;
+}
+
+}  // namespace
+
+TEST_CASE("Render time is tallied to the thread that renders each device", "[engine][cpu][3357]") {
+    using magda::engine::RenderLoad;
+    constexpr int kCallbacks = 200;
+    RenderLoad aheadLoad, wholeLoad;
+    Rig ahead(3, false, &aheadLoad), whole(0, false, &wholeLoad);
+    for (auto* rig : {&ahead, &whole})
+        rig->session.publishTransport(rolling(0.0));
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    const auto run = [&](int callbacks) {
+        for (int callback = 0; callback < callbacks; ++callback) {
+            ahead.callback(output);
+            whole.callback(output);
+        }
+    };
+    // The first block renders whole at the callback, and cold.
+    run(10);
+    const auto callbackBefore = deviceNanos(aheadLoad, RenderLoad::Callback);
+    run(kCallbacks - 10);
+
+    const auto expectedBudget = kCallbacks * kBlockSize * 1.0e9 / 44100.0;
+    CHECK(static_cast<double>(aheadLoad.budgetNanos()) ==
+          Catch::Approx(expectedBudget).epsilon(1e-6));
+
+    // Once rendering ahead, the two Smoothers are the ahead thread's alone.
+    REQUIRE(ahead.session.renderAheadMisses() == 0);
+    const auto aheadNanos = deviceNanos(aheadLoad, RenderLoad::Ahead);
+    const auto callbackNanos = deviceNanos(aheadLoad, RenderLoad::Callback);
+    for (DeviceId device : {11, 12}) {
+        INFO("device " << device);
+        CHECK(aheadNanos.at(device) > 0);
+        CHECK(callbackNanos.at(device) == callbackBefore.at(device));
+    }
+    CHECK(aheadLoad.takeAhead().busyMs > 0.0);
+    CHECK(aheadLoad.takeAhead().busyMs == 0.0);
+
+    // Without render-ahead, nothing is the ahead thread's.
+    for (const auto& [device, nanos] : deviceNanos(wholeLoad, RenderLoad::Ahead))
+        CHECK(nanos == 0);
+    CHECK(deviceNanos(wholeLoad, RenderLoad::Callback).at(11) > 0);
+}
 
 TrackInfo makeSynth(TrackId id) {
     auto synth = makeTrack(id);

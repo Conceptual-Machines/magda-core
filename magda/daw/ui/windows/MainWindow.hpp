@@ -45,7 +45,8 @@ class KeyMappingStore;
 
 namespace daw::ui {
 class PanelFocusTracker;
-}
+class CpuLoadWindow;
+}  // namespace daw::ui
 
 class MainWindow : public juce::DocumentWindow,
                    public ProjectManagerListener,
@@ -304,6 +305,9 @@ class MainWindow::MainComponent : public juce::Component,
 
     // Outlines the panel that context commands act on (#3157)
     std::unique_ptr<daw::ui::PanelFocusTracker> focusTracker_;
+
+    // The CPU readout expanded (#3357), made on its first click.
+    std::unique_ptr<daw::ui::CpuLoadWindow> cpuLoadWindow_;
 
     // Plugin load failures that arrived in the same turn, warned about in one dialog (#3150).
     juce::StringArray pendingLoadFailures_;

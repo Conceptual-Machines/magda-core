@@ -4,6 +4,7 @@
 #include "exec/RenderAhead.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <optional>
 
 #include "clip/ClipSnapshot.hpp"
@@ -74,6 +75,11 @@ void RenderAhead::setStreamFeed(const ClipStreamFeed* streams) {
     streamFeed_ = streams;
 }
 
+void RenderAhead::setRenderLoad(RenderLoad* load) {
+    const std::lock_guard<std::mutex> guard(lock_);
+    load_ = load;
+}
+
 void RenderAhead::advanced(const ClockCore& core, std::uint64_t nextSequence, int numSamples,
                            double sampleRate, std::uint64_t epoch) {
     {
@@ -104,9 +110,11 @@ int RenderAhead::renderOnce() {
     std::shared_ptr<const SequencedTransport> transport;
     std::shared_ptr<const ClipSnapshot> clips;
     const ClipStreamFeed* streamFeed = nullptr;
+    RenderLoad* load = nullptr;
     int depth = 1;
     {
         const std::lock_guard<std::mutex> guard(lock_);
+        load = load_;
         epoch = epoch_;
         values = values_;
         transport = transport_;
@@ -183,8 +191,14 @@ int RenderAhead::renderOnce() {
             feeds.holdsLaunches = segment.waitingForPhase;
             auto block = segment.block;
             block.feeds = &feeds;
-            if (!epoch.executor->processSide(0, sequence, *values, block, scratch_, cue) ||
-                discarded)
+            const RenderLoad::AheadScope ahead;
+            const auto started = std::chrono::steady_clock::now();
+            const auto rendered =
+                epoch.executor->processSide(0, sequence, *values, block, scratch_, cue);
+            if (load != nullptr)
+                load->addAheadBlock(std::chrono::steady_clock::now() - started, block.numSamples,
+                                    clock.sampleRate);
+            if (!rendered || discarded)
                 return count;
             rendered_ = sequence + 1;
             renderedThrough_.store(rendered_, std::memory_order_release);

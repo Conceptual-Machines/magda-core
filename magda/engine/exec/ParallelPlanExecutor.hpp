@@ -103,6 +103,11 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job,
         core_.setRenderAheadDepth(blocks);
     }
 
+    /// @copydoc PlanExecutor::setRenderLoad
+    void setRenderLoad(RenderLoad* load) {
+        core_.setRenderLoad(load);
+    }
+
     /// @copydoc PlanExecutor::setAheadState
     void setAheadState(PlanExecutor::AheadState* state) {
         core_.setAheadState(state);

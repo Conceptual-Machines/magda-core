@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "../../core/Config.hpp"
+#include "CallbackLoad.hpp"
 #include "HardwareChannels.hpp"
 
 namespace magda {
@@ -122,7 +123,9 @@ class AudioIOControl : public HardwareChannels {
         bool deviceOpen = false;
         double sampleRate = 0.0;
         int bufferSize = 0;
+        /// The callback and the render-ahead thread together, as a share of real time.
         double cpuUsage = 0.0;
+        CallbackLoad::Window cpuWindow;
         int xruns = 0;
     };
     virtual Status status() const = 0;

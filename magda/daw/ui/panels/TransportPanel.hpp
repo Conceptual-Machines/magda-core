@@ -134,6 +134,9 @@ class TransportPanel : public juce::Component,
 
     // CPU usage display (0.0 to 1.0)
     void setCpuUsage(float usage);
+
+    /// Clicking the CPU readout, which opens the expanded view (#3357).
+    std::function<void()> onCpuReadoutClicked;
     void setXrunCount(int count);
     void setAudioDeviceInfo(const juce::String& deviceName, double sampleRate, int bufferSize);
 

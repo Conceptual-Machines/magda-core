@@ -2007,11 +2007,23 @@ OpValue PlanExecutor::mixerValueFor(std::size_t op, const OpValue& published) co
 
 void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& block,
                             juce::AudioBuffer<float>& output) {
+    if (load_ == nullptr) {
+        renderOpUntimed(id, published, block, output);
+        return;
+    }
+    const auto started = std::chrono::steady_clock::now();
+    renderOpUntimed(id, published, block, output);
+    load_->addOp(plan_->ops[static_cast<std::size_t>(id)],
+                 std::chrono::steady_clock::now() - started);
+}
+
+void PlanExecutor::renderOpUntimed(OpId id, const OpValue& published, const BlockInfo& block,
+                                   juce::AudioBuffer<float>& output) {
     const auto i = static_cast<std::size_t>(id);
     if (discontinuousAhead_ && block.continuous && runSide_[i] == 0) {
         auto jumped = block;
         jumped.continuous = false;
-        renderOp(id, published, jumped, output);
+        renderOpUntimed(id, published, jumped, output);
         return;
     }
     const auto& op = plan_->ops[i];

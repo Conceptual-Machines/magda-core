@@ -143,6 +143,16 @@ std::map<magda::engine::DeviceKey, magda::ChainNodePath> devicePathsIn(
     return paths;
 }
 
+std::vector<DeviceInTrack> devicesInTrack(const magda::TrackInfo& track) {
+    std::vector<DeviceInTrack> devices;
+    walkTrackDevices(track,
+                     [&devices](magda::engine::DeviceKey key, const magda::DeviceInfo& device,
+                                const magda::ChainNodePath& path) {
+                         devices.push_back({key, &device, path});
+                     });
+    return devices;
+}
+
 bool isExternalDevice(const magda::DeviceInfo& device) {
     return device.format != magda::PluginFormat::Internal;
 }
