@@ -7,7 +7,6 @@
  * @brief Counts render ops the OS took off the CPU partway through (#3368).
  *
  * Built only with -DMAGDA_RENDER_PROBE=ON (`make probe-on`); otherwise every call is empty.
- * POSIX only: Windows thread CPU time is too coarse to tell a pause from work.
  */
 
 #include <juce_core/juce_core.h>
@@ -23,10 +22,28 @@ namespace magda::engine::render_probe {
 /** @brief Which render thread ran an op. */
 enum class Role : std::uint8_t { other, callback, ahead, worker };
 
-#if MAGDA_RENDER_PROBE && !JUCE_WINDOWS
+#if MAGDA_RENDER_PROBE
 
 void setRole(Role role);
-void record(int track, bool aheadSide, std::int64_t wallNs, std::int64_t cpuNs);
+/// Takes clock ticks: nanoseconds on POSIX; QPC ticks and TSC cycles on Windows.
+void record(int track, bool aheadSide, std::int64_t wallTicks, std::int64_t cpuTicks);
+
+    #if JUCE_WINDOWS
+std::int64_t wallTicks();
+std::int64_t cpuTicks();
+    #else
+inline std::int64_t wallTicks() {
+    timespec ts{};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return std::int64_t(ts.tv_sec) * 1'000'000'000 + ts.tv_nsec;
+}
+
+inline std::int64_t cpuTicks() {
+    timespec ts{};
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+    return std::int64_t(ts.tv_sec) * 1'000'000'000 + ts.tv_nsec;
+}
+    #endif
 
 /** @brief Times one op on the calling thread: wall clock against the thread's CPU time. */
 class OpTimer {
@@ -34,29 +51,17 @@ class OpTimer {
     OpTimer(int track, bool aheadSide) : track_(track), aheadSide_(aheadSide) {}
 
     ~OpTimer() {
-        record(track_, aheadSide_, wallNs() - wall0_, cpuNs() - cpu0_);
+        record(track_, aheadSide_, wallTicks() - wall0_, cpuTicks() - cpu0_);
     }
 
     OpTimer(const OpTimer&) = delete;
     OpTimer& operator=(const OpTimer&) = delete;
 
   private:
-    static std::int64_t wallNs() {
-        timespec ts{};
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        return std::int64_t(ts.tv_sec) * 1'000'000'000 + ts.tv_nsec;
-    }
-
-    static std::int64_t cpuNs() {
-        timespec ts{};
-        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
-        return std::int64_t(ts.tv_sec) * 1'000'000'000 + ts.tv_nsec;
-    }
-
     int track_;
     bool aheadSide_;
-    std::int64_t wall0_ = wallNs();
-    std::int64_t cpu0_ = cpuNs();
+    std::int64_t wall0_ = wallTicks();
+    std::int64_t cpu0_ = cpuTicks();
 };
 
 #else

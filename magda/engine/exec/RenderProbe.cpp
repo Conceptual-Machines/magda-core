@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "exec/RenderProbe.hpp"
 
-#if !MAGDA_RENDER_PROBE || JUCE_WINDOWS
+#if !MAGDA_RENDER_PROBE
 
 void magda::engine::render_probe::report() {}
 
@@ -11,6 +11,12 @@ void magda::engine::render_probe::report() {}
     #include <array>
     #include <atomic>
     #include <chrono>
+    #include <thread>
+
+    #if JUCE_WINDOWS
+        #include <intrin.h>
+        #include <windows.h>
+    #endif
 
 namespace magda::engine::render_probe {
 namespace {
@@ -43,6 +49,33 @@ std::atomic<std::uint64_t> nextPause{0};
 std::uint64_t reportedPause = 0;
 thread_local Role threadRole = Role::other;
 
+    #if JUCE_WINDOWS
+double qpcNsPerTick() {
+    LARGE_INTEGER freq{};
+    QueryPerformanceFrequency(&freq);
+    return 1e9 / double(freq.QuadPart);
+}
+
+const double nsPerQpcTick = qpcNsPerTick();
+/// Zero until the startup thread has measured the TSC rate; ops before that are not counted.
+std::atomic<double> nsPerCycle{0.0};
+
+// QueryThreadCycleTime counts TSC cycles: their rate is measured over 100 ms, off the audio thread.
+const bool cycleRateStarted = [] {
+    std::thread([] {
+        LARGE_INTEGER qpc0{}, qpc1{};
+        QueryPerformanceCounter(&qpc0);
+        const auto tsc0 = __rdtsc();
+        Sleep(100);
+        QueryPerformanceCounter(&qpc1);
+        const auto tsc1 = __rdtsc();
+        nsPerCycle.store(double(qpc1.QuadPart - qpc0.QuadPart) * nsPerQpcTick /
+                         double(tsc1 - tsc0));
+    }).detach();
+    return true;
+}();
+    #endif
+
 const char* nameOf(Role role) {
     switch (role) {
         case Role::callback:
@@ -59,11 +92,35 @@ const char* nameOf(Role role) {
 
 }  // namespace
 
+    #if JUCE_WINDOWS
+std::int64_t wallTicks() {
+    LARGE_INTEGER qpc{};
+    QueryPerformanceCounter(&qpc);
+    return qpc.QuadPart;
+}
+
+std::int64_t cpuTicks() {
+    ULONG64 cycles = 0;
+    QueryThreadCycleTime(GetCurrentThread(), &cycles);
+    return static_cast<std::int64_t>(cycles);
+}
+    #endif
+
 void setRole(Role role) {
     threadRole = role;
 }
 
-void record(int track, bool aheadSide, std::int64_t wallNs, std::int64_t cpuNs) {
+void record(int track, bool aheadSide, std::int64_t wallTicks, std::int64_t cpuTicks) {
+    #if JUCE_WINDOWS
+    const auto cycleNs = nsPerCycle.load(std::memory_order_relaxed);
+    if (cycleNs == 0.0)
+        return;
+    const auto wallNs = static_cast<std::int64_t>(double(wallTicks) * nsPerQpcTick);
+    const auto cpuNs = static_cast<std::int64_t>(double(cpuTicks) * cycleNs);
+    #else
+    const auto wallNs = wallTicks;
+    const auto cpuNs = cpuTicks;
+    #endif
     auto& c = counts[static_cast<std::size_t>(threadRole)];
     c.ops.fetch_add(1, std::memory_order_relaxed);
     const auto pauseNs = wallNs - cpuNs;

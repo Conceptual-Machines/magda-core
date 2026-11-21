@@ -63,6 +63,12 @@ case "${1:-debug}" in
     fi
     cd "$BUILD_DIR" && ninja magda_tests && ./tests/magda_tests.exe
     ;;
+  probe-on|probe-off)
+    # The render probe (#3368) in the debug build: reconfigure, then build as usual.
+    [ "$1" = probe-on ] && PROBE=ON || PROBE=OFF
+    mkdir -p "$BUILD_DIR"
+    cd "$BUILD_DIR" && cmake "${CMAKE_ARGS[@]}" -DMAGDA_RENDER_PROBE=$PROBE .. && ninja
+    ;;
   clean)
     rm -rf cmake-build-debug cmake-build-release
     ;;
@@ -71,6 +77,6 @@ case "${1:-debug}" in
     cd "$BUILD_DIR" && cmake "${CMAKE_ARGS[@]}" ..
     ;;
   *)
-    echo "Usage: bash winbuild.sh [debug|run|test|clean|configure]"
+    echo "Usage: bash winbuild.sh [debug|run|test|probe-on|probe-off|clean|configure]"
     ;;
 esac
