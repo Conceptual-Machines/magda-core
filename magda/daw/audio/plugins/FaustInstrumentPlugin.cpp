@@ -245,20 +245,8 @@ FaustInstrumentPlugin::FaustState::~FaustState() {
 
 std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compile(
     const juce::String& source, int sampleRate, juce::String& errorOut) {
-    // Passthrough by contract, without entering libfaust. See FaustResources.hpp.
-    // The stdfaust injection below is skipped in that mode for the same
-    // reason: it would turn a self-contained source into an importing one.
-    // `library("...")` reaches the same -I search path as `import(`, so both
-    // forms have to be refused here.
-    if (faustLibraryImportsDisallowed() &&
-        (source.contains("import(") || source.contains("library("))) {
-        errorOut = "Faust library imports are disallowed in this process";
-        return nullptr;
-    }
-
     const auto libsPath = getFaustLibrariesPath().getFullPathName().toStdString();
-    const juce::String normalised =
-        faustLibraryImportsDisallowed() ? source : ensureStdfaustImport(source);
+    const juce::String normalised = ensureStdfaustImport(source);
     const auto src = normalised.toStdString();
 
     std::vector<const char*> argv;

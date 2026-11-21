@@ -187,6 +187,10 @@ set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
 # JUCE is the explicit framework dependency for the app and native host.
+# 9.0.5 clones a memory font's face on every lookup, asserting on fonts without axes (#3387).
+include(cmake/SubmodulePatches.cmake)
+magda_apply_submodule_patch(${CMAKE_CURRENT_SOURCE_DIR}/third_party/JUCE
+                            ${CMAKE_CURRENT_SOURCE_DIR}/patches/juce-memory-font-no-clone.patch)
 add_subdirectory(third_party/JUCE)
 
 # ARA SDK 2.3.0, the release JUCE 9 requires (its BREAKING_CHANGES.md) (#1579). Headers only.

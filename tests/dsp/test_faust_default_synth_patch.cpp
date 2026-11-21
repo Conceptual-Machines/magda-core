@@ -25,12 +25,8 @@
  * It did not recover either: that NaN becomes the biquad's own state, so a voice
  * which touched zero once stayed dead however far the slider was moved back.
  *
- * Driven through libfaust rather than through FaustInstrumentPlugin, and that is
- * not a convenience. The plugin is a te::Plugin and wants an Edit, which puts it
- * in the JUCE target -- and the JUCE target cannot have the Faust standard
- * library staged beside it while #2238 stands, so a test there could not compile
- * this patch at all. Here the library is staged and the question is about the
- * DSP rather than about the host, which is where the defect was.
+ * Driven through libfaust rather than through FaustInstrumentPlugin: the question
+ * is about the DSP rather than about the host, which is where the defect was.
  */
 
 namespace {

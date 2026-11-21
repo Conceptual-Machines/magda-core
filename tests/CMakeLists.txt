@@ -648,10 +648,7 @@ set(TEST_SOURCES
     # reports what stands between each project and being a case.
     list(APPEND TEST_SOURCES engine/test_real_project_survey.cpp)
 
-    # The default Faust synth patch, compiled and played through libfaust
-    # (#2237). Here rather than in magda_juce_tests because the plugin that
-    # hosts it wants an Edit, and that target cannot have the Faust standard
-    # library staged beside it while #2238 stands.
+    # The default Faust synth patch, compiled and played through libfaust (#2237).
     list(APPEND TEST_SOURCES dsp/test_faust_default_synth_patch.cpp)
     list(APPEND TEST_SOURCES dsp/test_faust_initial_smoothing.cpp)
 
@@ -829,8 +826,7 @@ target_compile_definitions(magda_tests
 )
 
 # The Faust standard library, beside the binary, so a runtime-compiled device
-# can resolve import("stdfaust.lib") (#2081). Same reason as magda_juce_tests:
-# a real project carries a Faust device whose saved source imports it, and a
+# can resolve import("stdfaust.lib") (#2081): a real project carries a Faust device whose saved source imports it, and a
 # device whose DSP will not compile passes audio through without saying so.
 magda_stage_faust_libraries(magda_tests)
 
@@ -1143,26 +1139,9 @@ add_dependencies(magda_juce_tests magda_ara_identity_fixture_VST3)
 target_compile_definitions(magda_juce_tests PRIVATE
     MAGDA_ARA_IDENTITY_PLUGIN="$<GENEX_EVAL:$<TARGET_PROPERTY:magda_ara_identity_fixture_VST3,JUCE_PLUGIN_ARTEFACT_FILE>>")
 
-# The Faust standard library is deliberately NOT staged beside this binary,
-# unlike magda_tests (#2081).
-#
-# It was, and it aborts the suite on Linux. This target instantiates every
-# registered device -- the device parameter schema freeze walks the whole
-# registry -- and that includes the Faust instrument. With the library present
-# its patch actually compiles, which reaches libfaust's interval analysis, which
-# asserts `x.lo() > 0` in fPow and takes the process down with it
-# (third_party/faust/compiler/interval/intervalPow.cpp:89). GCC hits it and
-# Clang does not, so it is Linux only and invisible on a Mac.
-#
-# The patch's own divide by zero (#2237) looked like the cause and was not.
-# Fixing it did not clear the assert, and could not have: the power the analysis
-# refuses is `csq = c*c` inside Faust's own tf2s, which every tf2s-based filter
-# carries. A patch using nothing but `fi.resonlp` with a constant Q generates it
-# just the same, so this waits on #2238 rather than on anything of ours.
-#
-# What the corpus loses is the one project hosting a runtime Faust device, named
-# keeps the staging: it renders that same project through the block-size gate,
-# instantiates no Faust instrument, and is green on Linux and macOS.
+# The Faust standard library, beside the binary, as for magda_tests (#2081), so a Faust device's
+# imports resolve here. Staging it aborted the suite on Linux until libfaust's asserts went (#2238).
+magda_stage_faust_libraries(magda_juce_tests)
 
 target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
     # JUCE_LOG_ASSERTIONS is set on magda_daw instead, gated on MAGDA_BUILD_TESTS:
