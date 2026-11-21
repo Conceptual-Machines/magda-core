@@ -430,6 +430,8 @@ class MainView::PlayheadComponent : public juce::Component {
     MainView& owner;
     double playheadPosition = 0.0;
     Cursors lastCursors_;
+    /// Where paint() last drew them, which a scroll or zoom repaint moves without a tick.
+    Cursors paintedCursors_;
     bool isDragging = false;
     int dragStartX = 0;
     double dragStartPosition = 0.0;
