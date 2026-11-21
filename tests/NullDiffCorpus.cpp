@@ -608,8 +608,6 @@ void expectsPrimingShift(Case& value) {
 }  // namespace
 
 /// A runtime Faust instrument carrying @p source, as a project would save it.
-/// Spelled out rather than left at the device's default, which imports
-/// stdfaust.lib and cannot compile in this target (#2238).
 magda::DeviceInfo faustInstrumentDevice(magda::DeviceId id, const char* source) {
     magda::DeviceInfo device;
     device.id = id;

@@ -30,12 +30,6 @@ int main(int argc, char* argv[]) {
     // read. It is never taken down. See AssertionWatch.hpp.
     magda::test::AssertionWatch::instance();
 
-    // This binary ships no faustlibraries (staging them aborts libfaust on
-    // Linux, #2238), so an importing Faust source could only fail its compile
-    // into passthrough anyway. Disallowed, that passthrough is the contract
-    // and libfaust is never entered; self-contained sources still compile.
-    magda::daw::audio::disallowFaustLibraryImports();
-
     // Initialize JUCE GUI subsystem - required for message loop, timers, async updaters, etc.
     // This must be alive for the entire test run to avoid SIGSEGV from singleton cleanup issues
     juce::ScopedJuceInitialiser_GUI juceInit;
