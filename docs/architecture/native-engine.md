@@ -348,6 +348,24 @@ in compiled order rather than in the order its inputs finished, and buffers are 
 over the dependency graph rather than over the op list. The schedule costs nothing at run time,
 because the dependency counts were baked into the plan when it was compiled.
 
+### Thread priority
+
+The render pool's workers and the render-ahead thread share the callback's deadline, so each one
+raises itself to real-time priority when it starts (`RenderThreadPool::raiseToRenderPriority`):
+
+| OS | Priority |
+| --- | --- |
+| macOS | a time-constraint thread, joined to the device's audio workgroup |
+| Windows | `THREAD_PRIORITY_TIME_CRITICAL`, then the MMCSS "Pro Audio" task when `avrt.dll` offers it ([#3369](https://github.com/Conceptual-Machines/magda-core/issues/3369)) |
+| Linux | `SCHED_RR` at 80, capped at `RLIMIT_RTPRIO` |
+
+On Linux, 80 sits below PipeWire's data loop (83), the thread that calls MAGDA's JACK callback.
+The cap matters because the `audio` group's limit is commonly 95, and a request above the limit
+fails. The render threads used to ask for `SCHED_RR`'s maximum of 99, so on those systems they all
+ran time-shared, with nothing logged. The first thread to start now logs whether the request was
+granted. A user whose limit is 0, as on stock desktop installs where only rtkit grants real-time,
+gets time-shared render threads and that log line.
+
 ### Rendering ahead
 
 Most of a project does not need to render at the moment the device asks for it. The render-ahead

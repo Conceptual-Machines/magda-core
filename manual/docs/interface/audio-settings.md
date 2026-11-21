@@ -56,3 +56,33 @@ There is no separate PulseAudio driver: the **Pulseaudio output** device under A
 
 !!! note "64 inputs and outputs under ALSA"
     On PipeWire, ALSA's default device can show up as 64 inputs and 64 outputs instead of your interface, and playback may break. Switch the driver to **JACK** to see the real interface.
+
+### Buffer size under JACK
+
+**Buffer Size** offers 32 to 2048 samples under JACK. MAGDA asks for the size you pick when it opens the device.
+
+- **On PipeWire** the size applies to MAGDA alone. It also replaces `PIPEWIRE_QUANTUM`, which Ubuntu Studio sets to 1024 for every app in your session.
+- **With a JACK server** (`jackd`), the size changes the server's buffer, so every JACK app runs at it.
+
+A buffer size forced for the whole PipeWire server overrides MAGDA's. The status bar then shows the forced size, not the one you picked. To see whether one is forced, and to clear it:
+
+```
+pw-metadata -n settings | grep force-quantum
+pw-metadata -n settings 0 clock.force-quantum 0
+```
+
+### Real-time priority
+
+MAGDA renders tracks on several threads at once. To keep up at small buffer sizes, those threads need real-time priority, so that other programs can't hold them up. Without it, playback that's fine on an idle system can crackle as soon as something else gets busy.
+
+The system grants real-time priority only to users it allows to have it. Audio-focused distributions such as Ubuntu Studio set this up for the `audio` group. On other distributions:
+
+1. Install your distribution's real-time package, if it has one (`realtime-privileges` on Arch), or add a file such as `/etc/security/limits.d/audio.conf` containing:
+   ```
+   @audio   -  rtprio     95
+   @audio   -  memlock    unlimited
+   ```
+2. Add yourself to the group: `sudo usermod -aG audio $USER`
+3. Log out and back in.
+
+`ulimit -r` then prints a number above 0. MAGDA writes the outcome to `magda.log` when its audio engine starts, either `render threads run SCHED_RR at priority 80` or `render threads could not get real-time priority`.
