@@ -2178,6 +2178,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#crackles-or-dropouts-on-linux" class="md-nav__link">
+    <span class="md-ellipsis">
+      Crackles or Dropouts on Linux
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#magda-started-with-a-different-audio-driver" class="md-nav__link">
     <span class="md-ellipsis">
       MAGDA Started With a Different Audio Driver
@@ -2325,6 +2334,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#crackles-or-dropouts-on-linux" class="md-nav__link">
+    <span class="md-ellipsis">
+      Crackles or Dropouts on Linux
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#magda-started-with-a-different-audio-driver" class="md-nav__link">
     <span class="md-ellipsis">
       MAGDA Started With a Different Audio Driver
@@ -2443,6 +2461,11 @@
 <li>Lower the <strong>Buffer Size</strong> in <strong>Settings &gt; Audio &amp; MIDI</strong></li>
 <li>Use an ASIO driver (Windows) or Core Audio (macOS) for best performance. On Linux, use JACK (see <a href="../../interface/audio-settings/#linux-drivers">Linux drivers</a>)</li>
 <li>Close other audio applications</li>
+</ol>
+<h2 id="crackles-or-dropouts-on-linux">Crackles or Dropouts on Linux<a class="headerlink" href="#crackles-or-dropouts-on-linux" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Check that MAGDA's render threads get real-time priority: <code>magda.log</code> should say <code>render threads: SCHED_RR</code>. If it says <code>time-shared</code>, set up real-time access as described in <a href="../../interface/audio-settings/#real-time-priority">Real-time priority</a></li>
+<li>Raise the <strong>Buffer Size</strong> in <strong>Settings &gt; Audio &amp; MIDI</strong>. If the size you pick doesn't stick under JACK, see <a href="../../interface/audio-settings/#buffer-size-under-jack">Buffer size under JACK</a></li>
 </ol>
 <h2 id="magda-started-with-a-different-audio-driver">MAGDA Started With a Different Audio Driver<a class="headerlink" href="#magda-started-with-a-different-audio-driver" title="Permanent link">&para;</a></h2>
 <p>If MAGDA closed unexpectedly while opening your audio driver, it starts the next time with the default driver instead, and an <strong>Audio Driver Skipped</strong> message names the driver it skipped. Choose a driver again in <strong>Settings &gt; Audio &amp; MIDI</strong>. If the same driver keeps failing, check for an update from its maker.</p>

@@ -579,6 +579,30 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Linux drivers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#buffer-size-under-jack" class="md-nav__link">
+    <span class="md-ellipsis">
+      Buffer size under JACK
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#real-time-priority" class="md-nav__link">
+    <span class="md-ellipsis">
+      Real-time priority
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -2309,6 +2333,30 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Linux drivers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#buffer-size-under-jack" class="md-nav__link">
+    <span class="md-ellipsis">
+      Buffer size under JACK
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#real-time-priority" class="md-nav__link">
+    <span class="md-ellipsis">
+      Real-time priority
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -2396,6 +2444,37 @@
 <p class="admonition-title">64 inputs and outputs under ALSA</p>
 <p>On PipeWire, ALSA's default device can show up as 64 inputs and 64 outputs instead of your interface, and playback may break. Switch the driver to <strong>JACK</strong> to see the real interface.</p>
 </div>
+<h3 id="buffer-size-under-jack">Buffer size under JACK<a class="headerlink" href="#buffer-size-under-jack" title="Permanent link">&para;</a></h3>
+<p><strong>Buffer Size</strong> offers 32 to 2048 samples under JACK. MAGDA asks for the size you pick when it opens the device.</p>
+<ul>
+<li><strong>On PipeWire</strong> the size applies to MAGDA alone. It also replaces <code>PIPEWIRE_QUANTUM</code>, which Ubuntu Studio sets to 1024 for every app in your session.</li>
+<li><strong>With a JACK server</strong> (<code>jackd</code>), the size changes the server's buffer, so every JACK app runs at it.</li>
+</ul>
+<p>A buffer size forced for the whole PipeWire server overrides MAGDA's. The status bar then shows the forced size, not the one you picked. To see whether one is forced, and to clear it:</p>
+<div class="highlight"><pre><span></span><code>pw-metadata -n settings | grep force-quantum
+pw-metadata -n settings 0 clock.force-quantum 0
+</code></pre></div>
+<h3 id="real-time-priority">Real-time priority<a class="headerlink" href="#real-time-priority" title="Permanent link">&para;</a></h3>
+<p>MAGDA plays and renders tracks on several threads at once. To keep up at small buffer sizes, those threads need real-time priority, so that other programs can't hold them up. Without it, playback that's fine on an idle system can crackle as soon as something else gets busy.</p>
+<p>MAGDA asks for it in one of two ways:</p>
+<ul>
+<li><strong>Directly</strong>, at priority 80, when your user is allowed real-time priority. Audio-focused distributions such as Ubuntu Studio set this up for the <code>audio</code> group.</li>
+<li><strong>Through rtkit</strong> otherwise, the service most desktops use to grant it. rtkit allows a lower priority, usually 20. That's still ahead of every ordinary program, but the direct route holds up better under heavy load.</li>
+</ul>
+<p>To set up the direct route, run MAGDA's setup script. It checks your system first and asks before changing anything:</p>
+<div class="highlight"><pre><span></span><code>curl -fsSLO https://raw.githubusercontent.com/Conceptual-Machines/magda-core/main/scripts/linux-realtime-setup.sh
+bash linux-realtime-setup.sh
+</code></pre></div>
+<p>The script adds you to a group your system already grants real-time priority to, usually PipeWire's <code>pipewire</code> group or <code>audio</code>. When no group does, it sets one up for <code>audio</code>. Use <code>--check</code> to see the current state without changing anything. To do it by hand instead:</p>
+<ol>
+<li>Add a file such as <code>/etc/security/limits.d/95-magda-audio.conf</code> containing:
+   <div class="highlight"><pre><span></span><code>@audio   -  rtprio     95
+@audio   -  memlock    unlimited
+</code></pre></div></li>
+<li>Add yourself to the group: <code>sudo usermod -aG audio $USER</code></li>
+</ol>
+<p>Either way, log out and back in afterwards. <code>ulimit -r</code> then prints 95.</p>
+<p>MAGDA writes the outcome to <code>magda.log</code> when its audio engine starts: <code>render threads: SCHED_RR at priority 80</code>, the same line ending in <code>(rtkit)</code> when rtkit granted it, or <code>render threads: time-shared</code> when neither did. Under the <strong>ALSA</strong> driver, a second line starting <code>audio callback thread:</code> reports the same for the thread that plays the audio.</p>
 
 
 
