@@ -14,6 +14,7 @@
 #include "../components/common/GridDivisionMenu.hpp"
 #include "../components/common/SvgButton.hpp"
 #include "AbletonLinkChip.hpp"
+#include "CpuDeadlineMark.hpp"
 #include "TransportLayout.hpp"
 #include "TransportTextWidths.hpp"
 #include "core/Config.hpp"
@@ -134,6 +135,8 @@ class TransportPanel : public juce::Component,
 
     // CPU usage display (0.0 to 1.0)
     void setCpuUsage(float usage);
+    /// The slowest recent block's render time over its deadline; 1.0 or more is a missed block.
+    void setCpuDeadline(float worstBlock);
 
     /// Clicking the CPU readout, which opens the expanded view (#3357).
     std::function<void()> onCpuReadoutClicked;
@@ -241,6 +244,7 @@ class TransportPanel : public juce::Component,
     void paintMemory(juce::Graphics& g) const;
     void paintRanges(juce::Graphics& g) const;
     void paintCpu(juce::Graphics& g) const;
+    void paintCpuDeadline(juce::Graphics& g, juce::Rectangle<float> valueArea) const;
 
     // Where every child sits and which sections survived the last resized().
     // paint() and the overflow menu read it rather than keeping their own copy
@@ -315,6 +319,7 @@ class TransportPanel : public juce::Component,
     float currentCpuUsage = 0.0f;
     float peakCpuUsage = 0.0f;
     int peakDecayCounter_ = 0;
+    daw::ui::transport::CpuDeadlineMark cpuDeadline_;
     int currentXrunCount_ = 0;
     juce::String audioDeviceName_;
     double audioSampleRate_ = 0.0;

@@ -93,6 +93,8 @@
     "cpu.buffer": "Buffer",
     "cpu.cpu": "CPU",
     "cpu.peak": "peak",
+    "cpu.slowest_block": "Slowest block",
+    "cpu.of_deadline": "of its deadline",
     "cpu.xruns": "Xruns"
   },
   "tracks": {
