@@ -377,10 +377,11 @@ void TransportPanel::paintCpu(juce::Graphics& g) const {
     if (!l.rightClusterVisible)
         return;
     paintFrame(g, l.cpu);
+    const auto valueArea = l.cpuValue.toFloat();
+    paintCpuDeadline(g, valueArea);
     if (currentCpuUsage <= 0.0f)
         return;
 
-    const auto valueArea = l.cpuValue.toFloat();
     const auto fillArea =
         valueArea.withTop(valueArea.getBottom() - (valueArea.getHeight() * currentCpuUsage));
     juce::Colour fillColour;
@@ -392,6 +393,21 @@ void TransportPanel::paintCpu(juce::Graphics& g) const {
         fillColour = juce::Colour(0xFFAA5555).withAlpha(0.3f);
     g.setColour(fillColour);
     g.fillRect(fillArea);
+}
+
+void TransportPanel::paintCpuDeadline(juce::Graphics& g, juce::Rectangle<float> valueArea) const {
+    const auto worst = cpuDeadline_.value();
+    if (worst <= 0.0f)
+        return;
+    using daw::ui::transport::CpuDeadlineMark;
+    const auto role = worst >= CpuDeadlineMark::kMissed    ? ActiveTheme::STATUS_ERROR
+                      : worst >= CpuDeadlineMark::kWarning ? ActiveTheme::STATUS_WARNING
+                                                           : ActiveTheme::TEXT_DIM;
+    constexpr float kTickHeight = 2.0f;
+    const auto y = valueArea.getBottom() -
+                   (valueArea.getHeight() - kTickHeight) * juce::jmin(worst, 1.0f) - kTickHeight;
+    g.setColour(ActiveTheme::getColour(role));
+    g.fillRect(valueArea.withY(y).withHeight(kTickHeight));
 }
 
 void TransportPanel::paint(juce::Graphics& g) {
@@ -1575,6 +1591,12 @@ void TransportPanel::setCpuUsage(float usage) {
     repaint(layout_.cpu);
 }
 
+void TransportPanel::setCpuDeadline(float worstBlock) {
+    cpuDeadline_.update(juce::jmax(worstBlock, 0.0f));
+    updateCpuTooltip();
+    repaint(layout_.cpu);
+}
+
 void TransportPanel::setXrunCount(int count) {
     currentXrunCount_ = count;
     updateCpuTooltip();
@@ -1608,6 +1630,11 @@ void TransportPanel::updateCpuTooltip() {
     if (peakCpuUsage > currentCpuUsage + 0.02f)
         tip << " (" << tr("transport.cpu.peak") << " "
             << juce::String(juce::roundToInt(peakCpuUsage * 100.0f)) << "%)";
+    if (cpuDeadline_.value() > 0.0f)
+        tip << "\n"
+            << tr("transport.cpu.slowest_block") << ": "
+            << juce::String(juce::roundToInt(cpuDeadline_.value() * 100.0f)) << "% "
+            << tr("transport.cpu.of_deadline");
     if (currentXrunCount_ > 0)
         tip << "\n" << tr("transport.cpu.xruns") << ": " << currentXrunCount_;
     tip = tip.trimEnd();
