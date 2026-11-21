@@ -11,6 +11,7 @@
 #include "clip/ClipStreamFeed.hpp"
 #include "exec/AheadLaunches.hpp"
 #include "exec/ParallelPlanExecutor.hpp"
+#include "exec/RenderProbe.hpp"
 #include "exec/RenderThreadPool.hpp"
 
 namespace magda::engine {
@@ -210,6 +211,7 @@ int RenderAhead::renderOnce() {
 }
 
 void RenderAhead::run() {
+    render_probe::setRole(render_probe::Role::ahead);
     if (scheduling_ != nullptr)
         RenderThreadPool::raiseToRenderPriority();
     // A token has to die on the thread it joined.

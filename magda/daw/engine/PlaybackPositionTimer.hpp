@@ -65,10 +65,12 @@ class PlaybackPositionTimer : private juce::Timer {
     int cpuUpdateCounter_ = 0;  // Throttle CPU updates
     ProcessCpuMeter cpu_;
     int memoryUpdateCounter_ = 0;
+    int probeReportCounter_ = 0;
 
     static constexpr int UPDATE_INTERVAL_MS = 30;  // ~33fps for smooth playhead
     static constexpr int CPU_UPDATE_TICKS = 15;    // Every ~500ms
     static constexpr int MEMORY_UPDATE_TICKS = 4;  // Every ~120ms
+    static constexpr int PROBE_REPORT_TICKS = 67;  // Every ~2 s, when built with the probe
     static constexpr int MEMORY_SLICES = 128;
 };
 

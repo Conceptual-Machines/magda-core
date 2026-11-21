@@ -59,6 +59,7 @@ add_library(magda_engine STATIC
     exec/HandoffRing.cpp
     exec/RenderAhead.cpp
     exec/RenderLoad.cpp
+    exec/RenderProbe.cpp
     exec/AheadLaunches.cpp
     exec/PlanExecutor.cpp
     exec/ParallelPlanExecutor.cpp
@@ -184,6 +185,10 @@ add_library(magda_engine STATIC
 add_library(magda::engine ALIAS magda_engine)
 
 target_compile_features(magda_engine PUBLIC cxx_std_23)
+
+# Off in every shipped build: it writes to the log from the message thread (#3368).
+option(MAGDA_RENDER_PROBE "Log render ops the OS paused partway through" OFF)
+target_compile_definitions(magda_engine PRIVATE MAGDA_RENDER_PROBE=$<BOOL:${MAGDA_RENDER_PROBE}>)
 
 # magda_types carries the model-layer headers and publishes magda/daw as its
 # include root, so engine sources resolve "core/<model>.hpp".
