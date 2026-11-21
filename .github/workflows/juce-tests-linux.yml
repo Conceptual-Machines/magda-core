@@ -20,6 +20,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Faust's build output where the artifact caches below expect it (#3388).
+  MAGDA_FAUST_OUTPUT_DIR: third_party/faust/build
+
 jobs:
   juce-tests-linux:
     # Pinned: the null-diff calibration list is measured on 24.04, and 26.04 nulls

@@ -1,0 +1,16 @@
+diff --git a/modules/juce_graphics/fonts/juce_Typeface.cpp b/modules/juce_graphics/fonts/juce_Typeface.cpp
+index 6009739d4d..2e012d2cad 100644
+--- a/modules/juce_graphics/fonts/juce_Typeface.cpp
++++ b/modules/juce_graphics/fonts/juce_Typeface.cpp
+@@ -1158,7 +1158,10 @@ auto Typeface::createSystemTypefaceFor (Span<const std::byte> data) -> Ptr
+                             instanceName,
+                             weak = std::weak_ptr<CachedTypefaces> (cache)]() -> Typeface::Ptr
+             {
+-                const auto cloned = x->cloneWithVariableSettings (x->getNamedInstanceConfiguration (instanceName));
++                // MAGDA: a face with no variable settings is used as is. Cloning it loaded a new
++                // FreeType face on every lookup, and asserted on fonts without axes (#3387).
++                const auto settings = x->getNamedInstanceConfiguration (instanceName);
++                const auto cloned = settings.empty() ? x : x->cloneWithVariableSettings (settings);
+ 
+                 if (auto strong = weak.lock())
+                     return new CachingWrapper (cloned, strong);

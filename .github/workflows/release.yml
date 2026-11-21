@@ -14,6 +14,10 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  # Faust's build output where the artifact caches below expect it (#3388).
+  MAGDA_FAUST_OUTPUT_DIR: third_party/faust/build
+
 jobs:
   build-macos:
     # Apple Silicon; includes the CLAP semantic-search backend (ORT-only on arm64).
