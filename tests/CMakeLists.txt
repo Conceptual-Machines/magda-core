@@ -232,6 +232,8 @@ set(TEST_SOURCES
     # TransportLayout builds into magda_daw_app, so pull its implementation in.
     ui/test_transport_layout.cpp
     ../magda/daw/ui/panels/TransportLayout.cpp
+    # The CPU readout's tick for the slowest block against its deadline (#3375)
+    ui/test_cpu_deadline_mark.cpp
     # Hardware channels labelled by the interface's own names (#2734)
     ui/test_channel_labels.cpp
     # Tracktion's saved audio interface, migrated to AudioIOService (#2746)

@@ -5,6 +5,8 @@
 
 #include <juce_audio_devices/juce_audio_devices.h>
 
+#include <algorithm>
+
 #include "../audio/io/AudioIOControl.hpp"
 #include "AudioEngine.hpp"
 #include "core/ClipManager.hpp"
@@ -119,8 +121,11 @@ void PlaybackPositionTimer::timerCallback() {
         cpuUpdateCounter_ = 0;
         if (auto* audioIO = engine_.getAudioIO()) {
             const auto status = audioIO->status();
-            onCpuUsageUpdate(static_cast<float>(cpu_.sample()), status.xruns, status.interfaceName,
-                             status.sampleRate, status.bufferSize);
+            const auto worstBlock =
+                std::max(status.cpuWindow.worstCallback, status.cpuWindow.worstAhead);
+            onCpuUsageUpdate(static_cast<float>(cpu_.sample()), static_cast<float>(worstBlock),
+                             status.xruns, status.interfaceName, status.sampleRate,
+                             status.bufferSize);
         }
     }
 }
