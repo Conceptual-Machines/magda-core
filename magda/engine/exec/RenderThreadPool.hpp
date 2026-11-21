@@ -147,11 +147,16 @@ class RenderThreadPool {
     /// is queued, and true when it slept.
     bool wait(int& pauses);
 
-    /// MAGDA_WORKER_WAIT=sleep sends an idle worker straight to the OS wait, for measuring
-    /// what the spin buys.
+    /// Measured on PR #3374: on macOS the spin cost 5-10% of a core for no change in callback
+    /// load; on Windows, sleeping raised it 10-32%. MAGDA_WORKER_WAIT=spin|sleep overrides.
     static bool spinsBeforeSleep() {
-        const auto* value = std::getenv("MAGDA_WORKER_WAIT");
-        return value == nullptr || juce::String(value) != "sleep";
+        if (const auto* value = std::getenv("MAGDA_WORKER_WAIT"))
+            return juce::String(value) != "sleep";
+#if JUCE_MAC
+        return false;
+#else
+        return true;
+#endif
     }
 
     std::atomic<int> queued_{0};
