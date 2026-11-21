@@ -1016,6 +1016,116 @@ TEST_CASE("The callback's claim stops the ahead side between ops",
 
 namespace {
 
+/// Two devices on different threads: the first in holds until the second arrives, and the second
+/// until the first is done, so the second's chain finishes last.
+struct Relay {
+    std::mutex mutex;
+    std::condition_variable changed;
+    int entered = 0;
+    bool firstDone = false;
+    std::thread::id first;
+    std::thread::id second;
+};
+
+class RelayDevice final : public EngineDevice {
+  public:
+    explicit RelayDevice(Relay& relay) : relay_(relay) {}
+
+    void process(DeviceBlock& block) override {
+        block.audio.multiplyBy(0.5f);
+        std::unique_lock<std::mutex> lock(relay_.mutex);
+        if (relay_.entered++ == 0) {
+            relay_.first = std::this_thread::get_id();
+            relay_.changed.notify_all();
+            relay_.changed.wait_for(lock, std::chrono::seconds(2),
+                                    [this] { return relay_.entered == 2; });
+            relay_.firstDone = true;
+        } else {
+            relay_.second = std::this_thread::get_id();
+            relay_.changed.notify_all();
+            relay_.changed.wait_for(lock, std::chrono::seconds(2),
+                                    [this] { return relay_.firstDone; });
+        }
+        relay_.changed.notify_all();
+    }
+
+  private:
+    Relay& relay_;
+};
+
+/// Tracks 1 and 2 rendered ahead, each through a device made by @p makeFirst, and track 2 through
+/// four more after it; track 3 at the callback.
+template <typename MakeFirst> Scene relayScene(MakeFirst makeFirst) {
+    Scene scene;
+    for (TrackId id = 1; id <= 3; ++id) {
+        auto track = makeTrack(id);
+        track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(920 + id)));
+        scene.bindings.devices[DeviceKey{920 + id}] =
+            id == 3 ? scene.own(std::make_unique<GainDevice>(0.5f)) : scene.own(makeFirst());
+        for (int more = 0; id == 2 && more < 4; ++more) {
+            track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(930 + more)));
+            scene.bindings.devices[DeviceKey{930 + more}] =
+                scene.own(std::make_unique<GainDevice>(0.9f));
+        }
+        scene.tracks.push_back(track);
+        scene.bindings.clipAudio[id] = scene.own(std::make_unique<RampSource>(id));
+    }
+    scene.options.sessionTracks = {3};
+    return scene;
+}
+
+}  // namespace
+
+TEST_CASE("The callback can finish and publish the ahead side's block",
+          "[engine][exec][parallel][3366]") {
+    const auto reference =
+        renderGuardedReference(relayScene([] { return std::make_unique<GainDevice>(0.5f); }), 1);
+
+    // Which thread finishes last is a race, so the rounds meet both: the callback publishing
+    // the block itself, and the writer finishing after the callback stopped waiting for it.
+    int heardSplit = 0;
+    for (int round = 0; round < 20; ++round) {
+        INFO("round " << round);
+        Relay relay;
+        Rig rig(relayScene([&relay] { return std::make_unique<RelayDevice>(relay); }));
+        guard(rig);
+        ParallelPlanExecutor executor(nullptr);
+        REQUIRE(executor.prepare(rig.plan, rig.scene.bindings, rig.context, nullptr, &rig.values)
+                    .empty());
+        REQUIRE(executor.reference().aheadTracks() == std::vector<TrackId>{1, 2});
+
+        juce::AudioBuffer<float> ahead(2, kBlockSize);
+        std::atomic<bool> published{false};
+        std::thread writer([&] {
+            published.store(executor.processSide(0, 0, rig.values, blockAt(0, kBlockSize), ahead));
+        });
+        {
+            std::unique_lock<std::mutex> lock(relay.mutex);
+            relay.changed.wait_for(lock, std::chrono::seconds(2),
+                                   [&] { return relay.entered == 1; });
+        }
+        REQUIRE(executor.processSide(1, 0, rig.values, blockAt(0, kBlockSize), rig.output));
+        writer.join();
+
+        CHECK(relay.second == std::this_thread::get_id());
+        // Given up, it is discarded, or missed when the writer let go after the claim timed out.
+        const auto discards = executor.reference().handoffDiscards();
+        const auto misses = executor.reference().handoffMisses();
+        CHECK((published.load() ? discards == 0 : discards + misses > 0));
+        heardSplit += published.load() && misses == 0 ? 1 : 0;
+        if (misses == 0) {
+            std::vector<float> samples;
+            for (int channel = 0; channel < rig.output.getNumChannels(); ++channel)
+                for (int sample = 0; sample < kBlockSize; ++sample)
+                    samples.push_back(rig.output.getSample(channel, sample));
+            CHECK(firstDifference(reference.samples, samples) == -1);
+        }
+    }
+    CHECK(heardSplit > 0);
+}
+
+namespace {
+
 /// Holds its thread for a fixed time, so the work a block measures has a floor, and records
 /// which threads it ran on.
 class BusyDevice final : public EngineDevice {

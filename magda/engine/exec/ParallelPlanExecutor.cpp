@@ -210,7 +210,27 @@ void ParallelPlanExecutor::Schedule::runChain(OpId op) {
 
     // After the queueing: the block is finished when this reaches zero, and it must not while
     // work this chain released is still on its way into the queue.
-    remaining_.fetch_sub(ran, std::memory_order_acq_rel);
+    // By the slot, which never changes: once the count is zero the caller may begin the next block.
+    if (remaining_.fetch_sub(ran, std::memory_order_acq_rel) == ran &&
+        slot_ == RenderThreadPool::Slot::ahead)
+        finishAheadBlock();
+}
+
+void ParallelPlanExecutor::Schedule::finishAheadBlock() {
+    const RenderLoad::AheadScope ahead;
+    bool rendered = !abandoned_.load(std::memory_order_relaxed);
+    for (const auto* ops : {&owner_.modSourceOps_, &owner_.insertSendOps_, &owner_.outputOps_})
+        for (const auto op : *ops) {
+            if (!rendered || givenUp()) {
+                rendered = false;
+                break;
+            }
+            renderTail(op);
+        }
+    owner_.core_.finishAheadBlock(rendered);
+    published_ = rendered;
+    // Last: the caller may start the next block, which reuses everything above, once it sees this.
+    finished_.store(true, std::memory_order_release);
 }
 
 bool ParallelPlanExecutor::Schedule::takeOne() {
@@ -228,6 +248,8 @@ void ParallelPlanExecutor::Schedule::finishOnCaller() {
     while (remaining_.load(std::memory_order_acquire) > 0)
         if (!takeOne())
             RenderThreadPool::pause();
+    while (abandonable_ && !finished_.load(std::memory_order_acquire))
+        RenderThreadPool::pause();
 }
 
 int ParallelPlanExecutor::Schedule::startSchedule() {
@@ -238,6 +260,9 @@ int ParallelPlanExecutor::Schedule::startSchedule() {
 
     // Before anything is queued, so no op can finish and count against a total not yet set.
     remaining_.store(static_cast<int>(numOps), std::memory_order_relaxed);
+    finished_.store(false, std::memory_order_relaxed);
+    if (numOps == 0 && abandonable_)
+        finishAheadBlock();
 
     // A worker is woken only for an op it would render: one this thread renders itself
     // (the MIDI prefix, outputs, taps) only releases its consumers, and a worker woken for it
@@ -362,6 +387,8 @@ bool ParallelPlanExecutor::Schedule::render(const PlanValues& values, const Bloc
             renderInPlanOrder();
         }
     }
+    if (abandonable)
+        return published_;
     if (abandoned_.load(std::memory_order_relaxed))
         return false;
 

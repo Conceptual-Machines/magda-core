@@ -5,7 +5,9 @@
    RenderAhead::setEpoch, and RenderThreadPool render/takeWork/release with
    ParallelPlanExecutor::letGoOfPool. Each epoch has two jobs, one per pool slot (#3360):
    the callback's, rendered by the audio thread, and the one the render-ahead thread renders,
-   which the audio thread helps finish (PlanExecutor::helpWriter).
+   which the audio thread helps finish (PlanExecutor::helpWriter). Whichever thread finishes
+   an ahead block's last op renders its tail and publishes it, and its caller waits for that
+   (Schedule::finishAheadBlock, #3366).
    One label per seq_cst atomic operation; everything between labels is one step. *)
 EXTENDS Naturals, FiniteSets, TLC
 
@@ -33,10 +35,13 @@ variables
     ready = [j \in Jobs |-> 0],         \* ops in the executor's ready_ queue
     remaining = [j \in Jobs |-> 0],     \* ParallelPlanExecutor::remaining_
     inside = [j \in Jobs |-> 0],        \* Job::workersInside
+    finishes = [j \in Jobs |-> 0],      \* finishAheadBlock calls this block, ghost
+    published = [j \in Jobs |-> FALSE], \* Schedule::finished_
     arrival = [w \in Workers |-> 0];    \* Worker::arrival, mod 4: odd and the arrival it names
 
 define
     Touchable(j) == EpochOf(j) \notin freed
+    IsAhead(j) == j % 2 = 0
     Retired == { e \in Epochs : e < live }
 end define;
 
@@ -86,7 +91,7 @@ end process;
 
 \* EngineSession::process, one acquire per piece of a driver callback.
 fair process Audio = "audio"
-variables cur = NULL, blocks = 0, helping = NULL;
+variables cur = NULL, blocks = 0, helping = NULL, helpLast = FALSE;
 begin
 Piece:
     while blocks < MaxBlocks do
@@ -105,7 +110,15 @@ Piece:
                 queued := queued - 1;
     HelpRun:
                 assert Touchable(helping);
+                helpLast := remaining[helping] = 1;
                 remaining[helping] := remaining[helping] - 1;
+    HelpFinishBlock:
+                if helpLast then
+                    assert Touchable(helping) /\ finishes[helping] = 0;
+                    finishes[helping] := 1;
+    HelpPublished:
+                    published[helping] := TRUE;
+                end if;
             end if;
         end either;
     Render:
@@ -136,7 +149,7 @@ end process;
 
 \* RenderAhead::renderOnce, holding the epoch it was handed for the whole render.
 fair process Ahead = "ahead"
-variables acur = NULL, aheadBlocks = 0;
+variables acur = NULL, aheadBlocks = 0, aheadLast = FALSE;
 begin
 AheadPiece:
     while aheadBlocks < MaxAheadBlocks do
@@ -150,7 +163,11 @@ AheadPiece:
         either
             skip;
         or
+            \* The block before this one is published: the job is reused for this one.
+            assert ~handed[acur] \/ published[acur];
             ready[acur] := Tasks || remaining[acur] := Tasks;
+            finishes[acur] := 0;
+            published[acur] := FALSE;
             queued := queued + Tasks;
             handed[acur] := TRUE;
     AheadStoreJob:  \* render(): jobs_[ahead].store(&job)
@@ -162,9 +179,20 @@ AheadPiece:
                     ready[acur] := ready[acur] - 1;
                     queued := queued - 1;
     AheadCallerRun:
+                    aheadLast := remaining[acur] = 1;
                     remaining[acur] := remaining[acur] - 1;
+    AheadFinishBlock:
+                    if aheadLast then
+                        assert Touchable(acur) /\ finishes[acur] = 0;
+                        finishes[acur] := 1;
+    AheadPublished:
+                        published[acur] := TRUE;
+                    end if;
                 end if;
             end while;
+    AheadAwait:     \* finishOnCaller: the block's last op may have finished on another thread
+            await published[acur];
+            assert finishes[acur] = 1;
         end either;
     AheadRelease:
         aheadBusy := FALSE;
@@ -173,7 +201,7 @@ end process;
 
 \* RenderThreadPool::Worker::run -> takeWork, the callback's slot first, then takeFrom per slot
 fair process Worker \in Workers
-variables job = NULL, took = FALSE, slot = 1;
+variables job = NULL, took = FALSE, slot = 1, last = FALSE;
 begin
 Wait:
     while TRUE do
@@ -208,7 +236,15 @@ Wait:
         RunChain:   \* remaining_.fetch_sub, the chain's last touch of the block
             if took then
                 assert Touchable(job);
+                last := IsAhead(job) /\ remaining[job] = 1;
                 remaining[job] := remaining[job] - 1;
+            end if;
+        WorkerFinishBlock:  \* finishAheadBlock, still counted inside the job
+            if took /\ last then
+                assert Touchable(job) /\ finishes[job] = 0;
+                finishes[job] := 1;
+        WorkerPublished:
+                published[job] := TRUE;
             end if;
         CountOut:
             assert Touchable(job);
@@ -222,21 +258,24 @@ Wait:
     end while;
 end process;
 end algorithm; *)
-\* BEGIN TRANSLATION (chksum(pcal) = "6db736ee" /\ chksum(tla) = "556c446d")
+\* BEGIN TRANSLATION (chksum(pcal) = "cf4014a" /\ chksum(tla) = "8c9b3a1b")
 VARIABLES pointer, storage, aheadEpoch, aheadBusy, live, nextEpoch, freed,
-          jobPtr, queued, handed, ready, remaining, inside, arrival, pc
+          jobPtr, queued, handed, ready, remaining, inside, finishes,
+          published, arrival, pc
 
 (* define statement *)
 Touchable(j) == EpochOf(j) \notin freed
+IsAhead(j) == j % 2 = 0
 Retired == { e \in Epochs : e < live }
 
-VARIABLES old, rel, slotRel, pending, marked, cur, blocks, helping, acur,
-          aheadBlocks, job, took, slot
+VARIABLES old, rel, slotRel, pending, marked, cur, blocks, helping, helpLast,
+          acur, aheadBlocks, aheadLast, job, took, slot, last
 
 vars == << pointer, storage, aheadEpoch, aheadBusy, live, nextEpoch, freed,
-           jobPtr, queued, handed, ready, remaining, inside, arrival, pc, old,
-           rel, slotRel, pending, marked, cur, blocks, helping, acur,
-           aheadBlocks, job, took, slot >>
+           jobPtr, queued, handed, ready, remaining, inside, finishes,
+           published, arrival, pc, old, rel, slotRel, pending, marked, cur,
+           blocks, helping, helpLast, acur, aheadBlocks, aheadLast, job, took,
+           slot, last >>
 
 ProcSet == {"message"} \cup {"audio"} \cup {"ahead"} \cup (Workers)
 
@@ -254,6 +293,8 @@ Init == (* Global variables *)
         /\ ready = [j \in Jobs |-> 0]
         /\ remaining = [j \in Jobs |-> 0]
         /\ inside = [j \in Jobs |-> 0]
+        /\ finishes = [j \in Jobs |-> 0]
+        /\ published = [j \in Jobs |-> FALSE]
         /\ arrival = [w \in Workers |-> 0]
         (* Process Publisher *)
         /\ old = NULL
@@ -265,13 +306,16 @@ Init == (* Global variables *)
         /\ cur = NULL
         /\ blocks = 0
         /\ helping = NULL
+        /\ helpLast = FALSE
         (* Process Ahead *)
         /\ acur = NULL
         /\ aheadBlocks = 0
+        /\ aheadLast = FALSE
         (* Process Worker *)
         /\ job = [self \in Workers |-> NULL]
         /\ took = [self \in Workers |-> FALSE]
         /\ slot = [self \in Workers |-> 1]
+        /\ last = [self \in Workers |-> FALSE]
         /\ pc = [self \in ProcSet |-> CASE self = "message" -> "Publish"
                                         [] self = "audio" -> "Piece"
                                         [] self = "ahead" -> "AheadPiece"
@@ -283,9 +327,10 @@ Publish == /\ pc["message"] = "Publish"
                  ELSE /\ pc' = [pc EXCEPT !["message"] = "Done"]
            /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                            nextEpoch, freed, jobPtr, queued, handed, ready,
-                           remaining, inside, arrival, old, rel, slotRel,
-                           pending, marked, cur, blocks, helping, acur,
-                           aheadBlocks, job, took, slot >>
+                           remaining, inside, finishes, published, arrival,
+                           old, rel, slotRel, pending, marked, cur, blocks,
+                           helping, helpLast, acur, aheadBlocks, aheadLast,
+                           job, took, slot, last >>
 
 Swap == /\ pc["message"] = "Swap"
         /\ pointer = storage
@@ -293,9 +338,10 @@ Swap == /\ pc["message"] = "Swap"
         /\ storage' = nextEpoch
         /\ pc' = [pc EXCEPT !["message"] = "SetAhead"]
         /\ UNCHANGED << aheadEpoch, aheadBusy, live, nextEpoch, freed, jobPtr,
-                        queued, handed, ready, remaining, inside, arrival, old,
-                        rel, slotRel, pending, marked, cur, blocks, helping,
-                        acur, aheadBlocks, job, took, slot >>
+                        queued, handed, ready, remaining, inside, finishes,
+                        published, arrival, old, rel, slotRel, pending, marked,
+                        cur, blocks, helping, helpLast, acur, aheadBlocks,
+                        aheadLast, job, took, slot, last >>
 
 SetAhead == /\ pc["message"] = "SetAhead"
             /\ ~aheadBusy
@@ -303,9 +349,10 @@ SetAhead == /\ pc["message"] = "SetAhead"
             /\ pc' = [pc EXCEPT !["message"] = "Retire"]
             /\ UNCHANGED << pointer, storage, aheadBusy, live, nextEpoch,
                             freed, jobPtr, queued, handed, ready, remaining,
-                            inside, arrival, old, rel, slotRel, pending,
-                            marked, cur, blocks, helping, acur, aheadBlocks,
-                            job, took, slot >>
+                            inside, finishes, published, arrival, old, rel,
+                            slotRel, pending, marked, cur, blocks, helping,
+                            helpLast, acur, aheadBlocks, aheadLast, job, took,
+                            slot, last >>
 
 Retire == /\ pc["message"] = "Retire"
           /\ old' = live
@@ -315,8 +362,9 @@ Retire == /\ pc["message"] = "Retire"
           /\ pc' = [pc EXCEPT !["message"] = "ReleaseJob"]
           /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, freed,
                           jobPtr, queued, handed, ready, remaining, inside,
-                          arrival, rel, pending, marked, cur, blocks, helping,
-                          acur, aheadBlocks, job, took, slot >>
+                          finishes, published, arrival, rel, pending, marked,
+                          cur, blocks, helping, helpLast, acur, aheadBlocks,
+                          aheadLast, job, took, slot, last >>
 
 ReleaseJob == /\ pc["message"] = "ReleaseJob"
               /\ IF slotRel <= 2
@@ -329,9 +377,10 @@ ReleaseJob == /\ pc["message"] = "ReleaseJob"
                          /\ UNCHANGED << rel, slotRel >>
               /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                               nextEpoch, freed, jobPtr, queued, handed, ready,
-                              remaining, inside, arrival, old, pending, marked,
-                              cur, blocks, helping, acur, aheadBlocks, job,
-                              took, slot >>
+                              remaining, inside, finishes, published, arrival,
+                              old, pending, marked, cur, blocks, helping,
+                              helpLast, acur, aheadBlocks, aheadLast, job,
+                              took, slot, last >>
 
 ReleaseCas == /\ pc["message"] = "ReleaseCas"
               /\ jobPtr' = [s \in Slots |-> IF jobPtr[s] = rel THEN NULL ELSE jobPtr[s]]
@@ -339,9 +388,10 @@ ReleaseCas == /\ pc["message"] = "ReleaseCas"
               /\ pc' = [pc EXCEPT !["message"] = "ReleaseMarks"]
               /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                               nextEpoch, freed, queued, handed, ready,
-                              remaining, inside, arrival, old, rel, slotRel,
-                              marked, cur, blocks, helping, acur, aheadBlocks,
-                              job, took, slot >>
+                              remaining, inside, finishes, published, arrival,
+                              old, rel, slotRel, marked, cur, blocks, helping,
+                              helpLast, acur, aheadBlocks, aheadLast, job,
+                              took, slot, last >>
 
 ReleaseMarks == /\ pc["message"] = "ReleaseMarks"
                 /\ IF pending /= {}
@@ -356,27 +406,30 @@ ReleaseMarks == /\ pc["message"] = "ReleaseMarks"
                            /\ UNCHANGED << pending, marked >>
                 /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                                 nextEpoch, freed, jobPtr, queued, handed,
-                                ready, remaining, inside, arrival, old, rel,
-                                slotRel, cur, blocks, helping, acur,
-                                aheadBlocks, job, took, slot >>
+                                ready, remaining, inside, finishes, published,
+                                arrival, old, rel, slotRel, cur, blocks,
+                                helping, helpLast, acur, aheadBlocks,
+                                aheadLast, job, took, slot, last >>
 
 ReleaseInside == /\ pc["message"] = "ReleaseInside"
                  /\ inside[rel] = 0
                  /\ pc' = [pc EXCEPT !["message"] = "ReleaseJob"]
                  /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                                  nextEpoch, freed, jobPtr, queued, handed,
-                                 ready, remaining, inside, arrival, old, rel,
-                                 slotRel, pending, marked, cur, blocks,
-                                 helping, acur, aheadBlocks, job, took, slot >>
+                                 ready, remaining, inside, finishes, published,
+                                 arrival, old, rel, slotRel, pending, marked,
+                                 cur, blocks, helping, helpLast, acur,
+                                 aheadBlocks, aheadLast, job, took, slot, last >>
 
 Free == /\ pc["message"] = "Free"
         /\ freed' = (freed \union {old})
         /\ pc' = [pc EXCEPT !["message"] = "Publish"]
         /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                         nextEpoch, jobPtr, queued, handed, ready, remaining,
-                        inside, arrival, old, rel, slotRel, pending, marked,
-                        cur, blocks, helping, acur, aheadBlocks, job, took,
-                        slot >>
+                        inside, finishes, published, arrival, old, rel,
+                        slotRel, pending, marked, cur, blocks, helping,
+                        helpLast, acur, aheadBlocks, aheadLast, job, took,
+                        slot, last >>
 
 Publisher == Publish \/ Swap \/ SetAhead \/ Retire \/ ReleaseJob
                 \/ ReleaseCas \/ ReleaseMarks \/ ReleaseInside \/ Free
@@ -387,9 +440,10 @@ Piece == /\ pc["audio"] = "Piece"
                ELSE /\ pc' = [pc EXCEPT !["audio"] = "Done"]
          /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                          nextEpoch, freed, jobPtr, queued, handed, ready,
-                         remaining, inside, arrival, old, rel, slotRel,
-                         pending, marked, cur, blocks, helping, acur,
-                         aheadBlocks, job, took, slot >>
+                         remaining, inside, finishes, published, arrival, old,
+                         rel, slotRel, pending, marked, cur, blocks, helping,
+                         helpLast, acur, aheadBlocks, aheadLast, job, took,
+                         slot, last >>
 
 Acquire == /\ pc["audio"] = "Acquire"
            /\ cur' = JobOf(pointer, 1)
@@ -398,8 +452,9 @@ Acquire == /\ pc["audio"] = "Acquire"
            /\ pc' = [pc EXCEPT !["audio"] = "Help"]
            /\ UNCHANGED << storage, aheadEpoch, aheadBusy, live, nextEpoch,
                            freed, jobPtr, queued, handed, ready, remaining,
-                           inside, arrival, old, rel, slotRel, pending, marked,
-                           helping, acur, aheadBlocks, job, took, slot >>
+                           inside, finishes, published, arrival, old, rel,
+                           slotRel, pending, marked, helping, helpLast, acur,
+                           aheadBlocks, aheadLast, job, took, slot, last >>
 
 Help == /\ pc["audio"] = "Help"
         /\ \/ /\ TRUE
@@ -407,7 +462,7 @@ Help == /\ pc["audio"] = "Help"
               /\ UNCHANGED <<queued, ready, helping>>
            \/ /\ helping' = JobOf(EpochOf(cur), 2)
               /\ Assert(Touchable(helping'),
-                        "Failure of assertion at line 102, column 13.")
+                        "Failure of assertion at line 107, column 13.")
               /\ IF ready[helping'] > 0
                     THEN /\ ready' = [ready EXCEPT ![helping'] = ready[helping'] - 1]
                          /\ queued' = queued - 1
@@ -416,23 +471,51 @@ Help == /\ pc["audio"] = "Help"
                          /\ UNCHANGED << queued, ready >>
         /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                         nextEpoch, freed, jobPtr, handed, remaining, inside,
-                        arrival, old, rel, slotRel, pending, marked, cur,
-                        blocks, acur, aheadBlocks, job, took, slot >>
+                        finishes, published, arrival, old, rel, slotRel,
+                        pending, marked, cur, blocks, helpLast, acur,
+                        aheadBlocks, aheadLast, job, took, slot, last >>
 
 HelpRun == /\ pc["audio"] = "HelpRun"
            /\ Assert(Touchable(helping),
-                     "Failure of assertion at line 107, column 17.")
+                     "Failure of assertion at line 112, column 17.")
+           /\ helpLast' = (remaining[helping] = 1)
            /\ remaining' = [remaining EXCEPT ![helping] = remaining[helping] - 1]
-           /\ pc' = [pc EXCEPT !["audio"] = "Render"]
+           /\ pc' = [pc EXCEPT !["audio"] = "HelpFinishBlock"]
            /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                            nextEpoch, freed, jobPtr, queued, handed, ready,
-                           inside, arrival, old, rel, slotRel, pending, marked,
-                           cur, blocks, helping, acur, aheadBlocks, job, took,
-                           slot >>
+                           inside, finishes, published, arrival, old, rel,
+                           slotRel, pending, marked, cur, blocks, helping,
+                           acur, aheadBlocks, aheadLast, job, took, slot, last >>
+
+HelpFinishBlock == /\ pc["audio"] = "HelpFinishBlock"
+                   /\ IF helpLast
+                         THEN /\ Assert(Touchable(helping) /\ finishes[helping] = 0,
+                                        "Failure of assertion at line 117, column 21.")
+                              /\ finishes' = [finishes EXCEPT ![helping] = 1]
+                              /\ pc' = [pc EXCEPT !["audio"] = "HelpPublished"]
+                         ELSE /\ pc' = [pc EXCEPT !["audio"] = "Render"]
+                              /\ UNCHANGED finishes
+                   /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy,
+                                   live, nextEpoch, freed, jobPtr, queued,
+                                   handed, ready, remaining, inside, published,
+                                   arrival, old, rel, slotRel, pending, marked,
+                                   cur, blocks, helping, helpLast, acur,
+                                   aheadBlocks, aheadLast, job, took, slot,
+                                   last >>
+
+HelpPublished == /\ pc["audio"] = "HelpPublished"
+                 /\ published' = [published EXCEPT ![helping] = TRUE]
+                 /\ pc' = [pc EXCEPT !["audio"] = "Render"]
+                 /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
+                                 nextEpoch, freed, jobPtr, queued, handed,
+                                 ready, remaining, inside, finishes, arrival,
+                                 old, rel, slotRel, pending, marked, cur,
+                                 blocks, helping, helpLast, acur, aheadBlocks,
+                                 aheadLast, job, took, slot, last >>
 
 Render == /\ pc["audio"] = "Render"
           /\ Assert(Touchable(cur),
-                    "Failure of assertion at line 112, column 9.")
+                    "Failure of assertion at line 125, column 9.")
           /\ \/ /\ TRUE
                 /\ pc' = [pc EXCEPT !["audio"] = "Release"]
                 /\ UNCHANGED <<queued, handed, ready, remaining>>
@@ -442,23 +525,25 @@ Render == /\ pc["audio"] = "Render"
                 /\ handed' = [handed EXCEPT ![cur] = TRUE]
                 /\ pc' = [pc EXCEPT !["audio"] = "StoreJob"]
           /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
-                          nextEpoch, freed, jobPtr, inside, arrival, old, rel,
-                          slotRel, pending, marked, cur, blocks, helping, acur,
-                          aheadBlocks, job, took, slot >>
+                          nextEpoch, freed, jobPtr, inside, finishes,
+                          published, arrival, old, rel, slotRel, pending,
+                          marked, cur, blocks, helping, helpLast, acur,
+                          aheadBlocks, aheadLast, job, took, slot, last >>
 
 StoreJob == /\ pc["audio"] = "StoreJob"
             /\ jobPtr' = [jobPtr EXCEPT ![1] = cur]
             /\ pc' = [pc EXCEPT !["audio"] = "Finish"]
             /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                             nextEpoch, freed, queued, handed, ready, remaining,
-                            inside, arrival, old, rel, slotRel, pending,
-                            marked, cur, blocks, helping, acur, aheadBlocks,
-                            job, took, slot >>
+                            inside, finishes, published, arrival, old, rel,
+                            slotRel, pending, marked, cur, blocks, helping,
+                            helpLast, acur, aheadBlocks, aheadLast, job, took,
+                            slot, last >>
 
 Finish == /\ pc["audio"] = "Finish"
           /\ IF remaining[cur] > 0
                 THEN /\ Assert(Touchable(cur),
-                               "Failure of assertion at line 123, column 17.")
+                               "Failure of assertion at line 136, column 17.")
                      /\ IF ready[cur] > 0
                            THEN /\ ready' = [ready EXCEPT ![cur] = ready[cur] - 1]
                                 /\ queued' = queued - 1
@@ -469,29 +554,33 @@ Finish == /\ pc["audio"] = "Finish"
                      /\ UNCHANGED << queued, ready >>
           /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                           nextEpoch, freed, jobPtr, handed, remaining, inside,
-                          arrival, old, rel, slotRel, pending, marked, cur,
-                          blocks, helping, acur, aheadBlocks, job, took, slot >>
+                          finishes, published, arrival, old, rel, slotRel,
+                          pending, marked, cur, blocks, helping, helpLast,
+                          acur, aheadBlocks, aheadLast, job, took, slot, last >>
 
 CallerRun == /\ pc["audio"] = "CallerRun"
              /\ remaining' = [remaining EXCEPT ![cur] = remaining[cur] - 1]
              /\ pc' = [pc EXCEPT !["audio"] = "Finish"]
              /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                              nextEpoch, freed, jobPtr, queued, handed, ready,
-                             inside, arrival, old, rel, slotRel, pending,
-                             marked, cur, blocks, helping, acur, aheadBlocks,
-                             job, took, slot >>
+                             inside, finishes, published, arrival, old, rel,
+                             slotRel, pending, marked, cur, blocks, helping,
+                             helpLast, acur, aheadBlocks, aheadLast, job, took,
+                             slot, last >>
 
 Release == /\ pc["audio"] = "Release"
            /\ pointer' = EpochOf(cur)
            /\ pc' = [pc EXCEPT !["audio"] = "Piece"]
            /\ UNCHANGED << storage, aheadEpoch, aheadBusy, live, nextEpoch,
                            freed, jobPtr, queued, handed, ready, remaining,
-                           inside, arrival, old, rel, slotRel, pending, marked,
-                           cur, blocks, helping, acur, aheadBlocks, job, took,
-                           slot >>
+                           inside, finishes, published, arrival, old, rel,
+                           slotRel, pending, marked, cur, blocks, helping,
+                           helpLast, acur, aheadBlocks, aheadLast, job, took,
+                           slot, last >>
 
-Audio == Piece \/ Acquire \/ Help \/ HelpRun \/ Render \/ StoreJob
-            \/ Finish \/ CallerRun \/ Release
+Audio == Piece \/ Acquire \/ Help \/ HelpRun \/ HelpFinishBlock
+            \/ HelpPublished \/ Render \/ StoreJob \/ Finish \/ CallerRun
+            \/ Release
 
 AheadPiece == /\ pc["ahead"] = "AheadPiece"
               /\ IF aheadBlocks < MaxAheadBlocks
@@ -499,9 +588,10 @@ AheadPiece == /\ pc["ahead"] = "AheadPiece"
                     ELSE /\ pc' = [pc EXCEPT !["ahead"] = "Done"]
               /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                               nextEpoch, freed, jobPtr, queued, handed, ready,
-                              remaining, inside, arrival, old, rel, slotRel,
-                              pending, marked, cur, blocks, helping, acur,
-                              aheadBlocks, job, took, slot >>
+                              remaining, inside, finishes, published, arrival,
+                              old, rel, slotRel, pending, marked, cur, blocks,
+                              helping, helpLast, acur, aheadBlocks, aheadLast,
+                              job, took, slot, last >>
 
 AheadAcquire == /\ pc["ahead"] = "AheadAcquire"
                 /\ ~aheadBusy
@@ -511,73 +601,124 @@ AheadAcquire == /\ pc["ahead"] = "AheadAcquire"
                 /\ pc' = [pc EXCEPT !["ahead"] = "AheadRender"]
                 /\ UNCHANGED << pointer, storage, aheadEpoch, live, nextEpoch,
                                 freed, jobPtr, queued, handed, ready,
-                                remaining, inside, arrival, old, rel, slotRel,
-                                pending, marked, cur, blocks, helping, job,
-                                took, slot >>
+                                remaining, inside, finishes, published,
+                                arrival, old, rel, slotRel, pending, marked,
+                                cur, blocks, helping, helpLast, aheadLast, job,
+                                took, slot, last >>
 
 AheadRender == /\ pc["ahead"] = "AheadRender"
                /\ Assert(Touchable(acur),
-                         "Failure of assertion at line 149, column 9.")
+                         "Failure of assertion at line 162, column 9.")
                /\ \/ /\ TRUE
                      /\ pc' = [pc EXCEPT !["ahead"] = "AheadRelease"]
-                     /\ UNCHANGED <<queued, handed, ready, remaining>>
-                  \/ /\ /\ ready' = [ready EXCEPT ![acur] = Tasks]
+                     /\ UNCHANGED <<queued, handed, ready, remaining, finishes, published>>
+                  \/ /\ Assert(~handed[acur] \/ published[acur],
+                               "Failure of assertion at line 167, column 13.")
+                     /\ /\ ready' = [ready EXCEPT ![acur] = Tasks]
                         /\ remaining' = [remaining EXCEPT ![acur] = Tasks]
+                     /\ finishes' = [finishes EXCEPT ![acur] = 0]
+                     /\ published' = [published EXCEPT ![acur] = FALSE]
                      /\ queued' = queued + Tasks
                      /\ handed' = [handed EXCEPT ![acur] = TRUE]
                      /\ pc' = [pc EXCEPT !["ahead"] = "AheadStoreJob"]
                /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                                nextEpoch, freed, jobPtr, inside, arrival, old,
                                rel, slotRel, pending, marked, cur, blocks,
-                               helping, acur, aheadBlocks, job, took, slot >>
+                               helping, helpLast, acur, aheadBlocks, aheadLast,
+                               job, took, slot, last >>
 
 AheadStoreJob == /\ pc["ahead"] = "AheadStoreJob"
                  /\ jobPtr' = [jobPtr EXCEPT ![2] = acur]
                  /\ pc' = [pc EXCEPT !["ahead"] = "AheadFinish"]
                  /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                                  nextEpoch, freed, queued, handed, ready,
-                                 remaining, inside, arrival, old, rel, slotRel,
-                                 pending, marked, cur, blocks, helping, acur,
-                                 aheadBlocks, job, took, slot >>
+                                 remaining, inside, finishes, published,
+                                 arrival, old, rel, slotRel, pending, marked,
+                                 cur, blocks, helping, helpLast, acur,
+                                 aheadBlocks, aheadLast, job, took, slot, last >>
 
 AheadFinish == /\ pc["ahead"] = "AheadFinish"
                /\ IF remaining[acur] > 0
                      THEN /\ Assert(Touchable(acur),
-                                    "Failure of assertion at line 160, column 17.")
+                                    "Failure of assertion at line 177, column 17.")
                           /\ IF ready[acur] > 0
                                 THEN /\ ready' = [ready EXCEPT ![acur] = ready[acur] - 1]
                                      /\ queued' = queued - 1
                                      /\ pc' = [pc EXCEPT !["ahead"] = "AheadCallerRun"]
                                 ELSE /\ pc' = [pc EXCEPT !["ahead"] = "AheadFinish"]
                                      /\ UNCHANGED << queued, ready >>
-                     ELSE /\ pc' = [pc EXCEPT !["ahead"] = "AheadRelease"]
+                     ELSE /\ pc' = [pc EXCEPT !["ahead"] = "AheadAwait"]
                           /\ UNCHANGED << queued, ready >>
                /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                                nextEpoch, freed, jobPtr, handed, remaining,
-                               inside, arrival, old, rel, slotRel, pending,
-                               marked, cur, blocks, helping, acur, aheadBlocks,
-                               job, took, slot >>
+                               inside, finishes, published, arrival, old, rel,
+                               slotRel, pending, marked, cur, blocks, helping,
+                               helpLast, acur, aheadBlocks, aheadLast, job,
+                               took, slot, last >>
 
 AheadCallerRun == /\ pc["ahead"] = "AheadCallerRun"
+                  /\ aheadLast' = (remaining[acur] = 1)
                   /\ remaining' = [remaining EXCEPT ![acur] = remaining[acur] - 1]
+                  /\ pc' = [pc EXCEPT !["ahead"] = "AheadFinishBlock"]
+                  /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy,
+                                  live, nextEpoch, freed, jobPtr, queued,
+                                  handed, ready, inside, finishes, published,
+                                  arrival, old, rel, slotRel, pending, marked,
+                                  cur, blocks, helping, helpLast, acur,
+                                  aheadBlocks, job, took, slot, last >>
+
+AheadFinishBlock == /\ pc["ahead"] = "AheadFinishBlock"
+                    /\ IF aheadLast
+                          THEN /\ Assert(Touchable(acur) /\ finishes[acur] = 0,
+                                         "Failure of assertion at line 186, column 25.")
+                               /\ finishes' = [finishes EXCEPT ![acur] = 1]
+                               /\ pc' = [pc EXCEPT !["ahead"] = "AheadPublished"]
+                          ELSE /\ pc' = [pc EXCEPT !["ahead"] = "AheadFinish"]
+                               /\ UNCHANGED finishes
+                    /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy,
+                                    live, nextEpoch, freed, jobPtr, queued,
+                                    handed, ready, remaining, inside,
+                                    published, arrival, old, rel, slotRel,
+                                    pending, marked, cur, blocks, helping,
+                                    helpLast, acur, aheadBlocks, aheadLast,
+                                    job, took, slot, last >>
+
+AheadPublished == /\ pc["ahead"] = "AheadPublished"
+                  /\ published' = [published EXCEPT ![acur] = TRUE]
                   /\ pc' = [pc EXCEPT !["ahead"] = "AheadFinish"]
                   /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy,
                                   live, nextEpoch, freed, jobPtr, queued,
-                                  handed, ready, inside, arrival, old, rel,
-                                  slotRel, pending, marked, cur, blocks,
-                                  helping, acur, aheadBlocks, job, took, slot >>
+                                  handed, ready, remaining, inside, finishes,
+                                  arrival, old, rel, slotRel, pending, marked,
+                                  cur, blocks, helping, helpLast, acur,
+                                  aheadBlocks, aheadLast, job, took, slot,
+                                  last >>
+
+AheadAwait == /\ pc["ahead"] = "AheadAwait"
+              /\ published[acur]
+              /\ Assert(finishes[acur] = 1,
+                        "Failure of assertion at line 195, column 13.")
+              /\ pc' = [pc EXCEPT !["ahead"] = "AheadRelease"]
+              /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
+                              nextEpoch, freed, jobPtr, queued, handed, ready,
+                              remaining, inside, finishes, published, arrival,
+                              old, rel, slotRel, pending, marked, cur, blocks,
+                              helping, helpLast, acur, aheadBlocks, aheadLast,
+                              job, took, slot, last >>
 
 AheadRelease == /\ pc["ahead"] = "AheadRelease"
                 /\ aheadBusy' = FALSE
                 /\ pc' = [pc EXCEPT !["ahead"] = "AheadPiece"]
                 /\ UNCHANGED << pointer, storage, aheadEpoch, live, nextEpoch,
                                 freed, jobPtr, queued, handed, ready,
-                                remaining, inside, arrival, old, rel, slotRel,
-                                pending, marked, cur, blocks, helping, acur,
-                                aheadBlocks, job, took, slot >>
+                                remaining, inside, finishes, published,
+                                arrival, old, rel, slotRel, pending, marked,
+                                cur, blocks, helping, helpLast, acur,
+                                aheadBlocks, aheadLast, job, took, slot, last >>
 
 Ahead == AheadPiece \/ AheadAcquire \/ AheadRender \/ AheadStoreJob
-            \/ AheadFinish \/ AheadCallerRun \/ AheadRelease
+            \/ AheadFinish \/ AheadCallerRun \/ AheadFinishBlock
+            \/ AheadPublished \/ AheadAwait \/ AheadRelease
 
 Wait(self) == /\ pc[self] = "Wait"
               /\ queued > 0
@@ -585,9 +726,10 @@ Wait(self) == /\ pc[self] = "Wait"
               /\ pc' = [pc EXCEPT ![self] = "TrySlot"]
               /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                               nextEpoch, freed, jobPtr, queued, handed, ready,
-                              remaining, inside, arrival, old, rel, slotRel,
-                              pending, marked, cur, blocks, helping, acur,
-                              aheadBlocks, job, took >>
+                              remaining, inside, finishes, published, arrival,
+                              old, rel, slotRel, pending, marked, cur, blocks,
+                              helping, helpLast, acur, aheadBlocks, aheadLast,
+                              job, took, last >>
 
 TrySlot(self) == /\ pc[self] = "TrySlot"
                  /\ IF slot[self] <= 2
@@ -595,41 +737,45 @@ TrySlot(self) == /\ pc[self] = "TrySlot"
                        ELSE /\ pc' = [pc EXCEPT ![self] = "Wait"]
                  /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                                  nextEpoch, freed, jobPtr, queued, handed,
-                                 ready, remaining, inside, arrival, old, rel,
-                                 slotRel, pending, marked, cur, blocks,
-                                 helping, acur, aheadBlocks, job, took, slot >>
+                                 ready, remaining, inside, finishes, published,
+                                 arrival, old, rel, slotRel, pending, marked,
+                                 cur, blocks, helping, helpLast, acur,
+                                 aheadBlocks, aheadLast, job, took, slot, last >>
 
 Arrive(self) == /\ pc[self] = "Arrive"
                 /\ arrival' = [arrival EXCEPT ![self] = (arrival[self] + 1) % 4]
                 /\ pc' = [pc EXCEPT ![self] = "LoadJob"]
                 /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                                 nextEpoch, freed, jobPtr, queued, handed,
-                                ready, remaining, inside, old, rel, slotRel,
-                                pending, marked, cur, blocks, helping, acur,
-                                aheadBlocks, job, took, slot >>
+                                ready, remaining, inside, finishes, published,
+                                old, rel, slotRel, pending, marked, cur,
+                                blocks, helping, helpLast, acur, aheadBlocks,
+                                aheadLast, job, took, slot, last >>
 
 LoadJob(self) == /\ pc[self] = "LoadJob"
                  /\ job' = [job EXCEPT ![self] = jobPtr[slot[self]]]
                  /\ pc' = [pc EXCEPT ![self] = "CountIn"]
                  /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                                  nextEpoch, freed, jobPtr, queued, handed,
-                                 ready, remaining, inside, arrival, old, rel,
-                                 slotRel, pending, marked, cur, blocks,
-                                 helping, acur, aheadBlocks, took, slot >>
+                                 ready, remaining, inside, finishes, published,
+                                 arrival, old, rel, slotRel, pending, marked,
+                                 cur, blocks, helping, helpLast, acur,
+                                 aheadBlocks, aheadLast, took, slot, last >>
 
 CountIn(self) == /\ pc[self] = "CountIn"
                  /\ IF job[self] /= NULL
                        THEN /\ Assert(Touchable(job[self]),
-                                      "Failure of assertion at line 190, column 17.")
+                                      "Failure of assertion at line 218, column 17.")
                             /\ inside' = [inside EXCEPT ![job[self]] = inside[job[self]] + 1]
                        ELSE /\ TRUE
                             /\ UNCHANGED inside
                  /\ pc' = [pc EXCEPT ![self] = "Arrived"]
                  /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                                  nextEpoch, freed, jobPtr, queued, handed,
-                                 ready, remaining, arrival, old, rel, slotRel,
-                                 pending, marked, cur, blocks, helping, acur,
-                                 aheadBlocks, job, took, slot >>
+                                 ready, remaining, finishes, published,
+                                 arrival, old, rel, slotRel, pending, marked,
+                                 cur, blocks, helping, helpLast, acur,
+                                 aheadBlocks, aheadLast, job, took, slot, last >>
 
 Arrived(self) == /\ pc[self] = "Arrived"
                  /\ arrival' = [arrival EXCEPT ![self] = (arrival[self] + 1) % 4]
@@ -640,13 +786,14 @@ Arrived(self) == /\ pc[self] = "Arrived"
                             /\ slot' = slot
                  /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                                  nextEpoch, freed, jobPtr, queued, handed,
-                                 ready, remaining, inside, old, rel, slotRel,
-                                 pending, marked, cur, blocks, helping, acur,
-                                 aheadBlocks, job, took >>
+                                 ready, remaining, inside, finishes, published,
+                                 old, rel, slotRel, pending, marked, cur,
+                                 blocks, helping, helpLast, acur, aheadBlocks,
+                                 aheadLast, job, took, last >>
 
 TakeOne(self) == /\ pc[self] = "TakeOne"
                  /\ Assert(Touchable(job[self]),
-                           "Failure of assertion at line 200, column 13.")
+                           "Failure of assertion at line 228, column 13.")
                  /\ IF ready[job[self]] > 0
                        THEN /\ ready' = [ready EXCEPT ![job[self]] = ready[job[self]] - 1]
                             /\ queued' = queued - 1
@@ -656,27 +803,59 @@ TakeOne(self) == /\ pc[self] = "TakeOne"
                  /\ pc' = [pc EXCEPT ![self] = "RunChain"]
                  /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy, live,
                                  nextEpoch, freed, jobPtr, handed, remaining,
-                                 inside, arrival, old, rel, slotRel, pending,
-                                 marked, cur, blocks, helping, acur,
-                                 aheadBlocks, job, slot >>
+                                 inside, finishes, published, arrival, old,
+                                 rel, slotRel, pending, marked, cur, blocks,
+                                 helping, helpLast, acur, aheadBlocks,
+                                 aheadLast, job, slot, last >>
 
 RunChain(self) == /\ pc[self] = "RunChain"
                   /\ IF took[self]
                         THEN /\ Assert(Touchable(job[self]),
-                                       "Failure of assertion at line 210, column 17.")
+                                       "Failure of assertion at line 238, column 17.")
+                             /\ last' = [last EXCEPT ![self] = IsAhead(job[self]) /\ remaining[job[self]] = 1]
                              /\ remaining' = [remaining EXCEPT ![job[self]] = remaining[job[self]] - 1]
                         ELSE /\ TRUE
-                             /\ UNCHANGED remaining
-                  /\ pc' = [pc EXCEPT ![self] = "CountOut"]
+                             /\ UNCHANGED << remaining, last >>
+                  /\ pc' = [pc EXCEPT ![self] = "WorkerFinishBlock"]
                   /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy,
                                   live, nextEpoch, freed, jobPtr, queued,
-                                  handed, ready, inside, arrival, old, rel,
-                                  slotRel, pending, marked, cur, blocks,
-                                  helping, acur, aheadBlocks, job, took, slot >>
+                                  handed, ready, inside, finishes, published,
+                                  arrival, old, rel, slotRel, pending, marked,
+                                  cur, blocks, helping, helpLast, acur,
+                                  aheadBlocks, aheadLast, job, took, slot >>
+
+WorkerFinishBlock(self) == /\ pc[self] = "WorkerFinishBlock"
+                           /\ IF took[self] /\ last[self]
+                                 THEN /\ Assert(Touchable(job[self]) /\ finishes[job[self]] = 0,
+                                                "Failure of assertion at line 244, column 17.")
+                                      /\ finishes' = [finishes EXCEPT ![job[self]] = 1]
+                                      /\ pc' = [pc EXCEPT ![self] = "WorkerPublished"]
+                                 ELSE /\ pc' = [pc EXCEPT ![self] = "CountOut"]
+                                      /\ UNCHANGED finishes
+                           /\ UNCHANGED << pointer, storage, aheadEpoch,
+                                           aheadBusy, live, nextEpoch, freed,
+                                           jobPtr, queued, handed, ready,
+                                           remaining, inside, published,
+                                           arrival, old, rel, slotRel, pending,
+                                           marked, cur, blocks, helping,
+                                           helpLast, acur, aheadBlocks,
+                                           aheadLast, job, took, slot, last >>
+
+WorkerPublished(self) == /\ pc[self] = "WorkerPublished"
+                         /\ published' = [published EXCEPT ![job[self]] = TRUE]
+                         /\ pc' = [pc EXCEPT ![self] = "CountOut"]
+                         /\ UNCHANGED << pointer, storage, aheadEpoch,
+                                         aheadBusy, live, nextEpoch, freed,
+                                         jobPtr, queued, handed, ready,
+                                         remaining, inside, finishes, arrival,
+                                         old, rel, slotRel, pending, marked,
+                                         cur, blocks, helping, helpLast, acur,
+                                         aheadBlocks, aheadLast, job, took,
+                                         slot, last >>
 
 CountOut(self) == /\ pc[self] = "CountOut"
                   /\ Assert(Touchable(job[self]),
-                            "Failure of assertion at line 214, column 13.")
+                            "Failure of assertion at line 250, column 13.")
                   /\ inside' = [inside EXCEPT ![job[self]] = inside[job[self]] - 1]
                   /\ IF took[self]
                         THEN /\ pc' = [pc EXCEPT ![self] = "Wait"]
@@ -685,13 +864,17 @@ CountOut(self) == /\ pc[self] = "CountOut"
                              /\ pc' = [pc EXCEPT ![self] = "TrySlot"]
                   /\ UNCHANGED << pointer, storage, aheadEpoch, aheadBusy,
                                   live, nextEpoch, freed, jobPtr, queued,
-                                  handed, ready, remaining, arrival, old, rel,
-                                  slotRel, pending, marked, cur, blocks,
-                                  helping, acur, aheadBlocks, job, took >>
+                                  handed, ready, remaining, finishes,
+                                  published, arrival, old, rel, slotRel,
+                                  pending, marked, cur, blocks, helping,
+                                  helpLast, acur, aheadBlocks, aheadLast, job,
+                                  took, last >>
 
 Worker(self) == Wait(self) \/ TrySlot(self) \/ Arrive(self)
                    \/ LoadJob(self) \/ CountIn(self) \/ Arrived(self)
-                   \/ TakeOne(self) \/ RunChain(self) \/ CountOut(self)
+                   \/ TakeOne(self) \/ RunChain(self)
+                   \/ WorkerFinishBlock(self) \/ WorkerPublished(self)
+                   \/ CountOut(self)
 
 Next == Publisher \/ Audio \/ Ahead
            \/ (\E self \in Workers: Worker(self))

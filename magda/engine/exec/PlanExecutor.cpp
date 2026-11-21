@@ -1861,6 +1861,7 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
                             published == HandoffRing::Published::split);
     } else {
         aheadBlock_ = sequence;
+        aheadStamp_ = BlockStamp::of(start.block);
     }
 
     if (start.render && side == 1 && callbackRenderer_ != nullptr) {
@@ -1870,13 +1871,9 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
     } else if (start.render && side == 0 && callbackRenderer_ != nullptr) {
         renderMidiPrefix(values, start.block, side);
         resolveParameters(values, start.block, side);
-        // The callback needs the ops this block is in: given up once what is running finishes.
-        if (!callbackRenderer_->renderAheadSide(values, start.block, target, start.applyValues)) {
-            aheadBlock_.reset();
-            handoffs_.abandon(sequence);
-            handoffs_.releaseClaim();
-            return false;
-        }
+        // Published by whichever thread finishes the last op, so a stalled writer delays only
+        // the next block; given up once the callback needs it (#3366).
+        return callbackRenderer_->renderAheadSide(values, start.block, target, start.applyValues);
     } else if (start.render) {
         renderMidiPrefix(values, start.block, side);
         resolveParameters(values, start.block, side);
@@ -1889,9 +1886,7 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
 
             // The callback needs the ops this block is in: given up halfway, and rendered again.
             if (side == 0 && handoffs_.callbackWaiting()) {
-                aheadBlock_.reset();
-                handoffs_.abandon(sequence);
-                handoffs_.releaseClaim();
+                finishAheadBlock(false);
                 return false;
             }
         }
@@ -1899,14 +1894,21 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
         resolveParameters(values, start.block, side);
     }
 
-    if (side == 0) {
-        aheadBlock_.reset();
-        handoffs_.publish(sequence, BlockStamp::of(start.block));
-        handoffs_.releaseClaim();
-    } else {
+    if (side == 0)
+        finishAheadBlock(true);
+    else
         handoffs_.release(sequence);
-    }
     return true;
+}
+
+void PlanExecutor::finishAheadBlock(bool rendered) {
+    const auto sequence = *aheadBlock_;
+    aheadBlock_.reset();
+    if (rendered)
+        handoffs_.publish(sequence, aheadStamp_);
+    else
+        handoffs_.abandon(sequence);
+    handoffs_.releaseClaim();
 }
 
 HandoffRing::Published PlanExecutor::helpWriter(std::uint64_t sequence, const BlockStamp& stamp,
