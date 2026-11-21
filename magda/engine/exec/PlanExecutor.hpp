@@ -319,13 +319,18 @@ class PlanExecutor {
         /// The callback side's ops, once its MIDI prefix and parameters are resolved.
         virtual void renderCallbackSide(const PlanValues& values, const BlockInfo& block,
                                         juce::AudioBuffer<float>& output, bool applyValues) = 0;
-        /// The ahead side's, likewise. False when the callback's claim stopped it between ops.
+        /// The ahead side's, likewise, published or given up through finishAheadBlock. False
+        /// when the callback's claim stopped it between ops.
         virtual bool renderAheadSide(const PlanValues& values, const BlockInfo& block,
                                      juce::AudioBuffer<float>& output, bool applyValues) = 0;
         /// Callback: renders an op of the ahead side's block in hand on this thread. False when
         /// none is ready.
         virtual bool helpAheadSide() = 0;
     };
+
+    /// The ahead block in hand is done: published when @p rendered, given up otherwise, and the
+    /// writer's claim let go. On whichever thread finished its last op (#3366).
+    void finishAheadBlock(bool rendered);
 
     /// Whether the callback is waiting to claim the block the ahead side is writing.
     bool callbackWaiting() const {
@@ -958,6 +963,7 @@ class PlanExecutor {
 
     /// The block the ahead side is rendering, while it is: a Handoff op writes into its entry.
     std::optional<std::uint64_t> aheadBlock_;
+    BlockStamp aheadStamp_;
 
     std::atomic<int> handoffMisses_{0};
 
