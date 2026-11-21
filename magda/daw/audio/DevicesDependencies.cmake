@@ -133,6 +133,24 @@ else()
     add_subdirectory(third_party/faust/build third_party/faust EXCLUDE_FROM_ALL)
     add_library(faust::libfaust ALIAS staticlib)
 
+    # Faust writes libfaust and its compiler into its own source tree, where a debug and a release
+    # tree with different backends overwrote each other's (#3388). Each tree keeps its own; CI sets
+    # MAGDA_FAUST_OUTPUT_DIR back to third_party/faust/build, which its artifact caches expect.
+    if(DEFINED ENV{MAGDA_FAUST_OUTPUT_DIR})
+        file(TO_CMAKE_PATH "$ENV{MAGDA_FAUST_OUTPUT_DIR}" _faust_output_dir)
+        cmake_path(ABSOLUTE_PATH _faust_output_dir BASE_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    else()
+        set(_faust_output_dir "${CMAKE_BINARY_DIR}/faust")
+    endif()
+    set_target_properties(staticlib PROPERTIES
+        ARCHIVE_OUTPUT_DIRECTORY "${_faust_output_dir}/lib"
+        LIBRARY_OUTPUT_DIRECTORY "${_faust_output_dir}/lib"
+        ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${_faust_output_dir}/lib"
+        LIBRARY_OUTPUT_DIRECTORY_RELEASE "${_faust_output_dir}/lib")
+    if(TARGET faust)
+        set_target_properties(faust PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${_faust_output_dir}/bin")
+    endif()
+
     # libfaust references wasmtime's C API but knows nothing about the static
     # runtime's own system dependencies (CoreFoundation/Security, ws2_32 and
     # friends). Attaching the imported target carries those to the final link.
