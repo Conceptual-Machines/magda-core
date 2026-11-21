@@ -203,8 +203,8 @@ class ParallelPlanExecutor final : private PlanExecutor::CallbackRenderer {
         /// Sized for a plan of @p numOps ops. Off the audio thread, once no worker is inside.
         void size(std::size_t numOps);
 
-        /// The drain of @p side (-1 for the whole block), then its tail. False when given up,
-        /// with nothing of the tail rendered.
+        /// The drain of @p side (-1 for the whole block), then its tail; an abandonable block's
+        /// tail and publish run on whichever thread finishes its last op. False when given up.
         bool render(const PlanValues& values, const BlockInfo& block,
                     juce::AudioBuffer<float>& output, bool applyValues, int side, bool abandonable);
 
@@ -226,6 +226,8 @@ class ParallelPlanExecutor final : private PlanExecutor::CallbackRenderer {
         void runChain(OpId op);
         void renderProfiled(OpId op);
         void renderTail(OpId op);
+        /// The ahead block's tail and publish, on the thread that finished its last op (#3366).
+        void finishAheadBlock();
         /// The drain on this thread alone, in plan order, which is dependency order.
         void renderInPlanOrder();
         /// Seed the counts and queue the ops ready at the top of a block. Answers how many of
@@ -267,6 +269,10 @@ class ParallelPlanExecutor final : private PlanExecutor::CallbackRenderer {
 
         /// Ops still to finish this block. Zero is what "the block is done" means.
         alignas(64) std::atomic<int> remaining_{0};
+
+        /// An ahead block published or given up, and which; written by finishAheadBlock().
+        std::atomic<bool> finished_{false};
+        bool published_ = false;
     };
 
     void renderWhole(const PlanValues& values, const BlockInfo& block,
