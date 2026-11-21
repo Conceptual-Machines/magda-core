@@ -9,6 +9,7 @@
 #include "AudioEngine.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
+#include "exec/RenderProbe.hpp"
 #include "ui/state/TimelineController.hpp"
 #include "ui/state/TimelineEvents.hpp"
 
@@ -106,6 +107,11 @@ void PlaybackPositionTimer::timerCallback() {
         memoryUpdateCounter_ = 0;
         onMemoryUpdate(
             engine_.recentCaptureMeter(MEMORY_SLICES, Config::getInstance().getCaptureBars()));
+    }
+
+    if (++probeReportCounter_ >= PROBE_REPORT_TICKS) {
+        probeReportCounter_ = 0;
+        engine::render_probe::report();
     }
 
     // CPU usage + xrun update (throttled)

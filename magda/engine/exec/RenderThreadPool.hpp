@@ -147,8 +147,22 @@ class RenderThreadPool {
     /// is queued, and true when it slept.
     bool wait(int& pauses);
 
+    /// Measured on PR #3374: on macOS the spin cost 5-10% of a core for no change in callback
+    /// load; on Windows, sleeping raised it 10-32%. MAGDA_WORKER_WAIT=spin|sleep overrides.
+    static bool spinsBeforeSleep() {
+        if (const auto* value = std::getenv("MAGDA_WORKER_WAIT"))
+            return juce::String(value) != "sleep";
+#if JUCE_MAC
+        return false;
+#else
+        return true;
+#endif
+    }
+
     std::atomic<int> queued_{0};
-    moodycamel::LightweightSemaphore semaphore_;
+    const bool spins_ = spinsBeforeSleep();
+    /// 10000 is moodycamel's default spin before the OS wait.
+    moodycamel::LightweightSemaphore semaphore_{0, spins_ ? 10000 : 0};
 
     mutable juce::SpinLock workgroupLock_;
     juce::AudioWorkgroup workgroup_;

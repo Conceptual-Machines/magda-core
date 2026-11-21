@@ -111,6 +111,13 @@ hooks:
 	cp scripts/hooks/pre-push "$$target" && cp scripts/release_gate.py "$$hooks/release_gate.py" && \
 	chmod +x "$$target" "$$hooks/release_gate.py" && echo "✅ Release gate installed: $$target"
 
+# The render probe (#3368) in the debug build: reconfigure, then build as usual.
+.PHONY: probe-on probe-off
+probe-on:
+	cd $(BUILD_DIR) && $(BUILD_ENV) cmake -DMAGDA_RENDER_PROBE=ON .. && $(BUILD_ENV) ninja
+probe-off:
+	cd $(BUILD_DIR) && $(BUILD_ENV) cmake -DMAGDA_RENDER_PROBE=OFF .. && $(BUILD_ENV) ninja
+
 # Debug build
 .PHONY: debug
 debug:
@@ -623,6 +630,7 @@ help:
 	@echo "Build targets:"
 	@echo "  all, debug     - Build debug version (default)"
 	@echo "  debug-cpu      - Build debug analyzer CPU baseline"
+	@echo "  probe-on/off   - Debug build with the render probe on or off (#3368)"
 	@echo "  debug-webgpu   - Build debug Dawn/WebGPU analyzer POC"
 	@echo "  release        - Build release version"
 	@echo "  configure      - Reconfigure CMake"

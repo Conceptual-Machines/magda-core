@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "exec/BlockProfile.hpp"
+#include "exec/RenderProbe.hpp"
 
 #if !JUCE_ARM
     #include <immintrin.h>
@@ -32,6 +33,7 @@ class RenderThreadPool::Worker final : public juce::Thread {
         // For the thread rather than per job: flush-to-zero is a CPU mode this
         // thread carries, and a worker does nothing but render (#2240).
         const juce::ScopedNoDenormals noDenormals;
+        render_probe::setRole(render_probe::Role::worker);
 
         if (realtime_)
             raiseToRenderPriority();
@@ -126,6 +128,11 @@ bool RenderThreadPool::wait(int& pauses) {
     }
 
     ++pauses;
+    if (!spins_) {
+        pauses = 0;
+        semaphore_.wait();
+        return true;
+    }
     if (pauses < 25) {
         pause();
     } else if (pauses < 50) {

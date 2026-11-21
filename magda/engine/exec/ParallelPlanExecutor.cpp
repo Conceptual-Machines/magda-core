@@ -8,6 +8,7 @@
 
 #include "exec/BlockProfile.hpp"
 #include "exec/RenderLoad.hpp"
+#include "exec/RenderProbe.hpp"
 
 namespace magda::engine {
 namespace {
@@ -163,6 +164,8 @@ void ParallelPlanExecutor::Schedule::renderInPlanOrder() {
 }
 
 void ParallelPlanExecutor::Schedule::renderProfiled(OpId op) {
+    const render_probe::OpTimer probed(owner_.plan_->ops[static_cast<std::size_t>(op)].key.trackId,
+                                       slot_ != RenderThreadPool::Slot::callback);
     // The profile is the callback's (BlockProfile); an ahead op counts as ahead load wherever
     // it runs.
     if (slot_ != RenderThreadPool::Slot::callback) {

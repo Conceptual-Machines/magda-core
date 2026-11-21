@@ -12,6 +12,7 @@
 #include "clip/ClipVoicePool.hpp"
 #include "clip/SessionPlayback.hpp"
 #include "exec/BlockProfile.hpp"
+#include "exec/RenderProbe.hpp"
 
 namespace magda::engine {
 
@@ -447,6 +448,7 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
     // of it is not a wrong answer, it is someone else's memory.
     jassert(numSamples <= output.getNumSamples());
     numSamples = std::min(numSamples, output.getNumSamples());
+    render_probe::setRole(render_probe::Role::callback);
 
     // Before the clear, and before anything else touches the output: a host may
     // hand the same memory for input and output, and the feed's copy is what
