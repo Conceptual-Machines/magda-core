@@ -128,6 +128,11 @@ bool RenderThreadPool::wait(int& pauses) {
     }
 
     ++pauses;
+    if (!spins_) {
+        pauses = 0;
+        semaphore_.wait();
+        return true;
+    }
     if (pauses < 25) {
         pause();
     } else if (pauses < 50) {

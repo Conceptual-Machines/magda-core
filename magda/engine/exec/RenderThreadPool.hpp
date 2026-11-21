@@ -147,8 +147,17 @@ class RenderThreadPool {
     /// is queued, and true when it slept.
     bool wait(int& pauses);
 
+    /// MAGDA_WORKER_WAIT=sleep sends an idle worker straight to the OS wait, for measuring
+    /// what the spin buys.
+    static bool spinsBeforeSleep() {
+        const auto* value = std::getenv("MAGDA_WORKER_WAIT");
+        return value == nullptr || juce::String(value) != "sleep";
+    }
+
     std::atomic<int> queued_{0};
-    moodycamel::LightweightSemaphore semaphore_;
+    const bool spins_ = spinsBeforeSleep();
+    /// 10000 is moodycamel's default spin before the OS wait.
+    moodycamel::LightweightSemaphore semaphore_{0, spins_ ? 10000 : 0};
 
     mutable juce::SpinLock workgroupLock_;
     juce::AudioWorkgroup workgroup_;
