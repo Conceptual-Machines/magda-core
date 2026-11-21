@@ -94,6 +94,16 @@ class MagdaApiLive : public MagdaApi {
         project_.setEngineLoopRangeWriter(std::move(writer));
     }
 
+    /** Wire an opened project's loop on/off through the owning engine. */
+    void setProjectLoopEnabledWriter(std::function<void(bool)> writer) {
+        project_.setEngineLoopEnabledWriter(std::move(writer));
+    }
+
+    /** Wire an opened, new or closed project's timeline through the UI's timeline controller. */
+    void setProjectRestorer(std::function<void(const ProjectInfo&)> restore) {
+        project_.setProjectRestorer(std::move(restore));
+    }
+
     /** Wire the owning engine's tempo map, read on each call. */
     void setProjectTempoMap(std::function<const TempoMap*()> getter) {
         project_.setEngineTempoMap(std::move(getter));

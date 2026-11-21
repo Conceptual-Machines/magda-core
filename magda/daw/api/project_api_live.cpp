@@ -45,15 +45,26 @@ bool ProjectApiLive::saveProject() {
 }
 
 bool ProjectApiLive::newProject(bool discardUnsavedChanges) {
-    return ProjectManager::getInstance().newProject(
+    const auto created = ProjectManager::getInstance().newProject(
         discardUnsavedChanges ? ProjectManager::UnsavedChangesPolicy::Discard
                               : ProjectManager::UnsavedChangesPolicy::Refuse);
+    if (created)
+        restoreCurrentProject();
+    return created;
 }
 
 bool ProjectApiLive::closeProject(bool discardUnsavedChanges) {
-    return ProjectManager::getInstance().closeProject(
+    const auto closed = ProjectManager::getInstance().closeProject(
         discardUnsavedChanges ? ProjectManager::UnsavedChangesPolicy::Discard
                               : ProjectManager::UnsavedChangesPolicy::Refuse);
+    if (closed)
+        restoreCurrentProject();
+    return closed;
+}
+
+void ProjectApiLive::restoreCurrentProject() const {
+    if (projectRestorer_)
+        projectRestorer_(ProjectManager::getInstance().getCurrentProjectInfo());
 }
 
 namespace {
@@ -164,6 +175,10 @@ void ProjectApiLive::openProjectAsync(const juce::File& source, ProjectOpenOptio
     ProjectManager::getInstance().loadProjectAsyncControlled(
         source, std::move(loadOptions),
         [this](const ProjectInfo& info) {
+            if (projectRestorer_) {
+                projectRestorer_(info);
+                return;
+            }
             if (engineTempoWriter_)
                 engineTempoWriter_(info.tempo);
             if (engineTimeSignatureWriter_)
@@ -171,6 +186,8 @@ void ProjectApiLive::openProjectAsync(const juce::File& source, ProjectOpenOptio
                                            info.timeSignatureDenominator);
             if (engineLoopRangeWriter_)
                 engineLoopRangeWriter_(info.loopStartBeats, info.loopEndBeats);
+            if (engineLoopEnabledWriter_)
+                engineLoopEnabledWriter_(info.loopEnabled);
         },
         [onComplete = std::move(onComplete)](ProjectManager::ControlledLoadResult result) {
             if (!onComplete)
@@ -270,6 +287,14 @@ void ProjectApiLive::setEngineTimeSignatureWriter(std::function<void(int, int)> 
 
 void ProjectApiLive::setEngineLoopRangeWriter(std::function<void(double, double)> writer) {
     engineLoopRangeWriter_ = std::move(writer);
+}
+
+void ProjectApiLive::setEngineLoopEnabledWriter(std::function<void(bool)> writer) {
+    engineLoopEnabledWriter_ = std::move(writer);
+}
+
+void ProjectApiLive::setProjectRestorer(std::function<void(const ProjectInfo&)> restore) {
+    projectRestorer_ = std::move(restore);
 }
 
 void ProjectApiLive::setLoopRangeDispatcher(std::function<void(double, double)> dispatch) {
