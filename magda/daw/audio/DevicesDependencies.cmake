@@ -153,6 +153,12 @@ else()
             endif()
         endif()
     endforeach()
+
+    # libfaust runs inside MAGDA, so its asserts are off in Debug too: GCC's interval analysis
+    # asserts on the c*c in Faust's own tf2s and aborted the host instead of the compile (#2238).
+    if(TARGET staticlib)
+        target_compile_definitions(staticlib PRIVATE NDEBUG)
+    endif()
 endif()
 
 # Anything including FaustBackend.hpp must agree with the backend libfaust was

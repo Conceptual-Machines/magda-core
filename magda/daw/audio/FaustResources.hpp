@@ -53,19 +53,6 @@ magda::SidechainPort readSidechainPort(const juce::String& source, int inputCoun
 // case so the plugin always loads.
 juce::File getFaustLibrariesPath();
 
-/** Refuse Faust sources that import libraries, for the whole process.
- *
- *  For test binaries that ship no faustlibraries: an importing source could
- *  only fail its compile into passthrough while still entering libfaust,
- *  which aborts on Linux under some suites (#2238). Disallowed, importing
- *  sources are passthrough by contract without touching libfaust, and
- *  self-contained sources still compile for real. Not undoable.
- */
-void disallowFaustLibraryImports();
-
-/// True once disallowFaustLibraryImports() has been called.
-bool faustLibraryImportsDisallowed();
-
 // Root of the runtime .dsp library staged alongside the app. Like
 // getFaustLibrariesPath(), the returned File may not exist outside an
 // installed bundle.
