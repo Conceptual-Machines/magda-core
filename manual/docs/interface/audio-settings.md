@@ -73,16 +73,29 @@ pw-metadata -n settings 0 clock.force-quantum 0
 
 ### Real-time priority
 
-MAGDA renders tracks on several threads at once. To keep up at small buffer sizes, those threads need real-time priority, so that other programs can't hold them up. Without it, playback that's fine on an idle system can crackle as soon as something else gets busy.
+MAGDA plays and renders tracks on several threads at once. To keep up at small buffer sizes, those threads need real-time priority, so that other programs can't hold them up. Without it, playback that's fine on an idle system can crackle as soon as something else gets busy.
 
-The system grants real-time priority only to users it allows to have it. Audio-focused distributions such as Ubuntu Studio set this up for the `audio` group. On other distributions:
+MAGDA asks for it in one of two ways:
 
-1. Install your distribution's real-time package, if it has one (`realtime-privileges` on Arch), or add a file such as `/etc/security/limits.d/audio.conf` containing:
+- **Directly**, at priority 80, when your user is allowed real-time priority. Audio-focused distributions such as Ubuntu Studio set this up for the `audio` group.
+- **Through rtkit** otherwise, the service most desktops use to grant it. rtkit allows a lower priority, usually 20. That's still ahead of every ordinary program, but the direct route holds up better under heavy load.
+
+To set up the direct route, run MAGDA's setup script. It checks your system first and asks before changing anything:
+
+```
+curl -fsSLO https://raw.githubusercontent.com/Conceptual-Machines/magda-core/main/scripts/linux-realtime-setup.sh
+bash linux-realtime-setup.sh
+```
+
+The script adds you to a group your system already grants real-time priority to, usually PipeWire's `pipewire` group or `audio`. When no group does, it sets one up for `audio`. Use `--check` to see the current state without changing anything. To do it by hand instead:
+
+1. Add a file such as `/etc/security/limits.d/95-magda-audio.conf` containing:
    ```
    @audio   -  rtprio     95
    @audio   -  memlock    unlimited
    ```
 2. Add yourself to the group: `sudo usermod -aG audio $USER`
-3. Log out and back in.
 
-`ulimit -r` then prints a number above 0. MAGDA writes the outcome to `magda.log` when its audio engine starts, either `render threads run SCHED_RR at priority 80` or `render threads could not get real-time priority`.
+Either way, log out and back in afterwards. `ulimit -r` then prints 95.
+
+MAGDA writes the outcome to `magda.log` when its audio engine starts: `render threads run SCHED_RR at priority 80`, the same line ending in `(rtkit)` when rtkit granted it, or `could not get real-time priority` when neither did. Under the **ALSA** driver, a second line starting `audio callback thread` reports the same for the thread that plays the audio.
