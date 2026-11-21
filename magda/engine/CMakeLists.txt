@@ -65,6 +65,7 @@ add_library(magda_engine STATIC
     exec/ParallelPlanExecutor.cpp
     exec/BlockProfile.cpp
     exec/RenderThreadPool.cpp
+    exec/RealtimePriority.cpp
     exec/PlanLayout.cpp
     exec/PlanLayoutDump.cpp
     exec/PlanValues.cpp
@@ -185,6 +186,9 @@ add_library(magda_engine STATIC
 add_library(magda::engine ALIAS magda_engine)
 
 target_compile_features(magda_engine PUBLIC cxx_std_23)
+
+# dlopen, for rtkit's D-Bus client in exec/RealtimePriority.cpp.
+target_link_libraries(magda_engine PRIVATE ${CMAKE_DL_LIBS})
 
 # Off in every shipped build: it writes to the log from the message thread (#3368).
 option(MAGDA_RENDER_PROBE "Log render ops the OS paused partway through" OFF)

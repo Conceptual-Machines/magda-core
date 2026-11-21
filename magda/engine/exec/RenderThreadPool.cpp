@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "exec/BlockProfile.hpp"
+#include "exec/RealtimePriority.hpp"
 #include "exec/RenderProbe.hpp"
 
 #if !JUCE_ARM
@@ -18,12 +19,7 @@
 #if JUCE_WINDOWS
     #include <windows.h>
 #elif !JUCE_MAC
-    #include <pthread.h>
-    #include <sched.h>
-    #include <sys/resource.h>
-
     #include <atomic>
-    #include <cerrno>
 #endif
 
 namespace magda::engine {
@@ -234,27 +230,13 @@ void RenderThreadPool::raiseToRenderPriority() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     thread_local const ProAudioTask task;
 #elif !JUCE_MAC
-    // Below PipeWire's data loop (83) and within RLIMIT_RTPRIO, which the audio group sets to 95:
-    // asking for SCHED_RR's maximum of 99 was refused and left every render thread time-shared.
+    // Below PipeWire's data loop (83). SCHED_RR's maximum of 99 was above the audio group's
+    // RLIMIT_RTPRIO of 95, so the request was refused and every render thread ran time-shared.
     constexpr int kRenderPriority = 80;
-    rlimit limit{};
-    int ceiling = 0;
-    if (getrlimit(RLIMIT_RTPRIO, &limit) == 0)
-        ceiling = limit.rlim_cur == RLIM_INFINITY
-                      ? kRenderPriority
-                      : static_cast<int>(std::min<rlim_t>(limit.rlim_cur, kRenderPriority));
-
-    sched_param param{};
-    param.sched_priority = ceiling;
-    const auto error =
-        ceiling > 0 ? pthread_setschedparam(pthread_self(), SCHED_RR, &param) : EPERM;
+    const auto grant = realtime::raise(realtime::currentThreadId(), kRenderPriority);
     static std::atomic<bool> reported{false};
     if (!reported.exchange(true))
-        juce::Logger::writeToLog(
-            error == 0
-                ? "[engine] render threads run SCHED_RR at priority " + juce::String(ceiling)
-                : "[engine] render threads could not get real-time priority (RLIMIT_RTPRIO " +
-                      juce::String(ceiling) + "); they run time-shared");
+        juce::Logger::writeToLog("[engine] render threads " + realtime::describe(grant));
 #endif
 }
 
