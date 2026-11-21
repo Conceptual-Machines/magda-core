@@ -372,6 +372,83 @@ TEST_CASE("A committed write advances the revision by exactly one", "[remote][se
     REQUIRE(service.currentRevision() == INITIAL_REVISION + 2);
 }
 
+TEST_CASE("A summary reply carries the id and revision in place of the result",
+          "[remote][service][reply]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 7;
+    track.playbackMode = TrackPlaybackMode::Session;
+    api.tracks_.tracks.push_back(track);
+    ClipInfo clip;
+    clip.id = 50;
+    clip.trackId = 7;
+    clip.view = ClipView::Session;
+    clip.sceneIndex = 0;
+    api.clips_.clips.emplace(clip.id, clip);
+    api.session_.slots[{7, 0}] = 50;
+    RemoteApiService service(api);
+
+    auto context = fullyGrantedContext();
+    context.reply = ReplyShape::Summary;
+
+    // A clip write, which in full would carry every note twice.
+    const auto created = run(service, "session.updateClipSettings",
+                             object({{"clipId", 50}, {"launchMode", "toggle"}}), context);
+    REQUIRE(created.ok);
+    REQUIRE(validateJson(created.result, summaryReplySchema()).empty());
+    REQUIRE(static_cast<juce::int64>(created.result["revision"]) ==
+            static_cast<juce::int64>(created.revision));
+    REQUIRE(static_cast<int>(created.result["id"]) == 50);
+    REQUIRE(created.result["notes"].isVoid());
+
+    // No id in the full result, so only the revision comes back.
+    const auto tempo = run(service, "project.setTempo", object({{"tempo", 90.0}}), context);
+    REQUIRE(tempo.ok);
+    REQUIRE(api.project_.info.tempo == 90.0);
+    REQUIRE(tempo.result.getDynamicObject()->getProperties().size() == 1);
+    REQUIRE(static_cast<juce::int64>(tempo.result["revision"]) ==
+            static_cast<juce::int64>(created.revision + 1));
+
+    // Reads ignore it.
+    const auto read = run(service, "project.get", emptyInput(), context);
+    REQUIRE(read.ok);
+    REQUIRE(read.result["tempo"] == juce::var(90.0));
+}
+
+TEST_CASE("A summary of an array result lists its ids", "[remote][service][reply]") {
+    const juce::Array<juce::var> clips{object({{"id", 4}, {"name", "a"}}),
+                                       object({{"id", 5}, {"name", "b"}})};
+    const auto summary = summaryReply(clips, 12);
+    REQUIRE(validateJson(summary, summaryReplySchema()).empty());
+    REQUIRE(summary["ids"] == juce::var(juce::Array<juce::var>{4, 5}));
+    REQUIRE(static_cast<juce::int64>(summary["revision"]) == 12);
+}
+
+TEST_CASE("A retry may ask for the summary of a cached full reply", "[remote][service][reply]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto context = fullyGrantedContext();
+    context.clientId = "client-a";
+    context.requestId = "req-1";
+    const auto first = run(service, "project.setTempo", object({{"tempo", 90.0}}), context);
+    REQUIRE(static_cast<double>(first.result["tempo"]) == 90.0);
+
+    context.reply = ReplyShape::Summary;
+    const auto retry = run(service, "project.setTempo", object({{"tempo", 140.0}}), context);
+    REQUIRE(retry.ok);
+    REQUIRE(api.project_.info.tempo == 90.0);
+    REQUIRE(retry.result["tempo"].isVoid());
+    REQUIRE(static_cast<juce::int64>(retry.result["revision"]) ==
+            static_cast<juce::int64>(first.revision));
+
+    context.reply = ReplyShape::Full;
+    const auto full = run(service, "project.setTempo", object({{"tempo", 140.0}}), context);
+    REQUIRE(static_cast<double>(full.result["tempo"]) == 90.0);
+}
+
 TEST_CASE("Session scene edits are one revision and scene no-ops are revision neutral",
           "[remote][service][session][scenes][2842]") {
     const MessageThreadRelaxation relaxation;
@@ -938,6 +1015,145 @@ TEST_CASE("Replacing the project clears the idempotency cache", "[remote][servic
     // answer for state that no longer exists. This must execute instead.
     REQUIRE(run(service, "project.setTempo", object({{"tempo", 140.0}}), context).ok);
     REQUIRE(api.project_.info.tempo == 140.0);
+}
+
+namespace {
+
+juce::var step(const char* method, juce::var params) {
+    return object({{"method", method}, {"params", std::move(params)}});
+}
+
+juce::var batch(juce::Array<juce::var> steps) {
+    return object({{"steps", steps}});
+}
+
+void seedClip(MockMagdaApi& api) {
+    TrackInfo track;
+    track.id = 7;
+    api.tracks_.tracks.push_back(track);
+    ClipInfo clip;
+    clip.id = 50;
+    clip.trackId = 7;
+    api.clips_.clips.emplace(clip.id, clip);
+}
+
+}  // namespace
+
+TEST_CASE("A batch is one undo step, one revision and one publication per topic",
+          "[remote][service][batch]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedClip(api);
+    RemoteApiService service(api);
+    std::vector<ChangeSource::Change> seen;
+    service.changes().addListener([&](const std::vector<ChangeSource::Change>& changes) {
+        seen.insert(seen.end(), changes.begin(), changes.end());
+    });
+
+    const auto response =
+        run(service, "batch.apply",
+            batch({step("clips.update", object({{"clipId", 50}, {"name", "Lead"}})),
+                   step("clips.update",
+                        object({{"clipId", object({{"$ref", "0.id"}})}, {"name", "B"}})),
+                   step("tracks.update", object({{"trackId", 7}, {"name", "Bass"}})),
+                   step("project.setLoopRange", object({{"startBeat", 0.0}, {"endBeat", 16.0}}))}));
+    REQUIRE(response.ok);
+    REQUIRE(response.revision == INITIAL_REVISION + 1);
+    REQUIRE(static_cast<juce::int64>(response.result["revision"]) == INITIAL_REVISION + 1);
+    REQUIRE(validateJson(response.result,
+                         OperationRegistry::instance().find("batch.apply")->outputSchema)
+                .empty());
+
+    const auto* results = response.result["results"].getArray();
+    REQUIRE(results->size() == 4);
+    REQUIRE(static_cast<int>((*results)[0]["id"]) == 50);
+    REQUIRE(static_cast<int>((*results)[1]["id"]) == 50);
+    REQUIRE(static_cast<int>((*results)[2]["id"]) == 7);
+
+    REQUIRE(api.undo_.compoundDescriptions.size() == 1);
+    REQUIRE(api.undo_.maxCompoundDepth == 1);
+    REQUIRE(api.undo_.rollbacks == 0);
+
+    service.changes().flush();
+    std::vector<Topic> topics;
+    for (const auto& change : seen)
+        topics.push_back(change.topic);
+    std::ranges::sort(topics);
+    REQUIRE(std::ranges::adjacent_find(topics) == topics.end());
+    REQUIRE(std::ranges::contains(topics, Topic::Clips));
+    REQUIRE(std::ranges::contains(topics, Topic::Tracks));
+    REQUIRE(std::ranges::contains(topics, Topic::Project));
+}
+
+TEST_CASE("A batch that fails validation runs no step", "[remote][service][batch]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedClip(api);
+    RemoteApiService service(api);
+    const auto valid = step("clips.update", object({{"clipId", 50}, {"name", "Lead"}}));
+
+    const auto refuse = [&](const juce::var& input, ErrorCode code, const char* fragment) {
+        const auto response = run(service, "batch.apply", input);
+        REQUIRE_FALSE(response.ok);
+        CHECK(response.error.code == code);
+        CHECK(response.error.message.contains(fragment));
+        CHECK(api.undo_.executeCalls == 0);
+        CHECK(api.undo_.rollbacks == 0);
+        CHECK(service.currentRevision() == INITIAL_REVISION);
+    };
+
+    // Excluded operations, including nesting and anything not undoable.
+    refuse(batch({valid, step("project.setTempo", object({{"tempo", 90.0}}))}),
+           ErrorCode::ValidationFailed, "");
+    refuse(batch({valid, step("batch.apply", batch({valid}))}), ErrorCode::ValidationFailed, "");
+    refuse(batch({valid, step("clips.update", object({{"clipId", 50}, {"bogus", true}}))}),
+           ErrorCode::ValidationFailed, "step 1 (clips.update)");
+    refuse(batch({step("clips.update", object({{"clipId", object({{"$ref", "0.id"}})}}))}),
+           ErrorCode::ValidationFailed, "earlier step");
+    refuse(batch({valid, step("clips.update", object({{"clipId", object({{"$ref", "0.nope"}})}}))}),
+           ErrorCode::ValidationFailed, "names no id");
+
+    juce::Array<juce::var> events;
+    for (int index = 0; index < 4096; ++index)
+        events.add(object({{"type", "note"},
+                           {"note", 60},
+                           {"velocity", 100},
+                           {"beat", index * 0.25},
+                           {"lengthBeats", 0.25}}));
+    juce::Array<juce::var> heavy;
+    for (int index = 0; index < 5; ++index)
+        heavy.add(step("clips.addMidiEvents", object({{"clipId", 50}, {"events", events}})));
+    refuse(batch(heavy), ErrorCode::ValidationFailed, "16384");
+
+    auto readOnly = fullyGrantedContext();
+    readOnly.scopes = ScopeSet{Scope::Read};
+    const auto denied = run(service, "batch.apply", batch({valid}), readOnly);
+    REQUIRE(denied.error.code == ErrorCode::PermissionDenied);
+    REQUIRE(api.undo_.executeCalls == 0);
+}
+
+TEST_CASE("A step that fails while applying rolls the batch back", "[remote][service][batch]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedClip(api);
+    RemoteApiService service(api);
+    std::vector<ChangeSource::Change> seen;
+    service.changes().addListener([&](const std::vector<ChangeSource::Change>& changes) {
+        seen.insert(seen.end(), changes.begin(), changes.end());
+    });
+
+    const auto response =
+        run(service, "batch.apply",
+            batch({step("clips.update", object({{"clipId", 50}, {"name", "Lead"}})),
+                   step("clips.update", object({{"clipId", 999}, {"name", "Gone"}}))}));
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(response.error.code == ErrorCode::NotFound);
+    REQUIRE(response.error.message.startsWith("step 1 (clips.update)"));
+    REQUIRE(api.undo_.executeCalls == 1);
+    REQUIRE(api.undo_.rollbacks == 1);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+    service.changes().flush();
+    REQUIRE(seen.empty());
 }
 
 TEST_CASE("Committed writes notify the matching change topic", "[remote][service][changes]") {

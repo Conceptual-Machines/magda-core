@@ -251,8 +251,11 @@ TEST_CASE("Tool schemas are the registry's own, not a copy", "[remote-api][mcp]"
     // MCP client validating against the same contract.
     REQUIRE(juce::JSON::toString((*tool)["inputSchema"]) ==
             juce::JSON::toString(operation->inputSchema));
-    REQUIRE(juce::JSON::toString((*tool)["outputSchema"]) ==
+    // A write's output also admits the summary reply (#3376).
+    REQUIRE(juce::JSON::toString((*tool)["outputSchema"]["anyOf"][0]) ==
             juce::JSON::toString(operation->outputSchema));
+    REQUIRE(juce::JSON::toString((*tool)["outputSchema"]["anyOf"][1]) ==
+            juce::JSON::toString(summaryReplySchema()));
 
     // readOnlyHint is derived from OperationAccess rather than guessed.
     REQUIRE_FALSE(static_cast<bool>((*tool)["annotations"]["readOnlyHint"]));
@@ -262,6 +265,35 @@ TEST_CASE("Tool schemas are the registry's own, not a copy", "[remote-api][mcp]"
         REQUIRE(static_cast<bool>(candidate["annotations"]["readOnlyHint"]) ==
                 (declared->access == OperationAccess::Read));
     }
+}
+
+TEST_CASE("A write asked for a summary reply validates against its tool schema",
+          "[remote-api][mcp][reply]") {
+    Harness harness;
+    auto call =
+        legacyCall("tools/call", object({{"name", "project.setTempo"},
+                                         {"arguments", object({{"tempo", 132.0}})},
+                                         {"_meta", object({{MAGDA_META_REPLY, "summary"}})}}));
+    const auto reply = run(harness.endpoint, call);
+    REQUIRE_FALSE(reply.failed());
+    REQUIRE_FALSE(static_cast<bool>(reply.result["isError"]));
+
+    const auto structured = reply.result["structuredContent"];
+    REQUIRE(structured["tempo"].isVoid());
+    REQUIRE(static_cast<juce::int64>(structured["revision"]) ==
+            static_cast<juce::int64>(harness.service.currentRevision()));
+
+    const juce::var* tool = nullptr;
+    for (const auto& candidate : harness.endpoint.tools())
+        if (candidate["name"].toString() == "project.setTempo")
+            tool = &candidate;
+    REQUIRE(tool != nullptr);
+    REQUIRE(validateJson(structured, (*tool)["outputSchema"]).empty());
+
+    auto bad = legacyCall("tools/call", object({{"name", "project.setTempo"},
+                                                {"arguments", object({{"tempo", 120.0}})},
+                                                {"_meta", object({{MAGDA_META_REPLY, "ids"}})}}));
+    REQUIRE(run(harness.endpoint, bad).failed());
 }
 
 TEST_CASE("An array-valued operation is wrapped, schema and result together", "[remote-api][mcp]") {

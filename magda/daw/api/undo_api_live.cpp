@@ -19,4 +19,8 @@ void UndoApiLive::endCompound() {
     UndoManager::getInstance().endCompoundOperation();
 }
 
+void UndoApiLive::rollbackCompound() {
+    UndoManager::getInstance().rollbackCompoundOperation();
+}
+
 }  // namespace magda

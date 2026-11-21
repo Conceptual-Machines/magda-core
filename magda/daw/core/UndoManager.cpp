@@ -180,6 +180,20 @@ void UndoManager::endCompoundOperation() {
     }
 }
 
+void UndoManager::rollbackCompoundOperation() {
+    if (compoundDepth_ <= 0)
+        return;
+    {
+        ProjectManager::UndoableMutationScope mutationScope;
+        for (auto& command : std::views::reverse(compoundCommands_))
+            command->undo();
+    }
+    compoundCommands_.clear();
+    currentStateId_ = compoundBeforeStateId_;
+    updateProjectDirtyState();
+    notifyListeners();
+}
+
 void UndoManager::addListener(UndoManagerListener* listener) {
     if (listener && std::find(listeners_.begin(), listeners_.end(), listener) == listeners_.end()) {
         listeners_.push_back(listener);

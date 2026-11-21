@@ -699,6 +699,9 @@ enum class OperationAccess {
     Control,
 };
 
+/// How much of a write's result goes back to the caller (#3376).
+enum class ReplyShape { Full, Summary };
+
 /**
  * @brief Per-request identity, permission, limits, and concurrency expectations.
  *
@@ -754,6 +757,8 @@ struct RequestContext {
     juce::String requestId;
     /// Optimistic concurrency: reject the write if the project has moved on.
     std::optional<Revision> expectedRevision;
+    /// Summary answers a successful write with its id and the new revision only.
+    ReplyShape reply = ReplyShape::Full;
     /**
      * What this caller may reach. Empty by default, which denies everything.
      *
@@ -953,6 +958,15 @@ juce::var toJson(const ReferenceImpactResultDto& dto);
 
 /** Shared closed schema embedded by every operation that reports reference impact. */
 const juce::var& referenceImpactResultSchema();
+
+/// `"full"` or `"summary"` from a request's metadata; nothing for anything else.
+std::optional<ReplyShape> replyShapeFromJson(const juce::var& value);
+/// What a Summary reply carries in place of @p result: the revision, plus `id`
+/// of an object result or `ids` of an array one.
+juce::var summaryReply(const juce::var& result, Revision revision);
+/// summaryReply without the revision: `id` and `ids` only.
+juce::var summaryIds(const juce::var& result);
+const juce::var& summaryReplySchema();
 
 /**
  * @brief Decode a device path from its wire form.

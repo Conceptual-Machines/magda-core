@@ -749,6 +749,15 @@ struct RemoteWebSocketServer::Impl {
                 }
                 context.expectedRevision = static_cast<Revision>(*revision);
             }
+            if (const auto& reply = meta["reply"]; !reply.isVoid()) {
+                const auto shape = replyShapeFromJson(reply);
+                if (!shape.has_value()) {
+                    refuse(connection, id, JSONRPC_INVALID_REQUEST,
+                           "meta.reply must be \"full\" or \"summary\"");
+                    return;
+                }
+                context.reply = *shape;
+            }
 
             // A client may ask for less time than the server allows, never for
             // more — and never for none. Taking the minimum without checking the

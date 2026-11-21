@@ -312,6 +312,24 @@ Something no argument could fix — an unknown tool, a malformed request — is 
 **JSON-RPC error**. An unknown *method* answers `404`, which is what separates
 "this server lacks that method" from "there is no MCP endpoint at this URL".
 
+### Batches
+
+`batch.apply` runs up to 256 content edits (tracks, clips and notes, sends, the
+loop) as one undo step and one revision, or none of them if any step fails:
+
+```json
+{"steps": [
+  {"method": "tracks.create", "params": {"name": "Bass", "type": "audio"}},
+  {"method": "clips.createMidi", "params": {"lengthBeats": 4,
+    "placement": {"view": "arrangement", "trackId": {"$ref": "0.id"}, "startBeat": 0}}}
+]}
+```
+
+A `{"$ref": "N.id"}` stands for a field of an earlier step's result. The reply
+lists each step's id, in order. Add devices with their own calls first: loading
+a plugin is outside what undo can take back. The allowlist and the full contract
+are in [remote-api-batch-decision.md](architecture/remote-api-batch-decision.md).
+
 ## Resources
 
 | URI | Operation |
@@ -400,6 +418,11 @@ ride in `_meta` under a vendor prefix. (Any prefix whose second label is
 - `com.conceptualmachines.magda/requestId` — an idempotency key. Repeating a
   completed write with the same key returns the first response instead of
   applying the mutation twice.
+- `com.conceptualmachines.magda/reply` — `"full"` (the default) or `"summary"`.
+  A summary answers a successful write with `{"revision": N}` plus the result's
+  `id`, or `ids` for a list, instead of the whole object: a MIDI clip write then
+  costs a few bytes rather than every note. Each write tool's `outputSchema`
+  admits both shapes. Reads and job-starting tools ignore it.
 
 Idempotency is **opt-in, and the key is the client's to make unique** — use a
 UUID. The WebSocket transport scopes its keys by connection, which it can because

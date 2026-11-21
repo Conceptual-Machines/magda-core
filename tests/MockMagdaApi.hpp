@@ -186,6 +186,10 @@ class StubUndoApi : public UndoApi {
     void endCompound() override {
         --compoundDepth;
     }
+    int rollbacks = 0;
+    void rollbackCompound() override {
+        ++rollbacks;
+    }
 };
 
 // ---- functional sub-APIs ---------------------------------------------

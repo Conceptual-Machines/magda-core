@@ -2321,6 +2321,59 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             const auto response = fixture.run("tracks.list", object({}), context);
             expect(response.ok);
         }
+
+        beginTest("A batch builds content as one undo step and rolls back in full on failure");
+        {
+            Fixture fixture;
+            const auto ref = [](const char* text) { return object({{"$ref", text}}); };
+            const auto step = [](const char* method, juce::var params) {
+                return object({{"method", method}, {"params", std::move(params)}});
+            };
+            juce::Array<juce::var> events{object({{"type", "note"},
+                                                  {"note", 60},
+                                                  {"velocity", 100},
+                                                  {"beat", 0.0},
+                                                  {"lengthBeats", 1.0}})};
+            juce::Array<juce::var> steps{
+                step("tracks.create", object({{"name", "Bass"}, {"type", "audio"}})),
+                step("clips.createMidi", object({{"lengthBeats", 4.0},
+                                                 {"placement", object({{"view", "arrangement"},
+                                                                       {"trackId", ref("0.id")},
+                                                                       {"startBeat", 0.0}})}})),
+                step("clips.addMidiEvents", object({{"clipId", ref("1.id")}, {"events", events}})),
+                step("tracks.update", object({{"trackId", ref("0.id")}, {"volume", 0.5}})),
+                step("project.setLoopRange", object({{"startBeat", 0.0}, {"endBeat", 4.0}}))};
+
+            auto failing = steps;
+            failing.add(step("clips.update", object({{"clipId", 999999}, {"name", "Gone"}})));
+            const auto before = fixture.service.currentRevision();
+            const auto loopBefore =
+                ProjectManager::getInstance().getCurrentProjectInfo().loopEndBeats;
+            const auto refused = fixture.run("batch.apply", object({{"steps", failing}}));
+            expect(!refused.ok);
+            expect(refused.error.message.startsWith("step 5 (clips.update)"));
+            expect(TrackManager::getInstance().getTracks().empty());
+            expect(ClipManager::getInstance().getClips().empty());
+            expectEquals(ProjectManager::getInstance().getCurrentProjectInfo().loopEndBeats,
+                         loopBefore);
+            expect(!UndoManager::getInstance().canUndo());
+            expectEquals(static_cast<juce::int64>(fixture.service.currentRevision()),
+                         static_cast<juce::int64>(before));
+
+            const auto applied = fixture.run("batch.apply", object({{"steps", steps}}));
+            expect(applied.ok);
+            expectEquals(static_cast<juce::int64>(applied.revision),
+                         static_cast<juce::int64>(before + 1));
+            expectEquals(static_cast<int>(TrackManager::getInstance().getTracks().size()), 1);
+            const auto clipId = static_cast<int>(applied.result["results"][1]["id"]);
+            const auto* clip = ClipManager::getInstance().getClip(clipId);
+            expect(clip != nullptr && clip->midiNotes.size() == 1);
+
+            expect(UndoManager::getInstance().undo());
+            expect(TrackManager::getInstance().getTracks().empty());
+            expect(ClipManager::getInstance().getClips().empty());
+            expect(!UndoManager::getInstance().canUndo());
+        }
     }
 
   private:

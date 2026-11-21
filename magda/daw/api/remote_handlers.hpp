@@ -8,7 +8,14 @@
 namespace magda {
 class MagdaApi;
 
+namespace remote {
+/// The operations a `batch.apply` step may name (#3377).
+const std::vector<juce::String>& batchStepOperations();
+}  // namespace remote
+
 namespace remote::handlers {
+
+HandlerResult batchApply(MagdaApi&, const juce::var&, const RequestContext&);
 
 /**
  * @brief Implementations behind the operations declared in `OperationRegistry`.

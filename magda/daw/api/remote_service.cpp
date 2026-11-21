@@ -79,6 +79,18 @@ std::vector<Topic> topicsFor(const juce::String& operationName) {
     return {Topic::Project};
 }
 
+/// A batch publishes each topic its steps touch, once.
+std::vector<Topic> topicsFor(const juce::String& operationName, const juce::var& input) {
+    if (operationName != "batch.apply")
+        return topicsFor(operationName);
+    std::vector<Topic> topics;
+    for (const auto& step : *input["steps"].getArray())
+        for (const auto topic : topicsFor(step["method"].toString()))
+            if (!std::ranges::contains(topics, topic))
+                topics.push_back(topic);
+    return topics;
+}
+
 bool deadlinePassed(const RequestContext& context) {
     return context.deadline && std::chrono::steady_clock::now() > *context.deadline;
 }
@@ -353,6 +365,18 @@ Response RemoteApiService::dispatchSync(const juce::String& operationName, const
 
 Response RemoteApiService::execute(const OperationDescriptor& operation, const juce::var& input,
                                    const RequestContext& context) {
+    // Shaped after the idempotency cache, which keeps the full reply, so a
+    // retry may ask for either form.
+    auto response = executeFull(operation, input, context);
+    // A batch's reply is already in the short form.
+    if (response.ok && operation.access == OperationAccess::Write &&
+        context.reply == ReplyShape::Summary && operation.name != "batch.apply")
+        response.result = summaryReply(response.result, response.revision);
+    return response;
+}
+
+Response RemoteApiService::executeFull(const OperationDescriptor& operation, const juce::var& input,
+                                       const RequestContext& context) {
     auto revision = currentRevision();
     const bool isWrite = operation.access == OperationAccess::Write;
     const bool isCommand = operation.access != OperationAccess::Read;
@@ -430,7 +454,7 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
     const bool committed = isWrite && result.mutated && !isProjectLifecycle;
     if (committed) {
         revision = revision_->fetch_add(1, std::memory_order_acq_rel) + 1;
-        for (const auto topic : topicsFor(operation.name))
+        for (const auto topic : topicsFor(operation.name, input))
             changes_.markChanged(topic, revision);
     }
     if (isProjectLifecycle)

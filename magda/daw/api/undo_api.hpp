@@ -34,6 +34,8 @@ class UndoApi {
     /// Nestable; the outermost begin/end pair forms the step.
     virtual void beginCompound(const juce::String& description) = 0;
     virtual void endCompound() = 0;
+    /// Undo everything the open compound holds; its endCompound() then records nothing.
+    virtual void rollbackCompound() = 0;
 };
 
 }  // namespace magda
