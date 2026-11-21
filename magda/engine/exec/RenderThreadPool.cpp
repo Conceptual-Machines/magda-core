@@ -20,6 +20,10 @@
 #elif !JUCE_MAC
     #include <pthread.h>
     #include <sched.h>
+    #include <sys/resource.h>
+
+    #include <atomic>
+    #include <cerrno>
 #endif
 
 namespace magda::engine {
@@ -230,9 +234,27 @@ void RenderThreadPool::raiseToRenderPriority() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     thread_local const ProAudioTask task;
 #elif !JUCE_MAC
+    // Below PipeWire's data loop (83) and within RLIMIT_RTPRIO, which the audio group sets to 95:
+    // asking for SCHED_RR's maximum of 99 was refused and left every render thread time-shared.
+    constexpr int kRenderPriority = 80;
+    rlimit limit{};
+    int ceiling = 0;
+    if (getrlimit(RLIMIT_RTPRIO, &limit) == 0)
+        ceiling = limit.rlim_cur == RLIM_INFINITY
+                      ? kRenderPriority
+                      : static_cast<int>(std::min<rlim_t>(limit.rlim_cur, kRenderPriority));
+
     sched_param param{};
-    param.sched_priority = sched_get_priority_max(SCHED_RR);
-    pthread_setschedparam(pthread_self(), SCHED_RR, &param);
+    param.sched_priority = ceiling;
+    const auto error =
+        ceiling > 0 ? pthread_setschedparam(pthread_self(), SCHED_RR, &param) : EPERM;
+    static std::atomic<bool> reported{false};
+    if (!reported.exchange(true))
+        juce::Logger::writeToLog(
+            error == 0
+                ? "[engine] render threads run SCHED_RR at priority " + juce::String(ceiling)
+                : "[engine] render threads could not get real-time priority (RLIMIT_RTPRIO " +
+                      juce::String(ceiling) + "); they run time-shared");
 #endif
 }
 
