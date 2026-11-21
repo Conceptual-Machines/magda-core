@@ -1921,6 +1921,7 @@ void MainView::PlayheadComponent::repaintCursors(const Cursors& cursors) {
 void MainView::PlayheadComponent::paint(juce::Graphics& g) {
     const auto& state = owner.timelineController->getState();
     const auto cursors = currentCursors();
+    paintedCursors_ = cursors;
     const double editPos = state.playhead.editPosition;
     const double playbackPos = state.playhead.playbackPosition;
     const int editX = cursors.editX;
@@ -1950,11 +1951,15 @@ void MainView::PlayheadComponent::setPlayheadPosition(double position) {
     playheadPosition = position;
 
     // The overlay spans the arrangement, so only the cursors' own strips are invalidated:
-    // a full repaint redraws every visible clip on every playback tick.
+    // a full repaint redraws every visible clip on every playback tick. A scroll or zoom
+    // repaint draws them where no tick put them, and only macOS merges the strips into one
+    // dirty box, so the strip last painted is erased too or it trails on Windows and Linux.
     const auto cursors = currentCursors();
-    if (cursors == lastCursors_)
+    if (cursors == lastCursors_ && cursors == paintedCursors_)
         return;
     repaintCursors(lastCursors_);
+    if (paintedCursors_ != lastCursors_)
+        repaintCursors(paintedCursors_);
     repaintCursors(cursors);
     lastCursors_ = cursors;
 }

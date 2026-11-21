@@ -146,7 +146,6 @@ void extractChordsToChordTrack(magda::ClipId sourceClipId, bool replace) {
         extractEnd = std::max(extractEnd, ex.startBeat + ex.lengthBeats);
     const double clipLength = std::max(source->placement.lengthBeats, extractEnd);
 
-    auto& tm = TrackManager::getInstance();
     const auto chordTrackId = ensureChordTrackWithSeparator();
     if (chordTrackId == magda::INVALID_TRACK_ID)
         return;
@@ -230,9 +229,6 @@ void sendProgressionToTrack(magda::ClipId chordClipId, magda::TrackId targetTrac
 
     magda::daw::ui::Toast::showGlobal("Progression copied as MIDI clip");
 }
-
-constexpr int MIDI_PREVIEW_MIN_NOTE = 21;   // A0
-constexpr int MIDI_PREVIEW_MAX_NOTE = 108;  // C8
 
 // Context-menu IDs for loop-record take selection (one per take), kept clear of
 // the fixed item IDs and the 100-range quantize grid.
@@ -465,21 +461,17 @@ void ClipComponent::paint(juce::Graphics& g) {
                      juce::roundToInt(start * zoom);
             }
 
-            // A dashed divider through the body with a notch hanging from its top, in the
-            // clip's ink. The body starts where the header fill (2px past the header) ends.
+            // A dashed divider through the body in the clip's ink, fading towards the bottom.
+            // The body starts where the header fill (2px past the header) ends.
             const auto lineX = static_cast<float>(clipBounds.getX() + bx);
             const auto lineTop = static_cast<float>(clipBounds.getY() + headerHeight() +
                                                     (headerHeight() > 0 ? 2 : 0));
             const auto lineBottom = static_cast<float>(clipBounds.getBottom());
             const auto ink = deriveClipInk(displayColour(*clip));
-            g.setColour(ink.withAlpha(0.45f));
-            for (float dy = lineTop + 5.0f; dy < lineBottom; dy += 6.0f)
+            g.setGradientFill(juce::ColourGradient::vertical(ink.withAlpha(0.65f), lineTop,
+                                                             ink.withAlpha(0.15f), lineBottom));
+            for (float dy = lineTop; dy < lineBottom; dy += 6.0f)
                 g.fillRect(lineX, dy, 1.0f, juce::jmin(3.0f, lineBottom - dy));
-            juce::Path notch;
-            notch.addTriangle(lineX - 3.5f, lineTop, lineX + 4.5f, lineTop, lineX + 0.5f,
-                              lineTop + 4.0f);
-            g.setColour(ink.withAlpha(0.85f));
-            g.fillPath(notch);
         }
     }
 
