@@ -1291,6 +1291,15 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
             if (recording != engine->isRecording())
                 mainView->getTimelineController().dispatch(StartRecordEvent{});
         });
+        // As the menu's Open and New do: a project opened over the API otherwise kept the
+        // previous project's tempo, loop and markers in the timeline, and the engine's loop flag.
+        live->setProjectRestorer([this](const ProjectInfo& info) {
+            mainView->getTimelineController().restoreProjectState(
+                info.tempo, info.timeSignatureNumerator, info.timeSignatureDenominator,
+                info.loopEnabled, info.loopStartBeats, info.loopEndBeats, info.markers,
+                info.timelineLengthBars);
+            mainView->applyInitialZoomForProject(info);
+        });
         // A range set behind the controller's back is lost on the next loop toggle.
         live->setProjectLoopRangeDispatcher([this](double startBeats, double endBeats) {
             mainView->getTimelineController().dispatch(

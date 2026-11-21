@@ -249,6 +249,60 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             source.deleteFile();
         }
 
+        beginTest(
+            "An opened project's loop reaches the engine, or the UI's restorer when it has one");
+        {
+            Fixture fixture;
+            auto& projects = ProjectManager::getInstance();
+            expect(projects.newProject(ProjectManager::UnsavedChangesPolicy::Discard));
+
+            const auto source = juce::File::createTempFile(".mgd");
+            ProjectInfo saved;
+            saved.name = "Looped";
+            saved.loopEnabled = true;
+            saved.loopStartBeats = 0.0;
+            saved.loopEndBeats = 32.0;
+            expect(ProjectSerializer::saveToFile(source, saved));
+
+            auto request = fullyGrantedContext();
+            request.clientId = "loop-open-client";
+            request.clientName = "loop-open-client";
+            const auto open = [&] {
+                const auto accepted = fixture.run("project.open",
+                                                  object({{"path", source.getFullPathName()},
+                                                          {"dirtyPolicy", "discard"},
+                                                          {"autosavePolicy", "ignore"},
+                                                          {"missingMediaPolicy", "fail"},
+                                                          {"unavailableDevicePolicy", "fail"}}),
+                                                  request);
+                expect(accepted.ok);
+                const auto job = fixture.waitForJob(accepted.result["id"].toString(), request);
+                expect(job && job->state == RemoteJobState::Completed);
+                if (job && job->error)
+                    logMessage("open failed: " + job->error->message);
+            };
+
+            std::optional<bool> engineLoop;
+            fixture.api.setProjectLoopEnabledWriter([&](bool enabled) { engineLoop = enabled; });
+            open();
+            expect(engineLoop == std::optional<bool>(true));
+
+            std::optional<ProjectInfo> restored;
+            engineLoop.reset();
+            fixture.api.setProjectRestorer([&](const ProjectInfo& info) { restored = info; });
+            open();
+            expect(restored.has_value() && restored->loopEnabled);
+            expectWithinAbsoluteError(restored ? restored->loopEndBeats : 0.0, 32.0, 0.001);
+            expect(!engineLoop.has_value());
+
+            restored.reset();
+            expect(fixture.run("project.new", object({{"discardUnsavedChanges", true}})).ok);
+            expect(restored.has_value() && !restored->loopEnabled);
+
+            fixture.api.setProjectRestorer(nullptr);
+            source.deleteFile();
+        }
+
         beginTest("A project holding an External Insert opens when devices must be available");
         {
             // The insert is listed by its variants' ids, never its own (#3164).

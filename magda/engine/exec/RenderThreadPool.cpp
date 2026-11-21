@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "exec/BlockProfile.hpp"
+#include "exec/RealtimePriority.hpp"
 #include "exec/RenderProbe.hpp"
 
 #if !JUCE_ARM
@@ -18,8 +19,7 @@
 #if JUCE_WINDOWS
     #include <windows.h>
 #elif !JUCE_MAC
-    #include <pthread.h>
-    #include <sched.h>
+    #include <atomic>
 #endif
 
 namespace magda::engine {
@@ -230,9 +230,13 @@ void RenderThreadPool::raiseToRenderPriority() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     thread_local const ProAudioTask task;
 #elif !JUCE_MAC
-    sched_param param{};
-    param.sched_priority = sched_get_priority_max(SCHED_RR);
-    pthread_setschedparam(pthread_self(), SCHED_RR, &param);
+    // Below PipeWire's data loop (83). SCHED_RR's maximum of 99 was above the audio group's
+    // RLIMIT_RTPRIO of 95, so the request was refused and every render thread ran time-shared.
+    constexpr int kRenderPriority = 80;
+    const auto grant = realtime::raise(realtime::currentThreadId(), kRenderPriority);
+    static std::atomic<bool> reported{false};
+    if (!reported.exchange(true))
+        juce::Logger::writeToLog("[engine] render threads: " + realtime::describe(grant));
 #endif
 }
 

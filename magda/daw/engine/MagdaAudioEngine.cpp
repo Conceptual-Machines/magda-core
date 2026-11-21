@@ -77,6 +77,7 @@ MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) : headless_(optio
     api_->setProjectLoopRangeWriter([this](double start, double end) {
         setLoopRegionBeats({{start}, {end}});
     });
+    api_->setProjectLoopEnabledWriter([this](bool enabled) { setLooping(enabled); });
     api_->setProjectTempoMap([this] { return tempoMap(); });
     SamplerMedia::getInstance().setProvider(modelSamplerMedia);
     api_->setTransportEngineState({

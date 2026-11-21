@@ -33,15 +33,25 @@ class ProjectApiLive : public ProjectApi {
     void setEngineTempoWriter(std::function<void(double)> writer);
     void setEngineTimeSignatureWriter(std::function<void(int, int)> writer);
     void setEngineLoopRangeWriter(std::function<void(double, double)> writer);
+    void setEngineLoopEnabledWriter(std::function<void(bool)> writer);
     /** Route loop-range writes through the timeline controller, which updates the engine too. */
     void setLoopRangeDispatcher(std::function<void(double, double)> dispatch);
     void setEngineTempoMap(std::function<const TempoMap*()> getter);
+    /**
+     * Route an opened, new or closed project's tempo, meter, loop and markers through the
+     * timeline controller, which updates the engine too. Without it, open writes the engine alone.
+     */
+    void setProjectRestorer(std::function<void(const ProjectInfo&)> restore);
 
   private:
+    void restoreCurrentProject() const;
+
     std::function<void(double)> engineTempoWriter_;
     std::function<void(int, int)> engineTimeSignatureWriter_;
     std::function<void(double, double)> engineLoopRangeWriter_;
+    std::function<void(bool)> engineLoopEnabledWriter_;
     std::function<void(double, double)> loopRangeDispatch_;
+    std::function<void(const ProjectInfo&)> projectRestorer_;
     std::function<const TempoMap*()> engineTempoMap_;
 };
 

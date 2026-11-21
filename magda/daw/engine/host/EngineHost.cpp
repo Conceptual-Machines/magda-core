@@ -77,6 +77,7 @@
 #include "exec/EngineSession.hpp"
 #include "exec/ModulationLiveness.hpp"
 #include "exec/PlanValues.hpp"
+#include "exec/RealtimePriority.hpp"
 #include "exec/RenderLoad.hpp"
 #include "exec/RenderThreadPool.hpp"
 #include "io/CaptureHistory.hpp"
@@ -2857,6 +2858,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// resolves values on its way through, so the two are alternatives; clips
     /// travel on their own and are published beside either.
     void handleAsyncUpdate() override {
+        if (const auto thread = callbackThreadToRaise_.exchange(0, std::memory_order_acq_rel))
+            raiseCallbackThread(thread);
+
         // Restart/rebuild interleavings and the ready-generation gate: specs/tla/device_restart.
         // Held rather than dropped: the flags stay set, and the end of the render asks again.
         if (offlineRenders_ > 0)
@@ -3462,6 +3466,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         triggerAsyncUpdate();
     }
 
+    /// At 83, PipeWire's data loop priority, above the render threads it waits for.
+    static void raiseCallbackThread(std::int64_t thread) {
+        const auto grant = engine::realtime::raise(thread, 83);
+        juce::Logger::writeToLog("[engine] audio callback thread: " +
+                                 engine::realtime::describe(grant));
+    }
+
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override {
         // Only what the device is. Building a session allocates and publishing
         // one waits, and both belong to the publishing thread.
@@ -3534,6 +3545,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                           int numSamples,
                                           const juce::AudioIODeviceCallbackContext&) override {
         const auto entered = juce::Time::getMillisecondCounterHiRes();
+        // JUCE's ALSA thread starts time-shared; JACK's callback is the server's and is real-time.
+        thread_local bool priorityChecked = false;
+        if (!std::exchange(priorityChecked, true) && !engine::realtime::currentThreadIsRealtime()) {
+            callbackThreadToRaise_.store(engine::realtime::currentThreadId(),
+                                         std::memory_order_release);
+            triggerAsyncUpdate();
+        }
+
         const juce::ScopeGuard recordLoad{[&] {
             if (load_ == nullptr)
                 return;
@@ -4311,6 +4330,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /// Whether the device is calling back, and whether the plugins have been told since it changed.
     std::atomic<bool> audioRunning_{false};
+    /// A time-shared callback thread's tid, for the message thread to raise.
+    std::atomic<std::int64_t> callbackThreadToRaise_{0};
     std::atomic<bool> renderedStale_{false};
     std::atomic<int> blockSize_{0};
     std::atomic<int> inputChannels_{0};

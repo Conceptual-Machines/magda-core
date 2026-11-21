@@ -348,6 +348,36 @@ in compiled order rather than in the order its inputs finished, and buffers are 
 over the dependency graph rather than over the op list. The schedule costs nothing at run time,
 because the dependency counts were baked into the plan when it was compiled.
 
+### Thread priority
+
+The render pool's workers and the render-ahead thread share the callback's deadline, so each one
+raises itself to real-time priority when it starts (`RenderThreadPool::raiseToRenderPriority`):
+
+| OS | Priority |
+| --- | --- |
+| macOS | a time-constraint thread, joined to the device's audio workgroup |
+| Windows | `THREAD_PRIORITY_TIME_CRITICAL`, then the MMCSS "Pro Audio" task when `avrt.dll` offers it ([#3369](https://github.com/Conceptual-Machines/magda-core/issues/3369)) |
+| Linux | `SCHED_RR` at 80, capped at `RLIMIT_RTPRIO`, else from rtkit |
+
+On Linux, `realtime::raise` (`exec/RealtimePriority.cpp`) asks the kernel first, capped at
+`RLIMIT_RTPRIO`. When that limit is 0, as on stock desktop installs, it asks rtkit over D-Bus, with
+`libsystemd`'s sd-bus loaded at run time. rtkit caps the priority at its `MaxRealtimePriority`
+(usually 20). It only grants a process whose `RLIMIT_RTTIME` hard limit is at or below its
+`RTTimeUSecMax` (usually 200 ms), so the process sets that limit first. Every render thread blocks
+between blocks, so none comes near that CPU-time limit. The first thread to start logs which route
+was granted.
+
+The cap matters because the `audio` group's limit is commonly 95, and a request above the limit
+fails. The render threads used to ask for `SCHED_RR`'s maximum of 99, so on those systems they all
+ran time-shared, with nothing logged. 80 sits below PipeWire's data loop (83), the thread that
+calls MAGDA's JACK callback.
+
+That callback thread belongs to the server and is already real-time. JUCE's ALSA backend instead
+starts its own thread time-shared. The callback checks its thread once, on its first block. A
+time-shared thread hands its tid to the message thread, which raises it to 83, because the rtkit
+route blocks on D-Bus. rtkit and PipeWire set `SCHED_RESET_ON_FORK` with the policy, so the check
+masks it out.
+
 ### Rendering ahead
 
 Most of a project does not need to render at the moment the device asks for it. The render-ahead
