@@ -3469,7 +3469,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// At 83, PipeWire's data loop priority, above the render threads it waits for.
     static void raiseCallbackThread(std::int64_t thread) {
         const auto grant = engine::realtime::raise(thread, 83);
-        juce::Logger::writeToLog("[engine] audio callback thread " +
+        juce::Logger::writeToLog("[engine] audio callback thread: " +
                                  engine::realtime::describe(grant));
     }
 

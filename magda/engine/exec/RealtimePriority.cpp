@@ -7,10 +7,10 @@ namespace magda::engine::realtime {
 
 juce::String describe(const Grant& grant) {
     if (grant.priority > 0)
-        return "run SCHED_RR at priority " + juce::String(grant.priority) +
+        return "SCHED_RR at priority " + juce::String(grant.priority) +
                (grant.viaRtkit ? " (rtkit)" : "");
-    return "could not get real-time priority (RLIMIT_RTPRIO " + juce::String(grant.rlimit) +
-           ", rtkit refused): time-shared";
+    return "time-shared, no real-time priority (RLIMIT_RTPRIO " + juce::String(grant.rlimit) +
+           ", rtkit refused)";
 }
 
 }  // namespace magda::engine::realtime

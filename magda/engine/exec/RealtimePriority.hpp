@@ -29,7 +29,7 @@ struct Grant {
  */
 Grant raise(std::int64_t threadId, int priority);
 
-/** @brief @p grant for the log: "run SCHED_RR at priority 80", or why it stays time-shared. */
+/** @brief @p grant for the log: "SCHED_RR at priority 80", or why it stays time-shared. */
 juce::String describe(const Grant& grant);
 
 /** @brief The calling thread's kernel tid, or 0 off Linux. */

@@ -98,4 +98,4 @@ The script adds you to a group your system already grants real-time priority to,
 
 Either way, log out and back in afterwards. `ulimit -r` then prints 95.
 
-MAGDA writes the outcome to `magda.log` when its audio engine starts: `render threads run SCHED_RR at priority 80`, the same line ending in `(rtkit)` when rtkit granted it, or `could not get real-time priority` when neither did. Under the **ALSA** driver, a second line starting `audio callback thread` reports the same for the thread that plays the audio.
+MAGDA writes the outcome to `magda.log` when its audio engine starts: `render threads: SCHED_RR at priority 80`, the same line ending in `(rtkit)` when rtkit granted it, or `render threads: time-shared` when neither did. Under the **ALSA** driver, a second line starting `audio callback thread:` reports the same for the thread that plays the audio.

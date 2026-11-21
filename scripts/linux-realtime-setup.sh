@@ -112,4 +112,4 @@ sudo usermod -aG "$target" "$user"
 
 echo
 echo "Done. Log out and back in (or reboot), then check with: ulimit -r"
-echo "It should print 95. MAGDA's log then says: render threads run SCHED_RR at priority 80"
+echo "It should print 95. MAGDA's log then says: render threads: SCHED_RR at priority 80"

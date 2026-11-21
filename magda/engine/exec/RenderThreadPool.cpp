@@ -236,7 +236,7 @@ void RenderThreadPool::raiseToRenderPriority() {
     const auto grant = realtime::raise(realtime::currentThreadId(), kRenderPriority);
     static std::atomic<bool> reported{false};
     if (!reported.exchange(true))
-        juce::Logger::writeToLog("[engine] render threads " + realtime::describe(grant));
+        juce::Logger::writeToLog("[engine] render threads: " + realtime::describe(grant));
 #endif
 }
 

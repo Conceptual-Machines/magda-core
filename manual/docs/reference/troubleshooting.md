@@ -15,7 +15,7 @@
 
 ## Crackles or Dropouts on Linux
 
-1. Check that MAGDA's render threads get real-time priority: `magda.log` should say `render threads run SCHED_RR`. If it says they could not, set up real-time access as described in [Real-time priority](../interface/audio-settings.md#real-time-priority)
+1. Check that MAGDA's render threads get real-time priority: `magda.log` should say `render threads: SCHED_RR`. If it says `time-shared`, set up real-time access as described in [Real-time priority](../interface/audio-settings.md#real-time-priority)
 2. Raise the **Buffer Size** in **Settings > Audio & MIDI**. If the size you pick doesn't stick under JACK, see [Buffer size under JACK](../interface/audio-settings.md#buffer-size-under-jack)
 
 ## MAGDA Started With a Different Audio Driver
