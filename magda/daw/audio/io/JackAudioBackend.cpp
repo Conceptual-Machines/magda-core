@@ -21,7 +21,8 @@ constexpr const char* kClientName = "MAGDA";
 /// Sizes offered besides the server's own. PipeWire takes any; jackd may refuse some.
 constexpr int kBufferSizes[] = {32, 64, 128, 256, 512, 1024, 2048};
 
-/// How long open() waits for a requested size to arrive, which PipeWire applies on activation.
+/// How long open() waits for the size to settle: PipeWire applies it on activation, and
+/// jack_get_buffer_size reads 0 or a stale size until then.
 constexpr int kBufferSizeWaitMs = 500;
 
 /// libjack, dlopened so MAGDA runs without it.
@@ -146,7 +147,7 @@ Device find(const std::vector<Device>& devices, const juce::String& name) {
     return {};
 }
 
-class JackDevice final : public juce::AudioIODevice {
+class JackDevice final : public juce::AudioIODevice, private juce::AsyncUpdater {
   public:
     JackDevice(const juce::String& inputName, const juce::String& outputName)
         : AudioIODevice(outputName.isEmpty() ? inputName : outputName, "JACK"),
@@ -225,12 +226,12 @@ class JackDevice final : public juce::AudioIODevice {
         inputBuffers_.resize(inputPorts_.size());
         outputBuffers_.resize(outputPorts_.size());
 
-        // Asks for this client's size only, so PIPEWIRE_QUANTUM (set session-wide by Ubuntu
-        // Studio) no longer decides it. A server-wide clock.force-quantum still wins.
-        const auto requested = bufferSize > 0 && bufferSize != getCurrentBufferSizeSamples();
-        requestedSize_ = requested ? bufferSize : 0;
+        // Asks for this client's size, so PIPEWIRE_QUANTUM (set session-wide by Ubuntu Studio) no
+        // longer decides it, and asks even when the server reports that size already: before
+        // activation it can report a stale one. A server-wide clock.force-quantum still wins.
+        bufferSize_ = 0;
         sizeArrived_.reset();
-        if (requested)
+        if (bufferSize > 0)
             jack_.set_buffer_size(client_, static_cast<jack_nframes_t>(bufferSize));
 
         jack_.set_process_callback(client_, processCallback, this);
@@ -243,8 +244,7 @@ class JackDevice final : public juce::AudioIODevice {
             return lastError_;
         }
         open_ = true;
-        if (requested)
-            sizeArrived_.wait(kBufferSizeWaitMs);
+        waitForBufferSize(bufferSize);
 
         auto port = inputPorts_.begin();
         for (int i = 0; i < sources_.size(); ++i)
@@ -259,6 +259,7 @@ class JackDevice final : public juce::AudioIODevice {
     }
 
     void close() override {
+        cancelPendingUpdate();
         stop();
         if (client_ != nullptr) {
             if (open_)
@@ -283,6 +284,7 @@ class JackDevice final : public juce::AudioIODevice {
         if (!open_ || newCallback == callback_)
             return;
 
+        preparedSize_ = newCallback != nullptr ? getCurrentBufferSizeSamples() : 0;
         if (newCallback != nullptr)
             newCallback->audioDeviceAboutToStart(this);
 
@@ -304,6 +306,8 @@ class JackDevice final : public juce::AudioIODevice {
     }
 
     int getCurrentBufferSizeSamples() override {
+        if (const auto settled = bufferSize_.load(std::memory_order_acquire); settled > 0)
+            return settled;
         return client_ != nullptr ? static_cast<int>(jack_.get_buffer_size(client_)) : 0;
     }
     double getCurrentSampleRate() override {
@@ -373,10 +377,35 @@ class JackDevice final : public juce::AudioIODevice {
         return 0;
     }
 
+    /** @brief Waits for the size JACK settles on after activation: @p wanted, or any when 0. */
+    void waitForBufferSize(int wanted) {
+        const auto deadline = juce::Time::getMillisecondCounter() + kBufferSizeWaitMs;
+        for (;;) {
+            const auto size = bufferSize_.load(std::memory_order_acquire);
+            if (size > 0 && (wanted <= 0 || size == wanted))
+                return;
+            const auto now = juce::Time::getMillisecondCounter();
+            if (now >= deadline || !sizeArrived_.wait(static_cast<int>(deadline - now)))
+                return;
+        }
+    }
+
+    /// The server changed the size while running (#3384): restart, so the callback prepares again.
+    void handleAsyncUpdate() override {
+        if (!open_ || callback_ == nullptr || getCurrentBufferSizeSamples() == preparedSize_)
+            return;
+        auto* callback = callback_;
+        stop();
+        start(callback);
+    }
+
     static int bufferSizeCallback(jack_nframes_t frames, void* device) {
         auto* self = static_cast<JackDevice*>(device);
-        if (static_cast<int>(frames) == self->requestedSize_.load(std::memory_order_relaxed))
-            self->sizeArrived_.signal();
+        self->bufferSize_.store(static_cast<int>(frames), std::memory_order_release);
+        self->sizeArrived_.signal();
+        const auto prepared = self->preparedSize_.load(std::memory_order_relaxed);
+        if (prepared > 0 && prepared != static_cast<int>(frames))
+            self->triggerAsyncUpdate();
         return 0;
     }
 
@@ -405,7 +434,10 @@ class JackDevice final : public juce::AudioIODevice {
     bool open_ = false;
     juce::String lastError_;
     std::atomic<int> xruns_{0};
-    std::atomic<int> requestedSize_{0};
+    /// The size JACK's buffer-size callback last reported, 0 until it has.
+    std::atomic<int> bufferSize_{0};
+    /// The size the running callback was prepared for, 0 while stopped.
+    std::atomic<int> preparedSize_{0};
     juce::WaitableEvent sizeArrived_;
     juce::AudioIODeviceCallback* callback_ = nullptr;
     juce::CriticalSection callbackLock_;
