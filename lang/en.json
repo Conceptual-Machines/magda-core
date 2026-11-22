@@ -779,7 +779,10 @@
     "crash_recovery.default": "the audio driver",
     "section.device": "Device",
     "label.preview_output": "Audition browser files on",
-    "status.channels": "{0} in · {1} out"
+    "status.channels": "{0} in · {1} out",
+    "notice.realtime": "MAGDA's audio threads run without real-time priority, so playback can crackle when the computer is busy.",
+    "notice.realtime_link": "How to fix this",
+    "notice.jack_no_interfaces": "JACK lists no interfaces. Check that a JACK server is running, or on PipeWire that pipewire-jack is installed."
   },
   "cpu_load": {
     "title": "CPU Load",

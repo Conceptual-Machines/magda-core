@@ -32,6 +32,9 @@ Grant raise(std::int64_t threadId, int priority);
 /** @brief @p grant for the log: "SCHED_RR at priority 80", or why it stays time-shared. */
 juce::String describe(const Grant& grant);
 
+/** @brief True once raise() has left any thread time-shared in this process (#3380). */
+bool anyThreadRefused();
+
 /** @brief The calling thread's kernel tid, or 0 off Linux. */
 std::int64_t currentThreadId();
 

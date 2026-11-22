@@ -24,10 +24,13 @@ juce::String describe(const Grant& grant) {
     #include <unistd.h>
 
     #include <algorithm>
+    #include <atomic>
     #include <memory>
 
 namespace magda::engine::realtime {
 namespace {
+
+std::atomic<bool> refused{false};
 
 constexpr const char* kService = "org.freedesktop.RealtimeKit1";
 constexpr const char* kPath = "/org/freedesktop/RealtimeKit1";
@@ -147,7 +150,13 @@ Grant raise(std::int64_t threadId, int priority) {
 
     grant.priority = askRtkit(threadId, priority);
     grant.viaRtkit = grant.priority > 0;
+    if (grant.priority == 0)
+        refused.store(true, std::memory_order_relaxed);
     return grant;
+}
+
+bool anyThreadRefused() {
+    return refused.load(std::memory_order_relaxed);
 }
 
 std::int64_t currentThreadId() {
@@ -168,6 +177,10 @@ namespace magda::engine::realtime {
 
 Grant raise(std::int64_t, int) {
     return {};
+}
+
+bool anyThreadRefused() {
+    return false;
 }
 
 std::int64_t currentThreadId() {

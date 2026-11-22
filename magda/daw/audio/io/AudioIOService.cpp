@@ -213,6 +213,7 @@ AudioIOControl::Status AudioIOService::status() const {
     status.cpuWindow = callbackLoad_.window();
     status.cpuUsage = status.cpuWindow.total();
     status.xruns = manager_.getXRunCount();
+    status.realtimeRefused = realtimeRefused_ && realtimeRefused_();
     return status;
 }
 

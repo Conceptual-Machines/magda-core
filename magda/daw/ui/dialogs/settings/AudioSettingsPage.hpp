@@ -162,6 +162,9 @@ class AudioSettingsPage : public juce::Component, private HardwareChannels::List
     /** @brief Relist the interfaces and their channels, after the backend or an interface moved. */
     void refreshChosenInterface();
     void showOpenInterface();
+    /** @brief Show what stops audio playing well here, if anything: no real-time priority (#3380)
+     *         or a JACK with no interfaces. */
+    void showNotice();
     void populatePreviewOutputs();
     /** @brief Place the controls at @p width, or only measure; returns the height used. */
     int layOut(int width, bool apply);
@@ -205,6 +208,8 @@ class AudioSettingsPage : public juce::Component, private HardwareChannels::List
 
     juce::Label deviceNameLabel_;
     juce::Label deviceDetailsLabel_;
+    juce::Label noticeLabel_;
+    juce::HyperlinkButton noticeLink_;
     juce::Label deviceHeader_;
     juce::Label previewHeader_;
     juce::Label previewLabel_;
