@@ -42,6 +42,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/fonts/Geist-Medium.ttf
     # CJK fallback — covers Simplified/Traditional Chinese, Japanese, Korean
     ../../assets/fonts/NotoSansCJKsc-Regular.otf
+    # The Linux window icon; macOS and Windows take theirs from ICON_BIG below
+    ../../assets/app_icon.png
     # General UI icons
     ../../assets/icons/general/enter.svg
     ../../assets/icons/general/track.svg

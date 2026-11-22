@@ -3,6 +3,8 @@
 
 #include "MainWindow.hpp"
 
+#include <BinaryData.h>
+
 #include <utility>
 #include <vector>
 
@@ -290,6 +292,13 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
     }
     juce::Logger::writeToLog("[MainWindow] Calling setVisible(true)...");
     setVisible(true);
+#if JUCE_LINUX
+    // JUCE puts ICON_BIG only in macOS and Windows bundles; without this, a window with no
+    // matching desktop entry shows no icon, and one with a stale entry shows its old icon.
+    if (auto* peer = getPeer())
+        peer->setIcon(juce::ImageCache::getFromMemory(BinaryData::app_icon_png,
+                                                      BinaryData::app_icon_pngSize));
+#endif
     juce::Logger::writeToLog("[MainWindow] Window is now visible");
 
     // Listen for project changes to update window title
