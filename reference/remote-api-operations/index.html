@@ -3465,10 +3465,10 @@ WebSocket connection itself rather than the project, and has no MCP tool.</p>
 </tr>
 <tr>
 <td><code>devices.catalog</code></td>
-<td>List devices that can be added, by catalogue id</td>
+<td>List devices that can be added, by catalogue id; filter by name, first letter, manufacturer, category, format, type, and instrument, and page with offset and limit</td>
 <td><code>read</code></td>
 <td>—</td>
-<td>—</td>
+<td><code>query</code> string<br><code>startsWith</code> string<br><code>manufacturer</code> string<br><code>category</code> string<br><code>format</code> "vst3" | "au" | "lv2" | "internal"<br><code>type</code> "instrument" | "effect" | "midi" | "analysis"<br><code>instrument</code> boolean<br><code>offset</code> integer<br><code>limit</code> integer</td>
 </tr>
 <tr>
 <td><code>devices.applyPreset</code></td>
@@ -3521,10 +3521,10 @@ WebSocket connection itself rather than the project, and has no MCP tool.</p>
 </tr>
 <tr>
 <td><code>devices.listParameters</code></td>
-<td>List a device's parameters, in real units, with customization flags</td>
+<td>List a device's parameters, in real units, with customization flags; filter by name and page with offset and limit</td>
 <td><code>read</code></td>
 <td><code>devicePath</code> object</td>
-<td>—</td>
+<td><code>query</code> string<br><code>offset</code> integer<br><code>limit</code> integer</td>
 </tr>
 <tr>
 <td><code>devices.setParameter</code></td>
