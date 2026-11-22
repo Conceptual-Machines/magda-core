@@ -2229,6 +2229,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      batch
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#subscriptions" class="md-nav__link">
     <span class="md-ellipsis">
       subscriptions
@@ -2702,6 +2711,15 @@
   <a href="#midi" class="md-nav__link">
     <span class="md-ellipsis">
       midi
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      batch
     </span>
   </a>
   
@@ -4248,6 +4266,27 @@ WebSocket connection itself rather than the project, and has no MCP tool.</p>
 <td>Send a SysEx payload to a MIDI output; F0/F7 framing is added</td>
 <td><code>hardware-midi</code></td>
 <td><code>port</code> string<br><code>bytes</code> array of integer</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="batch"><code>batch</code><a class="headerlink" href="#batch" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Summary</th>
+<th>Scope</th>
+<th>Required params</th>
+<th>Optional params</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>batch.apply</code></td>
+<td _ref_:_N.id_>Apply up to 256 content edits as one undo step, or none if any fails; a step may use an earlier step's id as</td>
+<td><code>edit</code></td>
+<td><code>steps</code> array of object</td>
 <td>—</td>
 </tr>
 </tbody>

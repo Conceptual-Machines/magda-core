@@ -49952,6 +49952,139 @@
       "x-transport-scoped": false
     },
     {
+      "name": "batch.apply",
+      "summary": "Apply up to 256 content edits as one undo step, or none if any fails; a step may use an earlier step's id as {\"$ref\":\"N.id\"}",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "steps",
+          "required": true,
+          "schema": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 256,
+            "items": {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "type": "string",
+                  "maxLength": 16384,
+                  "enum": [
+                    "tracks.create",
+                    "tracks.update",
+                    "clips.createMidi",
+                    "clips.addMidiEvents",
+                    "clips.replaceMidiEvents",
+                    "clips.updateMidiEvents",
+                    "clips.deleteMidiEvents",
+                    "clips.update",
+                    "clips.duplicate",
+                    "clips.transpose",
+                    "clips.move",
+                    "clips.resize",
+                    "sends.create",
+                    "sends.update",
+                    "project.setLoopRange"
+                  ]
+                },
+                "params": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "method",
+                "params"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "revision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "results": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -2147483648,
+                          "maximum": 2147483647
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "revision",
+            "results"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/validation_failed"
+        },
+        {
+          "$ref": "#/components/errors/internal_error"
+        },
+        {
+          "$ref": "#/components/errors/not_found"
+        },
+        {
+          "$ref": "#/components/errors/conflict"
+        },
+        {
+          "$ref": "#/components/errors/timeout"
+        },
+        {
+          "$ref": "#/components/errors/cancelled"
+        },
+        {
+          "$ref": "#/components/errors/too_many_requests"
+        },
+        {
+          "$ref": "#/components/errors/permission_denied"
+        }
+      ],
+      "x-access": "write",
+      "x-required-scope": "edit",
+      "x-transport-scoped": false
+    },
+    {
       "name": "subscriptions.subscribe",
       "summary": "Start receiving change events for the given topics, with an initial snapshot",
       "paramStructure": "by-name",
