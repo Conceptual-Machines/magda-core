@@ -3941,8 +3941,25 @@ OperationRegistry::OperationRegistry() {
     // The kinds a client may add, as opposed to devices.list's instances. Read
     // rather than write, and answered from the same catalogue `addDevice` takes
     // its `catalogId` from — so what this lists is exactly what can be asked for.
-    add("devices.catalog", "List devices that can be added, by catalogue id", OperationAccess::Read,
-        &handlers::devicesCatalog, emptyObjectSchema(), arraySchema(deviceCatalogEntrySchema()));
+    add("devices.catalog",
+        "List devices that can be added, by catalogue id; filter by name, first letter, "
+        "manufacturer, category, format, type, and instrument, and page with offset and limit",
+        OperationAccess::Read, &handlers::devicesCatalog, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "query":{"type":"string"},
+                "startsWith":{"type":"string","minLength":1},
+                "manufacturer":{"type":"string"},
+                "category":{"type":"string"},
+                "format":{"type":"string","enum":["vst3","au","lv2","internal"]},
+                "type":{"type":"string","enum":["instrument","effect","midi","analysis"]},
+                "instrument":{"type":"boolean"},
+                "offset":{"type":"integer","minimum":0},
+                "limit":{"type":"integer","minimum":1}
+            },
+            "additionalProperties":false
+        })json"),
+        arraySchema(deviceCatalogEntrySchema()));
     add("devicePresets.list", "List presets for a device by opaque id", OperationAccess::Read,
         &handlers::devicePresetsList, operationInputSchema(R"json({
             "type":"object","properties":{"devicePath":{}},
@@ -4064,9 +4081,16 @@ OperationRegistry::OperationRegistry() {
     // the same number back — with `normalizedValue` alongside so a client can
     // compose with automation.addPoint's 0..1 domain.
     add("devices.listParameters",
-        "List a device's parameters, in real units, with customization flags",
+        "List a device's parameters, in real units, with customization flags; filter by name "
+        "and page with offset and limit",
         OperationAccess::Read, &handlers::devicesListParameters, operationInputSchema(R"json({
-            "type":"object","properties":{"devicePath":{}},
+            "type":"object",
+            "properties":{
+                "devicePath":{},
+                "query":{"type":"string"},
+                "offset":{"type":"integer","minimum":0},
+                "limit":{"type":"integer","minimum":1}
+            },
             "required":["devicePath"],"additionalProperties":false
         })json"),
         arraySchema(deviceParameterSchema()));

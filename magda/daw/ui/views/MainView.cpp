@@ -1753,6 +1753,11 @@ void MainView::setupTrackSynchronization() {
         updateContentSizes();
     };
 
+    trackHeadersPanel->onTrackHeaderDoubleClicked = [this](TrackId) {
+        if (onTrackChainRequested)
+            onTrackChainRequested();
+    };
+
     trackContentPanel->onTrackSelected = [this](int trackIndex) {
         if (!isUpdatingTrackSelection) {
             isUpdatingTrackSelection = true;
