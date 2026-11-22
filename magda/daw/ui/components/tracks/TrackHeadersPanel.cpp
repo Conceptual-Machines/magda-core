@@ -2980,6 +2980,36 @@ void TrackHeadersPanel::mouseWheelMove(const juce::MouseEvent& event,
     }
 }
 
+void TrackHeadersPanel::mouseDoubleClick(const juce::MouseEvent& event) {
+    if (event.eventTime == lastDoubleClickEventTime_ || event.mods.isPopupMenu() ||
+        onTrackHeaderDoubleClicked == nullptr)
+        return;
+    lastDoubleClickEventTime_ = event.eventTime;
+
+    const auto pos = event.getEventRelativeTo(this).getPosition();
+    int resizeIndex = 0;
+    if (findLaneResizeHandleAt(pos) != INVALID_AUTOMATION_LANE_ID ||
+        isResizeHandleArea(pos, resizeIndex))
+        return;
+
+    for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
+        if (getTrackHeaderArea(i).contains(pos)) {
+            // Controls keep their own double-click (the name label renames); displays don't have
+            // one.
+            const auto& header = *trackHeaders[i];
+            const auto* from = event.originalComponent;
+            const bool passive =
+                from == this || from == header.meterComponent.get() ||
+                from == header.midiIndicator.get() || from == header.inputIcon.get() ||
+                from == header.outputIcon.get() || from == header.audioColumnLabel.get() ||
+                from == header.midiColumnLabel.get() || from == header.masterPeakLabel.get();
+            if (passive && !header.isSeparator)
+                onTrackHeaderDoubleClicked(header.trackId);
+            return;
+        }
+    }
+}
+
 void TrackHeadersPanel::mouseUp(const juce::MouseEvent& /*event*/) {
     // Lane resize cleanup
     if (isResizingLane_) {

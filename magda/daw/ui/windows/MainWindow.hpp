@@ -287,6 +287,9 @@ class MainWindow::MainComponent : public juce::Component,
     bool prevBottomPanelVisible_ = true;
     bool prevBottomPanelCollapsed_ = false;
 
+    /** @brief Collapse or expand the bottom panel, keeping the footer toggle in step. */
+    void setBottomPanelCollapsed(bool collapsed);
+
     // Resize handles
     class ResizeHandle;
     std::unique_ptr<ResizeHandle> leftResizer;
