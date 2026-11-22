@@ -959,6 +959,16 @@ else()
     )
 endif()
 
+# The real-time setup script, which Audio & MIDI settings run through pkexec (#3380).
+if(UNIX AND NOT APPLE)
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/linux-realtime-setup.sh"
+            "$<TARGET_FILE_DIR:magda_daw_app>/linux-realtime-setup.sh"
+        COMMENT "Staging the real-time setup script beside MAGDA"
+    )
+endif()
+
 # Copy resources/controllers/ (hardware profile JSON) into the app so
 # ControllerProfileRegistry can load profiles at runtime.
 set(MAGDA_CONTROLLERS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../resources/controllers")

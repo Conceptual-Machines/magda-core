@@ -782,7 +782,12 @@
     "status.channels": "{0} in · {1} out",
     "notice.realtime": "MAGDA's audio threads run without real-time priority, so playback can crackle when the computer is busy.",
     "notice.realtime_link": "How to fix this",
-    "notice.jack_no_interfaces": "JACK lists no interfaces. Check that a JACK server is running, or on PipeWire that pipewire-jack is installed."
+    "notice.jack_no_interfaces": "JACK lists no interfaces. Check that a JACK server is running, or on PipeWire that pipewire-jack is installed.",
+    "notice.setup_button": "Set up",
+    "setup.title": "Real-time priority",
+    "setup.done": "Real-time priority is set up. Log out and back in, then start MAGDA again for it to take effect.",
+    "setup.failed": "The setup didn't finish. {0}",
+    "setup.unavailable": "MAGDA can't run the setup here: pkexec or the setup script is missing. Follow the steps under \"How to fix this\" instead."
   },
   "cpu_load": {
     "title": "CPU Load",

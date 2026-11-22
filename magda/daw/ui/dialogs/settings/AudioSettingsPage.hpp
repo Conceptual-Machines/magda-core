@@ -165,6 +165,9 @@ class AudioSettingsPage : public juce::Component, private HardwareChannels::List
     /** @brief Show what stops audio playing well here, if anything: no real-time priority (#3380)
      *         or a JACK with no interfaces. */
     void showNotice();
+    /** @brief Run the bundled linux-realtime-setup.sh as root through pkexec, then say what's left.
+     */
+    void runRealtimeSetup();
     void populatePreviewOutputs();
     /** @brief Place the controls at @p width, or only measure; returns the height used. */
     int layOut(int width, bool apply);
@@ -210,6 +213,8 @@ class AudioSettingsPage : public juce::Component, private HardwareChannels::List
     juce::Label deviceDetailsLabel_;
     juce::Label noticeLabel_;
     juce::HyperlinkButton noticeLink_;
+    /// Linux only, beside the real-time notice.
+    juce::TextButton noticeSetupButton_;
     juce::Label deviceHeader_;
     juce::Label previewHeader_;
     juce::Label previewLabel_;

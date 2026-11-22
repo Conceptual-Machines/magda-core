@@ -5,6 +5,7 @@
 # Usage: linux-realtime-setup.sh [--check] [--yes]
 #   --check  report only, change nothing
 #   --yes    don't ask before changing anything
+# MAGDA's Audio & MIDI settings run it as root through pkexec, for the user who clicked.
 #
 # Prefers a group the system already grants real-time to (PipeWire's @pipewire, @audio, Arch's
 # @realtime), and writes /etc/security/limits.d/95-magda-audio.conf for @audio only when none does.
@@ -24,7 +25,19 @@ for arg in "$@"; do
 done
 
 limits_file=/etc/security/limits.d/95-magda-audio.conf
-user=${SUDO_USER:-$(id -un)}
+if [ -n "${PKEXEC_UID:-}" ]; then
+    user=$(id -nu "$PKEXEC_UID")
+else
+    user=${SUDO_USER:-$(id -un)}
+fi
+# As root (pkexec), nothing needs sudo, and root's own ulimit says nothing about the user's.
+if [ "$(id -u)" = 0 ]; then
+    as_root=""
+    running_as_root=true
+else
+    as_root=sudo
+    running_as_root=false
+fi
 
 # Groups that a limits file grants an rtprio above 0, one per line.
 granting_groups() {
@@ -43,7 +56,11 @@ rtkit_running() {
 
 report() {
     echo "User:                 $user"
-    echo "Real-time limit now:  $(ulimit -r) (MAGDA needs above 0 for priority 80)"
+    if $running_as_root; then
+        echo "Real-time limit now:  (not readable as root; check with ulimit -r as $user)"
+    else
+        echo "Real-time limit now:  $(ulimit -r) (MAGDA needs above 0 for priority 80)"
+    fi
     local groups
     groups=$(granting_groups | tr '\n' ' ')
     echo "Groups granting it:   ${groups:-none}"
@@ -62,7 +79,7 @@ report() {
 report
 echo
 
-if [ "$(ulimit -r)" != 0 ]; then
+if ! $running_as_root && [ "$(ulimit -r)" != 0 ]; then
     echo "Real-time priority is already available. Nothing to do."
     exit 0
 fi
@@ -94,7 +111,7 @@ if [ -z "$target" ]; then
 fi
 steps+=("add $user to '$target'")
 
-echo "This will, using sudo:"
+echo "This will, as root:"
 printf '  - %s\n' "${steps[@]}"
 if ! $assume_yes; then
     read -r -p "Continue? [y/N] " answer
@@ -102,13 +119,13 @@ if ! $assume_yes; then
 fi
 
 if [ "$target" = audio ] && ! granting_groups | grep -qx audio; then
-    getent group audio >/dev/null || sudo groupadd --system audio
+    getent group audio >/dev/null || $as_root groupadd --system audio
     printf '%s\n' \
         "# Written by MAGDA's linux-realtime-setup.sh: real-time audio for the audio group." \
         "@audio   -  rtprio     95" \
-        "@audio   -  memlock    unlimited" | sudo tee "$limits_file" >/dev/null
+        "@audio   -  memlock    unlimited" | $as_root tee "$limits_file" >/dev/null
 fi
-sudo usermod -aG "$target" "$user"
+$as_root usermod -aG "$target" "$user"
 
 echo
 echo "Done. Log out and back in (or reboot), then check with: ulimit -r"

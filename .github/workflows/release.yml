@@ -1216,6 +1216,10 @@ jobs:
         cp "$(dirname "$BINARY")"/libggml-cpu-*.so "$(dirname "$BINARY")"/libggml-vulkan.so "$APPDIR/usr/bin/" \
           || { echo "::error::llama.cpp backends missing next to $BINARY"; exit 1; }
 
+        # The real-time setup script, run from Audio & MIDI settings (#3380).
+        cp "$(dirname "$BINARY")/linux-realtime-setup.sh" "$APPDIR/usr/bin/" \
+          || { echo "::error::linux-realtime-setup.sh missing next to $BINARY"; exit 1; }
+
         # Localization JSON - StringTable looks for lang/ next to the binary
         cp -r lang "$APPDIR/usr/bin/lang"
 
