@@ -1410,6 +1410,83 @@ TEST_CASE("devices.listParameters returns the device's parameters", "[remote][se
     REQUIRE(errorCodeOf(missing) == "not_found");
 }
 
+TEST_CASE("devices.listParameters filters by name and pages", "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+    auto input = [&](std::initializer_list<std::pair<const char*, juce::var>> extra) {
+        auto value = pathInput(path);
+        for (const auto& [key, field] : extra)
+            value.getDynamicObject()->setProperty(key, field);
+        return value;
+    };
+
+    const auto byName = run(service, "devices.listParameters", input({{"query", "DRIV"}}));
+    REQUIRE(byName.ok);
+    REQUIRE(byName.result.size() == 1);
+    // The index is the device's own, so a filtered row still addresses setParameter.
+    REQUIRE(static_cast<int>(byName.result[0]["index"]) == 1);
+
+    const auto page = run(service, "devices.listParameters", input({{"offset", 1}, {"limit", 5}}));
+    REQUIRE(page.ok);
+    REQUIRE(page.result.size() == 1);
+    REQUIRE(page.result[0]["name"].toString() == "Drive");
+
+    const auto pastEnd = run(service, "devices.listParameters", input({{"offset", 9}}));
+    REQUIRE(pastEnd.ok);
+    REQUIRE(pastEnd.result.size() == 0);
+
+    REQUIRE_FALSE(run(service, "devices.listParameters", input({{"limit", 0}})).ok);
+}
+
+TEST_CASE("devices.catalog filters by name, letter, maker, category, format, and type",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.devices_.catalog = {{"4osc", "4OSC", "Tracktion", "Synth", "", PluginFormat::Internal,
+                             DeviceType::Instrument, true},
+                            {"VST3-Surge", "Surge XT", "Surge Synth Team", "Synth", "",
+                             PluginFormat::VST3, DeviceType::Instrument, true},
+                            {"VST3-Surge-FX", "Surge XT Effects", "Surge Synth Team", "Fx", "",
+                             PluginFormat::VST3, DeviceType::Effect, false}};
+    RemoteApiService service(api);
+    auto ids = [](const Response& response) {
+        std::vector<juce::String> out;
+        for (const auto& entry : *response.result.getArray())
+            out.push_back(entry["catalogId"].toString());
+        return out;
+    };
+
+    const auto all = run(service, "devices.catalog", object({}));
+    REQUIRE(all.ok);
+    REQUIRE(all.result.size() == 3);
+
+    REQUIRE(ids(run(service, "devices.catalog", object({{"query", "surge xt"}}))) ==
+            std::vector<juce::String>{"VST3-Surge", "VST3-Surge-FX"});
+    // A manufacturer finds its plugins too.
+    REQUIRE(ids(run(service, "devices.catalog", object({{"query", "tracktion"}}))) ==
+            std::vector<juce::String>{"4osc"});
+    REQUIRE(
+        ids(run(service, "devices.catalog", object({{"format", "vst3"}, {"instrument", true}}))) ==
+        std::vector<juce::String>{"VST3-Surge"});
+    REQUIRE(ids(run(service, "devices.catalog", object({{"startsWith", "s"}}))) ==
+            std::vector<juce::String>{"VST3-Surge", "VST3-Surge-FX"});
+    REQUIRE(ids(run(service, "devices.catalog", object({{"manufacturer", "surge synth team"}}))) ==
+            std::vector<juce::String>{"VST3-Surge", "VST3-Surge-FX"});
+    // Manufacturer and category match the whole value, unlike query.
+    REQUIRE(ids(run(service, "devices.catalog", object({{"manufacturer", "surge"}}))).empty());
+    REQUIRE(ids(run(service, "devices.catalog", object({{"category", "fx"}}))) ==
+            std::vector<juce::String>{"VST3-Surge-FX"});
+    REQUIRE(ids(run(service, "devices.catalog", object({{"type", "instrument"}}))) ==
+            std::vector<juce::String>{"4osc", "VST3-Surge"});
+    REQUIRE(ids(run(service, "devices.catalog", object({{"offset", 1}, {"limit", 1}}))) ==
+            std::vector<juce::String>{"VST3-Surge"});
+
+    REQUIRE_FALSE(run(service, "devices.catalog", object({{"format", "clap"}})).ok);
+}
+
 TEST_CASE("devicePresets.list returns opaque path-free metadata",
           "[remote][service][devices][presets]") {
     const MessageThreadRelaxation relaxation;
