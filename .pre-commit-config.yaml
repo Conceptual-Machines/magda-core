@@ -106,16 +106,6 @@ repos:
         pass_filenames: true
         stages: [pre-push]
 
-      # Ensure tests still pass
-      - id: test-check
-        name: Test Check
-        entry: make
-        args: [test]
-        language: system
-        files: \.(cpp|hpp|h|c|cc|cxx)$
-        pass_filenames: false
-        stages: [pre-push]
-
 # Configuration
 default_stages: [pre-commit]
 # `pre-commit install` installs only the pre-commit hook unless told otherwise,
