@@ -82,7 +82,19 @@ plan since it was published, callback blocks render-ahead could not hand over an
 times the callback dropped what was rendered ahead to render a block itself; both
 are `null` without render-ahead. `sinceMs` marks the project boundary. The bounded `problems` list
 records observed xrun increments, counter resets, and unavailable audio devices;
-`discardedProblemCount` reports older entries removed after 32. A separate
+`discardedProblemCount` reports older entries removed after 32.
+
+An `audio_xrun` problem's `atMs` is when the audio thread saw the device's xrun count rise:
+the callback after the one it blames. With it come up to 8 `callbacks` before it, oldest first,
+each with its epoch-ms entry time, render time against its length, time since the previous
+callback, time spent waiting on the render-ahead thread, and its blocks: rendered whole at the
+callback or missed. `sinceStart`, `sinceJump` and `sincePublish` count callbacks back from the
+newest to the last transport start, locate and plan publish, or are `null`. `likelyCause` is
+`overran` when one of those callbacks ran past its length, `writerWait` when waiting on the
+render-ahead thread is what took it past, and `outsideRender` when all finished in time: a
+hint, since the device does not say which callback it blames. A rise the audio thread never saw,
+such as one counted while no callback ran, is reported one read later, stamped with the read
+that first saw it and without `callbacks`. A separate
 dropout count is currently unavailable from either audio I/O backend and is
 reported as `null`. `problemCoverage` says `audioIoObservations` because other
 engine problems have no shared event source yet. Other unavailable metrics are

@@ -16,6 +16,7 @@
 #include "../../core/Config.hpp"
 #include "CallbackLoad.hpp"
 #include "HardwareChannels.hpp"
+#include "XrunLog.hpp"
 
 namespace magda {
 
@@ -131,6 +132,9 @@ class AudioIOControl : public HardwareChannels {
         bool realtimeRefused = false;
     };
     virtual Status status() const = 0;
+
+    /** @brief Each xrun and the callbacks before it, for engine.health (#3386). */
+    virtual XrunLog& xrunLog() = 0;
 };
 
 }  // namespace magda

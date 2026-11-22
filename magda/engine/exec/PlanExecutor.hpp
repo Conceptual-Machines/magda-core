@@ -8,6 +8,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <magda/sdk/audio/BufferView.hpp>
@@ -17,6 +18,7 @@
 #include <span>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "exec/BandSplitter.hpp"
@@ -394,6 +396,18 @@ class PlanExecutor {
     /// Times the callback forgot what was rendered ahead and rendered a block itself.
     std::uint64_t handoffDiscards() const {
         return handoffs_.discards();
+    }
+
+    /** @brief The callback side's handoff costs since the last take, for the xrun record. */
+    struct CallbackTally {
+        int wholeBlocks = 0;
+        int missedBlocks = 0;
+        std::chrono::steady_clock::duration writerWait{};
+    };
+
+    /// Callback thread, after its blocks: what they cost, and a fresh tally for the next.
+    CallbackTally takeCallbackTally() {
+        return std::exchange(callbackTally_, {});
     }
 
     /** @brief Where one block's render starts, before any op has run. */
@@ -966,6 +980,8 @@ class PlanExecutor {
     BlockStamp aheadStamp_;
 
     std::atomic<int> handoffMisses_{0};
+    /// Callback thread only.
+    CallbackTally callbackTally_;
 
     /// While the callback renders a block whole after discarding: the ahead side's ops see it as
     /// a jump, and each MIDI handoff ends the notes that crossed it.

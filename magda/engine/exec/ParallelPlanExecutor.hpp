@@ -97,6 +97,11 @@ class ParallelPlanExecutor final : private PlanExecutor::CallbackRenderer {
         return core_.processSide(side, sequence, values, block, output, underClaim);
     }
 
+    /// @copydoc PlanExecutor::takeCallbackTally
+    PlanExecutor::CallbackTally takeCallbackTally() {
+        return core_.takeCallbackTally();
+    }
+
     /// @copydoc PlanExecutor::setRenderAheadDepth
     void setRenderAheadDepth(int blocks) {
         core_.setRenderAheadDepth(blocks);

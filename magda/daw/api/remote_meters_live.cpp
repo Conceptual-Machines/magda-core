@@ -10,6 +10,7 @@
 #include "../engine/AudioEngine.hpp"
 #include "remote_diagnostics.hpp"
 #include "remote_subscriptions.hpp"
+#include "remote_xruns.hpp"
 
 namespace magda::remote {
 namespace {
@@ -83,28 +84,40 @@ class LiveDiagnosticsSource final : public DiagnosticsSource {
         auto* io = engine_.getAudioIO();
         lastXruns_ = io != nullptr ? io->status().xruns : 0;
         accumulatedXruns_ = 0;
+        xrunProblems_.reset();
+        XrunLog::Event stale;
+        while (io != nullptr && io->xrunLog().pop(stale)) {
+        }
     }
 
     juce::var health() override {
         const auto now = juce::Time::currentTimeMillis();
-        const auto* io = engine_.getAudioIO();
+        auto* io = engine_.getAudioIO();
         const auto status = io != nullptr ? io->status() : AudioIOControl::Status{};
         const bool deviceOpen = io != nullptr && status.deviceOpen;
         const bool projectBound = engine_.hasActiveEdit();
         if (io != nullptr) {
+            std::vector<XrunLog::Event> events;
+            for (XrunLog::Event event; io->xrunLog().pop(event);)
+                if (event.atMs >= sinceMs_)
+                    events.push_back(event);
+
+            int risen = 0;
             if (status.xruns < lastXruns_) {
-                addProblem("xrun_counter_reset", now, 1);
+                addProblem(plainProblem("xrun_counter_reset", now, 1));
+                xrunProblems_.reset();
             } else if (status.xruns > lastXruns_) {
-                const int delta = status.xruns - lastXruns_;
+                risen = status.xruns - lastXruns_;
                 accumulatedXruns_ =
                     std::min(static_cast<juce::int64>(std::numeric_limits<int>::max()),
-                             accumulatedXruns_ + static_cast<juce::int64>(delta));
-                addProblem("audio_xrun", now, delta);
+                             accumulatedXruns_ + static_cast<juce::int64>(risen));
             }
             lastXruns_ = status.xruns;
+            for (auto& problem : xrunProblems_.read(events, risen, now))
+                addProblem(std::move(problem));
         }
         if (projectBound && !deviceOpen && !missingDeviceReported_) {
-            addProblem("audio_device_unavailable", now, 1);
+            addProblem(plainProblem("audio_device_unavailable", now, 1));
             missingDeviceReported_ = true;
         }
         if (deviceOpen)
@@ -186,16 +199,12 @@ class LiveDiagnosticsSource final : public DiagnosticsSource {
     }
 
   private:
-    void addProblem(const char* code, juce::int64 atMs, int count) {
-        auto entry = object();
-        entry.getDynamicObject()->setProperty("code", code);
-        entry.getDynamicObject()->setProperty("atMs", atMs);
-        entry.getDynamicObject()->setProperty("count", count);
+    void addProblem(juce::var entry) {
         if (problems_.size() == 32) {
             problems_.erase(problems_.begin());
             ++discarded_;
         }
-        problems_.push_back(entry);
+        problems_.push_back(std::move(entry));
     }
 
     AudioEngine& engine_;
@@ -203,6 +212,7 @@ class LiveDiagnosticsSource final : public DiagnosticsSource {
     juce::int64 sinceMs_ = 0;
     juce::int64 accumulatedXruns_ = 0;
     int lastXruns_ = 0;
+    XrunProblems xrunProblems_;
     bool missingDeviceReported_ = false;
     int discarded_ = 0;
     std::vector<juce::var> problems_;
