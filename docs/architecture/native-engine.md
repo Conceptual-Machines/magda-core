@@ -403,6 +403,15 @@ sits in front of the handoff. The latency pass looks through handoffs to size th
 track keeps the same compensation on either side. If it did not, every switch next to a latent
 device (a lookahead limiter) would move that track by the device's latency.
 
+A start from stopped waits behind the stopped blocks already rendered ahead, so the transport
+moves about the look-ahead after play is pressed, and its first blocks are rendered ahead like
+any others ([#3400](https://github.com/Conceptual-Machines/magda-core/issues/3400)). Tracks
+played live are at the callback, so their latency does not change. Two starts stay immediate,
+with the roll's first block rendered whole at the callback: one with a session slot rendered
+ahead, whose first block seeds the ahead side's launch handles (#3316), and one following an
+external phase (Link), which holds the start at the callback. A stop and a locate still take
+effect at the next callback.
+
 The CPU readout measures the audio callback only. Work done on the render-ahead thread is not in
 it. So the readout drops when the selection moves to a track with no instrument: everything
 then renders ahead, and the callback only reads the ring and mixes. The total work is the same.

@@ -1369,6 +1369,16 @@ class Config {
         captureSeconds = std::clamp(seconds, 10, kMaxCaptureSeconds);
     }
     static constexpr int kMaxCaptureSeconds = 4 * 60 * 60;
+
+    /// How far ahead of the device tracks nobody is playing render, in ms; 0 is off (#1898).
+    /// A start from stopped waits about this long (#3400).
+    int getRenderAheadMs() const {
+        return renderAheadMs;
+    }
+    void setRenderAheadMs(int milliseconds) {
+        renderAheadMs = std::clamp(milliseconds, 0, kMaxRenderAheadMs);
+    }
+    static constexpr int kMaxRenderAheadMs = 100;
     /// How many bars Capture Recent Audio takes, at most.
     int getCaptureBars() const {
         return captureBars;
@@ -1708,6 +1718,7 @@ class Config {
 
     bool captureEnabled = false;
     int captureSeconds = 300;
+    int renderAheadMs = 20;
     int captureBars = 8;
     std::string captureDir;
 

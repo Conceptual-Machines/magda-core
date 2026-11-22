@@ -352,6 +352,8 @@ class PlanExecutor {
         virtual void beginAheadBlock(const BlockInfo& block) = 0;
         /// The callback, holding the claim, has rendered a block whole.
         virtual void renderedWhole() = 0;
+        /// Session slots the ahead side plays, which a roll's first block seeds. Any thread.
+        virtual bool holdsLaunches() const = 0;
     };
 
     /// Off the audio thread, before either side renders; null for none.

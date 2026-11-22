@@ -234,6 +234,7 @@ juce::var Config::toVar() const {
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     root->setProperty("captureBuffer", captureEnabled);
     root->setProperty("captureSeconds", captureSeconds);
+    root->setProperty("renderAheadMs", renderAheadMs);
     root->setProperty("captureBars", captureBars);
     root->setProperty("captureDir", toJuceString(captureDir));
 
@@ -710,6 +711,7 @@ void Config::fromVar(const juce::var& parsed) {
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     setCaptureEnabled(getBool("captureBuffer", captureEnabled));
     setCaptureSeconds(getInt("captureSeconds", captureSeconds));
+    setRenderAheadMs(getInt("renderAheadMs", renderAheadMs));
     setCaptureBars(getInt("captureBars", captureBars));
     captureDir = getString("captureDir", captureDir);
 

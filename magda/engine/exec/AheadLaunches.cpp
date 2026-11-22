@@ -120,6 +120,7 @@ void AheadLaunches::adopt(Reshape& next) {
             next.copies[i] = copies_[static_cast<std::size_t>(next.from[i])];
     copies_.swap(next.copies);
     table_.entries.swap(next.entries);
+    holdsLaunches_.store(!copies_.empty(), std::memory_order_release);
 }
 
 }  // namespace magda::engine
