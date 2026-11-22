@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <farbot/RealtimeObject.hpp>
 #include <functional>
 #include <memory>
@@ -129,6 +130,25 @@ class EngineSession {
     /// Whether the ahead thread has finished a round begun after the last callback woke it.
     bool renderAheadCaughtUp() const {
         return renderAhead_ == nullptr || renderAhead_->caughtUp();
+    }
+
+    /** @brief What the latest callback's blocks were, for the xrun record (#3401). */
+    struct CallbackSummary {
+        int blocks = 0;
+        /// Rendered whole at the callback, ahead tracks included.
+        int wholeBlocks = 0;
+        int missedBlocks = 0;
+        std::chrono::steady_clock::duration writerWait{};
+        bool started = false;
+        /// A locate while playing; a loop wrap is not one.
+        bool jumped = false;
+        /// The first callback of a newly published plan.
+        bool published = false;
+    };
+
+    /// Audio thread, after process().
+    const CallbackSummary& lastCallback() const {
+        return lastCallback_;
     }
 
     /// Blocks the live epoch's callback found missing from what was rendered ahead.
@@ -690,6 +710,10 @@ class EngineSession {
     std::vector<ClosedTake> closed_;
     std::set<TakeKey> deferredTakes_;
     std::atomic<bool> takeCompletionPending_{false};
+
+    // Audio thread only.
+    CallbackSummary lastCallback_;
+    std::uint64_t lastEpoch_ = 0;
 
     /// What the model held at the last publish. Kept so a values publish
     /// escalated into a structural one has a set to publish with; retention

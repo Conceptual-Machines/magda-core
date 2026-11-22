@@ -33,6 +33,7 @@ target_sources(magda_daw PRIVATE
     remote_model_bridge_live.cpp
     remote_subscriptions.cpp
     remote_meters_live.cpp
+    remote_xruns.cpp
     remote_http_auth.cpp
     remote_mcp.cpp
     remote_mcp_server.cpp
@@ -75,6 +76,7 @@ target_sources(magda_daw PRIVATE
     remote_jobs.hpp
     remote_engine_jobs.hpp
     remote_diagnostics.hpp
+    remote_xruns.hpp
     remote_service.hpp
     remote_changes.hpp
     remote_model_bridge.hpp

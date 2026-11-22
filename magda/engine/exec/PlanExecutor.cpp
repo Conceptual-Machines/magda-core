@@ -1806,6 +1806,12 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
         // A writer holding this very block is helped finish it: taking it over costs every ahead
         // track a jump, which panics and re-strikes their notes.
         bool claimed = false;
+        // Once, however many waits the block goes through.
+        auto waits = published == HandoffRing::Published::missing;
+        const auto noteWait = [&] {
+            if (std::exchange(waits, false))
+                callbackTally_.writerWait += std::chrono::steady_clock::now() - entered;
+        };
         if (splits && published == HandoffRing::Published::missing) {
             claimed = handoffs_.claimForCallback();
             if (!claimed) {
@@ -1824,6 +1830,7 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
                 });
                 claimed = handoffs_.claimForCallbackBy(claimBy);
             }
+            noteWait();
             if (claimed) {
                 published = handoffs_.published(sequence, BlockStamp::of(start.block));
                 const bool whole = published != HandoffRing::Published::split || !splits;
@@ -1835,6 +1842,7 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
                         published != HandoffRing::Published::whole && handoffs_.reached(sequence);
                     if (discontinuousAhead_)
                         handoffs_.discardFrom(sequence);
+                    ++callbackTally_.wholeBlocks;
                     if (callbackRenderer_ != nullptr)
                         callbackRenderer_->renderWhole(values, requestedBlock, output);
                     else
@@ -1850,12 +1858,14 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
             } else {
                 // The writer did not let go in time: the block cannot be rendered here.
                 handoffMisses_.fetch_add(1, std::memory_order_relaxed);
+                ++callbackTally_.missedBlocks;
                 if (!splits) {
                     handoffs_.release(sequence);
                     return true;
                 }
             }
         }
+        noteWait();
         if (start.render)
             deliverHandoffs(sequence, start.block.numSamples,
                             published == HandoffRing::Published::split);

@@ -3100,7 +3100,30 @@ OperationRegistry::OperationRegistry() {
                         "code":{"type":"string","enum":["audio_xrun","xrun_counter_reset",
                                                         "audio_device_unavailable"]},
                         "atMs":{"type":"number","minimum":0},
-                        "count":{"type":"integer","minimum":1}
+                        "count":{"type":"integer","minimum":1},
+                        "likelyCause":{"type":"string",
+                                       "enum":["overran","writerWait","outsideRender"]},
+                        "sinceStart":{"type":["integer","null"],"minimum":0},
+                        "sinceJump":{"type":["integer","null"],"minimum":0},
+                        "sincePublish":{"type":["integer","null"],"minimum":0},
+                        "callbacks":{"type":"array","maxItems":8,"items":{
+                            "type":"object","properties":{
+                                "atMs":{"type":"number","minimum":0},
+                                "renderMs":{"type":"number","minimum":0},
+                                "lengthMs":{"type":"number","minimum":0},
+                                "sincePreviousMs":{"type":"number","minimum":0},
+                                "writerWaitMs":{"type":"number","minimum":0},
+                                "blocks":{"type":"integer","minimum":0},
+                                "wholeBlocks":{"type":"integer","minimum":0},
+                                "missedBlocks":{"type":"integer","minimum":0},
+                                "started":{"type":"boolean"},
+                                "jumped":{"type":"boolean"},
+                                "published":{"type":"boolean"}
+                            },"required":["atMs","renderMs","lengthMs","sincePreviousMs",
+                                          "writerWaitMs","blocks","wholeBlocks",
+                                          "missedBlocks","started","jumped","published"],
+                            "additionalProperties":false
+                        }}
                     },"required":["code","atMs","count"],"additionalProperties":false
                 }},
                 "discardedProblemCount":{"type":"integer","minimum":0}

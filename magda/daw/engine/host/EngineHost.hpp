@@ -36,6 +36,7 @@ class RenderLoad;
 
 namespace magda {
 class CallbackLoad;
+class XrunLog;
 class PhaseSource;
 class InsertRenderCapture;
 class OfflineRenderSession;
@@ -100,9 +101,10 @@ class EngineHost {
      * this is built on the first callback rather than here: until then the
      * output is silence and the cursor stands still, which is what a session
      * with no plan renders anyway (EngineSession::process). Each callback's time goes to
-     * @p load when one is given.
+     * @p load when one is given, and each xrun with the callbacks before it to @p xruns.
      */
-    void start(juce::AudioDeviceManager& devices, CallbackLoad* load = nullptr);
+    void start(juce::AudioDeviceManager& devices, CallbackLoad* load = nullptr,
+               XrunLog* xruns = nullptr);
 
     /**
      * @brief Where external plugins are found and what can open them (#2566).
