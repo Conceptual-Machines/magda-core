@@ -173,6 +173,8 @@ class TrackHeadersPanel : public juce::Component,
     std::function<void(int, float)> onTrackVolumeChanged;
     std::function<void(int, float)> onTrackPanChanged;
     std::function<void(TrackId, AutomationLaneId)> onShowAutomationLane;
+    /// A double-click on a track header's body, outside its controls (#3372).
+    std::function<void(TrackId)> onTrackHeaderDoubleClicked;
 
     // Routing toggle types
     enum class RoutingType { AudioIn, AudioOut, MidiIn, MidiOut };
@@ -305,6 +307,7 @@ class TrackHeadersPanel : public juce::Component,
     // Dedup for double-delivered mouse events (self mouse listener); see
     // TrackHeadersPanel::mouseDown
     juce::Time lastMouseDownEventTime_;
+    juce::Time lastDoubleClickEventTime_;
 
     // Drag-to-resize an automation lane's height from the headers panel,
     // mirroring the lane's own resize handle in TrackContentPanel.
@@ -418,6 +421,7 @@ class TrackHeadersPanel : public juce::Component,
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
+    void mouseDoubleClick(const juce::MouseEvent& event) override;
 
     // Context menu
     void showContextMenu(int trackIndex, juce::Point<int> position);
