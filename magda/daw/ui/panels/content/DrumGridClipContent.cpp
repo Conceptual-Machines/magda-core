@@ -49,6 +49,11 @@ namespace magda::daw::ui {
 
 namespace {
 
+/** @brief The line between pad rows, shared by the grid and the pad-name column. */
+juce::Colour drumRowLineColour() {
+    return ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f);
+}
+
 // Lookup the (track, device) of the primary instrument plugin for the editing
 // clip. Returns {INVALID_TRACK_ID, INVALID_DEVICE_ID} if there's no clip or no
 // instrument on the track. Used by every drum-grid read/write of kit metadata.
@@ -510,7 +515,8 @@ class DrumGridClipGrid : public juce::Component,
                 g.fillRect(0, i * rowHeight_, bounds.getWidth(), rowHeight_);
             }
         }
-        g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_ROW_LINE));
+        // MIDI_ROW_LINE vanishes on the dark MIDI_DRUM_ROW (#3398)
+        g.setColour(drumRowLineColour());
         for (int i = 0; i <= numRows; ++i) {
             int y = i * rowHeight_;
             g.drawHorizontalLine(y, 0.0f, static_cast<float>(bounds.getWidth()));
@@ -1932,7 +1938,7 @@ class DrumGridRowLabels : public juce::Component {
                 g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_NOTE).withAlpha(0.3f));
                 g.fillRect(rowArea);
             }
-            g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_ROW_LINE));
+            g.setColour(drumRowLineColour());
             g.drawHorizontalLine(y + rowHeight_ - 1, 0.0f, static_cast<float>(bounds.getWidth()));
 
             const float dim = padRow.muted ? 0.4f : 1.0f;
