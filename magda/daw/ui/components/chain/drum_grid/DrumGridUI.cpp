@@ -11,6 +11,7 @@
 
 #include "core/DrumGridPads.hpp"
 #include "core/TrackManager.hpp"
+#include "drum_grid/PadNameEditor.hpp"
 #include "layout/DeviceShellPainter.hpp"
 #include "layout/NodeHeaderStyles.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
@@ -193,22 +194,7 @@ void DrumGridUI::PadButton::startRename() {
     if (!hasSample_ || nameEditor_ != nullptr)
         return;
 
-    nameEditor_ = std::make_unique<juce::TextEditor>();
-    nameEditor_->setMultiLine(false);
-    nameEditor_->setReturnKeyStartsNewLine(false);
-    nameEditor_->setBorder({1, 2, 1, 2});
-    nameEditor_->setIndents(3, 1);
-    nameEditor_->setFont(FontManager::getInstance().getUIFontMedium(11.5f));
-    nameEditor_->setColour(juce::TextEditor::backgroundColourId,
-                           ActiveTheme::getColour(ActiveTheme::BACKGROUND));
-    nameEditor_->setColour(juce::TextEditor::textColourId,
-                           ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-    nameEditor_->setColour(juce::TextEditor::outlineColourId,
-                           ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-    nameEditor_->setColour(juce::TextEditor::focusedOutlineColourId,
-                           ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-    nameEditor_->setText(sampleName_, juce::dontSendNotification);
-    nameEditor_->selectAll();
+    nameEditor_ = makePadNameEditor(sampleName_, FontManager::getInstance().getUIFontMedium(11.5f));
     nameEditor_->setBounds(nameBounds().expanded(4, 2).getIntersection(getLocalBounds()));
     nameEditor_->onReturnKey = [this]() { finishRename(true); };
     nameEditor_->onEscapeKey = [this]() { finishRename(false); };
@@ -328,6 +314,10 @@ DrumGridUI::DrumGridUI() {
             onPadMixChanged(selectedPad_, volume, pan);
     };
     padMixPanel_.onGestureEnd = [this]() { endFaderGesture(); };
+    padMixPanel_.onRenamed = [this](const juce::String& name) {
+        if (onPadRenamed)
+            onPadRenamed(selectedPad_, name);
+    };
     padMixPanel_.onSwitchesChanged = [this](bool mute, bool solo, bool bypassed) {
         auto& info = padInfos_[static_cast<size_t>(selectedPad_)];
         info.mute = mute;
