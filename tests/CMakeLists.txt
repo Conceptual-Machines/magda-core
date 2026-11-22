@@ -240,6 +240,8 @@ set(TEST_SOURCES
     audio/test_legacy_audio_settings.cpp
     # The CPU readout averaged over whole windows, not a few blocks
     audio/test_callback_load.cpp
+    # Each xrun with its time and the callbacks before it (#3386, #3401)
+    audio/test_xrun_log.cpp
     # Hardware channels named as saved routes name them (#2747)
     audio/test_hardware_route_names.cpp
     # JACK devices listing a card's own ports, not PipeWire's monitors (#3107)
@@ -370,6 +372,7 @@ set(TEST_SOURCES
     remote/test_remote_permissions.cpp
     remote/test_remote_permission_conformance.cpp
     remote/test_remote_service.cpp
+    remote/test_remote_xruns.cpp
     remote/test_transport_api_engine_state.cpp
     remote/test_remote_jobs.cpp
     remote/test_remote_paths.cpp

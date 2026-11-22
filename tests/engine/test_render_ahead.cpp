@@ -291,6 +291,42 @@ TEST_CASE("A jump forgets what was rendered ahead for where the playhead was",
     CHECK(ahead.session.renderedAheadThrough() > ahead.session.nextBlock());
 }
 
+TEST_CASE("A callback says how it rendered, for the xrun record", "[engine][session][3401]") {
+    Rig ahead(3);
+    auto transport = rolling(0.0);
+    ahead.session.publishTransport(transport);
+
+    juce::AudioBuffer<float> out(2, kBlockSize);
+    ahead.callback(out);
+    const auto first = ahead.session.lastCallback();
+    CHECK(first.blocks == 1);
+    CHECK(first.started);
+    CHECK(first.published);
+    CHECK(first.wholeBlocks == 1);
+
+    for (int callback = 0; callback < 10; ++callback)
+        ahead.callback(out);
+    const auto steady = ahead.session.lastCallback();
+    CHECK_FALSE(steady.started);
+    CHECK_FALSE(steady.published);
+    CHECK_FALSE(steady.jumped);
+    CHECK(steady.wholeBlocks == 0);
+    CHECK(steady.missedBlocks == 0);
+
+    transport.request.generation = 2;
+    transport.request.locate = true;
+    transport.request.locateId = 1;
+    transport.request.positionBeat = 32.0;
+    ahead.session.publishTransport(transport);
+    ahead.callback(out);
+    CHECK(ahead.session.lastCallback().jumped);
+    CHECK(ahead.session.lastCallback().wholeBlocks == 1);
+
+    ahead.publish();
+    ahead.callback(out);
+    CHECK(ahead.session.lastCallback().published);
+}
+
 TEST_CASE("A track holding session clips renders at the callback", "[engine][plan][1898]") {
     // A launch has to be heard when it fires, so its clips are never rendered ahead; a track
     // playing only its arrangement still is.

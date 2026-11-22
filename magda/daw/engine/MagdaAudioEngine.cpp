@@ -199,7 +199,7 @@ bool MagdaAudioEngine::initialize() {
     host_->setRenderAhead(kRenderAheadMs);
     configChanged();
     Config::getInstance().addListener(this);
-    host_->start(audioIO_->getDeviceManager(), &audioIO_->callbackLoad());
+    host_->start(audioIO_->getDeviceManager(), &audioIO_->callbackLoad(), &audioIO_->xrunLog());
 
     // The activity light and every live note go to this engine's meters and queue, and
     // the only virtual input is the QWERTY keyboard (#2759).

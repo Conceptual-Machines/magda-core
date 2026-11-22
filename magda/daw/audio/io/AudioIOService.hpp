@@ -148,6 +148,10 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
         return callbackLoad_;
     }
 
+    XrunLog& xrunLog() override {
+        return xrunLog_;
+    }
+
     /** @brief Where status() learns whether an audio thread was left time-shared (#3380). */
     void setRealtimeRefusedProbe(std::function<bool()> probe) {
         realtimeRefused_ = std::move(probe);
@@ -197,6 +201,7 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
 
     juce::AudioDeviceManager manager_;
     CallbackLoad callbackLoad_;
+    XrunLog xrunLog_;
     juce::File legacySettings_;
     juce::File openMark_;
     MicrophoneAccess microphone_;

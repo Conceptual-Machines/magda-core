@@ -449,6 +449,7 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
     jassert(numSamples <= output.getNumSamples());
     numSamples = std::min(numSamples, output.getNumSamples());
     render_probe::setRole(render_probe::Role::callback);
+    lastCallback_ = {};
 
     // Before the clear, and before anything else touches the output: a host may
     // hand the same memory for input and output, and the feed's copy is what
@@ -483,6 +484,7 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         return;
     if (load_ != nullptr)
         load_->addBudget(numSamples, (*render)->context.sampleRate);
+    lastCallback_.published = std::exchange(lastEpoch_, (*render)->epoch) != (*render)->epoch;
 
     // Values and plans travel separately and are swapped one after the other,
     // so for the moment between the two the ones in flight can belong to the
@@ -652,9 +654,17 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
             const ProfileScope timed(
                 [](auto elapsed) { BlockProfile::addPhase(BlockProfile::CallbackSide, elapsed); });
             (*render)->executor.processSide(1, blockSequence_++, table, segment.block, piece);
+            const auto tally = (*render)->executor.takeCallbackTally();
+            lastCallback_.wholeBlocks += tally.wholeBlocks;
+            lastCallback_.missedBlocks += tally.missedBlocks;
+            lastCallback_.writerWait += tally.writerWait;
         } else {
             (*render)->executor.process(table, segment.block, piece);
         }
+
+        ++lastCallback_.blocks;
+        lastCallback_.started |= segment.block.started;
+        lastCallback_.jumped |= segment.block.playing && segment.block.owesPanic();
 
         if (captureRing_ != nullptr) {
             captureRing_->writeMidi(input.midi, segment.startSample, segment.block.numSamples);

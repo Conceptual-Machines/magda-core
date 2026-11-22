@@ -28,6 +28,7 @@
 #include "../../audio/DeviceParameterList.hpp"
 #include "../../audio/MidiBridge.hpp"
 #include "../../audio/io/CallbackLoad.hpp"
+#include "../../audio/io/XrunLog.hpp"
 #include "../../audio/midi/RecordingNoteQueue.hpp"
 #include "../../audio/plugin_manager/ExternalPluginState.hpp"
 #include "../../audio/plugins/DeviceStateDocument.hpp"
@@ -732,12 +733,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             juce::String(rendered_.load(std::memory_order_relaxed)) + " callbacks so far");
     }
 
-    void start(juce::AudioDeviceManager& devices, CallbackLoad* load) {
+    void start(juce::AudioDeviceManager& devices, CallbackLoad* load, XrunLog* xruns) {
         if (devices_ != nullptr)
             return;
 
         devices_ = &devices;
         load_ = load;
+        xruns_ = xruns;
         TrackManager::getInstance().addListener(this);
         AutomationManager::getInstance().addListener(this);
         ClipManager::getInstance().addListener(this);
@@ -3495,6 +3497,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 std::clamp<std::int64_t>(device->getOutputLatencyInSamples(), -limit, limit)),
             std::memory_order_relaxed);
         inputGeneration_.fetch_add(1, std::memory_order_relaxed);
+        if (xruns_ != nullptr)
+            xruns_->restart();
         audioRunning_.store(true, std::memory_order_release);
         renderedStale_.store(true, std::memory_order_release);
         hardwareOutputGeneration_.fetch_add(1, std::memory_order_acq_rel);
@@ -3545,6 +3549,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                           int numSamples,
                                           const juce::AudioIODeviceCallbackContext&) override {
         const auto entered = juce::Time::getMillisecondCounterHiRes();
+        const auto enteredAtMs = juce::Time::currentTimeMillis();
+        // Before rendering: a rise now blames a callback already in the log.
+        if (xruns_ != nullptr)
+            xruns_->check(devices_->getXRunCount(), enteredAtMs);
+        bool rendered = false;
         // JUCE's ALSA thread starts time-shared; JACK's callback is the server's and is real-time.
         thread_local bool priorityChecked = false;
         if (!std::exchange(priorityChecked, true) && !engine::realtime::currentThreadIsRealtime()) {
@@ -3554,11 +3563,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         }
 
         const juce::ScopeGuard recordLoad{[&] {
+            const auto busyMs = juce::Time::getMillisecondCounterHiRes() - entered;
+            const auto rate = rate_.load(std::memory_order_relaxed);
+            if (xruns_ != nullptr)
+                xruns_->record(xrunEntry(enteredAtMs, busyMs, numSamples, rate, rendered), entered);
             if (load_ == nullptr)
                 return;
             const auto ahead = renderLoad_.takeAhead();
-            load_->record(juce::Time::getMillisecondCounterHiRes() - entered, numSamples,
-                          rate_.load(std::memory_order_relaxed), ahead.busyMs, ahead.worstBlock);
+            load_->record(busyMs, numSamples, rate, ahead.busyMs, ahead.worstBlock);
         }};
 
         for (auto channel = 0; channel < numOutputChannels; ++channel)
@@ -3628,7 +3640,29 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 capture->write(scratch_, 0, piece);
             done += piece;
         }
+        rendered = true;
         completedCallbacks_.store(callback, std::memory_order_release);
+    }
+
+    /// This callback for the xrun log, with what the session's blocks were when it rendered.
+    XrunLog::Callback xrunEntry(std::int64_t atMs, double busyMs, int numSamples, double rate,
+                                bool rendered) const {
+        XrunLog::Callback entry{
+            .atMs = atMs,
+            .renderMs = static_cast<float>(busyMs),
+            .lengthMs = rate > 0.0 ? static_cast<float>(numSamples * 1000.0 / rate) : 0.0f};
+        if (!rendered || session_ == nullptr)
+            return entry;
+        const auto& summary = session_->lastCallback();
+        const auto clamp = [](int n) { return static_cast<std::uint8_t>(std::clamp(n, 0, 255)); };
+        entry.writerWaitMs = std::chrono::duration<float, std::milli>(summary.writerWait).count();
+        entry.blocks = clamp(summary.blocks);
+        entry.wholeBlocks = clamp(summary.wholeBlocks);
+        entry.missedBlocks = clamp(summary.missedBlocks);
+        entry.started = summary.started;
+        entry.jumped = summary.jumped;
+        entry.published = summary.published;
+        return entry;
     }
 
     /// The device's input for this callback, or none when a channel is missing.
@@ -4204,6 +4238,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     juce::AudioDeviceManager* devices_ = nullptr;
     CallbackLoad* load_ = nullptr;
+    XrunLog* xruns_ = nullptr;
     engine::RenderLoad renderLoad_;
 
     /// Plugin services an offline render loads a plugin with when no live instance exists.
@@ -4406,8 +4441,8 @@ EngineHost::EngineHost() : impl_(std::make_unique<Impl>()) {}
 
 EngineHost::~EngineHost() = default;
 
-void EngineHost::start(juce::AudioDeviceManager& devices, CallbackLoad* load) {
-    impl_->start(devices, load);
+void EngineHost::start(juce::AudioDeviceManager& devices, CallbackLoad* load, XrunLog* xruns) {
+    impl_->start(devices, load, xruns);
 }
 
 void EngineHost::setPluginServices(juce::AudioPluginFormatManager& formats,
