@@ -2461,7 +2461,8 @@ pw-metadata -n settings 0 clock.force-quantum 0
 <li><strong>Directly</strong>, at priority 80, when your user is allowed real-time priority. Audio-focused distributions such as Ubuntu Studio set this up for the <code>audio</code> group.</li>
 <li><strong>Through rtkit</strong> otherwise, the service most desktops use to grant it. rtkit allows a lower priority, usually 20. That's still ahead of every ordinary program, but the direct route holds up better under heavy load.</li>
 </ul>
-<p>To set up the direct route, run MAGDA's setup script. It checks your system first and asks before changing anything:</p>
+<p>When MAGDA's audio threads get no real-time priority at all, this page says so under the status bar. Its <strong>Set up…</strong> button runs MAGDA's setup script as administrator, after your desktop asks for your password, and then tells you to log out and back in.</p>
+<p>To run the setup script yourself instead: it checks your system first and asks before changing anything:</p>
 <div class="highlight"><pre><span></span><code>curl -fsSLO https://raw.githubusercontent.com/Conceptual-Machines/magda-core/main/scripts/linux-realtime-setup.sh
 bash linux-realtime-setup.sh
 </code></pre></div>
@@ -2475,6 +2476,7 @@ bash linux-realtime-setup.sh
 </ol>
 <p>Either way, log out and back in afterwards. <code>ulimit -r</code> then prints 95.</p>
 <p>MAGDA writes the outcome to <code>magda.log</code> when its audio engine starts: <code>render threads: SCHED_RR at priority 80</code>, the same line ending in <code>(rtkit)</code> when rtkit granted it, or <code>render threads: time-shared</code> when neither did. Under the <strong>ALSA</strong> driver, a second line starting <code>audio callback thread:</code> reports the same for the thread that plays the audio.</p>
+<p>With <strong>JACK</strong> chosen and no interfaces listed, the page says so too: either no JACK server is running, or on PipeWire, <code>pipewire-jack</code> isn't installed.</p>
 
 
 
