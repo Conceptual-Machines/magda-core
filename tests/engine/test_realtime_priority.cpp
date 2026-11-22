@@ -46,6 +46,7 @@ TEST_CASE("A thread raised by tid runs at the priority it was granted", "[engine
     } else {
         CHECK(policy == SCHED_OTHER);
         CHECK_FALSE(grant.viaRtkit);
+        CHECK(realtime::anyThreadRefused());
     }
     CHECK_FALSE(realtime::describe(grant).isEmpty());
 }

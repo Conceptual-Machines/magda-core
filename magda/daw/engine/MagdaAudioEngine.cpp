@@ -68,6 +68,7 @@ MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) : headless_(optio
     // start() puts it on a device.
     audioIO_ = std::make_unique<AudioIOService>();
     host_ = std::make_unique<daw::engine_host::EngineHost>();
+    audioIO_->setRealtimeRefusedProbe([this] { return host_->realtimeRefused(); });
 
     // The facade reads engine state through callbacks, without a legacy Edit.
     api_ = std::make_unique<MagdaApiLive>();

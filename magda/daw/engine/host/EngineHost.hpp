@@ -407,6 +407,8 @@ class EngineHost {
     void setTimeSignature(int numerator, int denominator);
     void getTimeSignature(int& numerator, int& denominator) const;
     void setLoop(bool enabled, double startBeat, double endBeat);
+    /** @brief True once an audio thread here was left time-shared (#3380). */
+    bool realtimeRefused() const;
     void setPunch(double startBeat, double endBeat, bool punchInEnabled, bool punchOutEnabled);
     struct PunchState {
         double startBeat = 0.0;

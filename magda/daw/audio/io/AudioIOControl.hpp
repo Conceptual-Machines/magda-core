@@ -127,6 +127,8 @@ class AudioIOControl : public HardwareChannels {
         double cpuUsage = 0.0;
         CallbackLoad::Window cpuWindow;
         int xruns = 0;
+        /// An audio thread was left time-shared: no RLIMIT_RTPRIO and no rtkit (#3380).
+        bool realtimeRefused = false;
     };
     virtual Status status() const = 0;
 };

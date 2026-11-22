@@ -42,6 +42,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/fonts/Geist-Medium.ttf
     # CJK fallback — covers Simplified/Traditional Chinese, Japanese, Korean
     ../../assets/fonts/NotoSansCJKsc-Regular.otf
+    # The Linux window icon; macOS and Windows take theirs from ICON_BIG below
+    ../../assets/app_icon.png
     # General UI icons
     ../../assets/icons/general/enter.svg
     ../../assets/icons/general/track.svg
@@ -956,6 +958,16 @@ else()
             "${MAGDA_LANG_SRC}"
             "$<TARGET_FILE_DIR:magda_daw_app>/lang"
         COMMENT "Copying localization files alongside app executable"
+    )
+endif()
+
+# The real-time setup script, which Audio & MIDI settings run through pkexec (#3380).
+if(UNIX AND NOT APPLE)
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/linux-realtime-setup.sh"
+            "$<TARGET_FILE_DIR:magda_daw_app>/linux-realtime-setup.sh"
+        COMMENT "Staging the real-time setup script beside MAGDA"
     )
 endif()
 

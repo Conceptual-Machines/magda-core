@@ -6,6 +6,7 @@
 #include "../../../audio/AudioDriverUtils.hpp"
 #include "../../../audio/MidiBridge.hpp"
 #include "../../../audio/io/AudioIOControl.hpp"
+#include "../../../core/AppPaths.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/StringTable.hpp"
 #include "../../../core/TrackManager.hpp"
@@ -620,6 +621,21 @@ AudioSettingsPage::AudioSettingsPage(AudioEngine* audioEngine)
     deviceDetailsLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(deviceDetailsLabel_);
 
+    noticeLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
+    noticeLabel_.setColour(juce::Label::textColourId,
+                           ActiveTheme::getColour(ActiveTheme::STATUS_WARNING));
+    noticeLabel_.setJustificationType(juce::Justification::centredLeft);
+    addChildComponent(noticeLabel_);
+    noticeLink_.setButtonText(tr("audio_settings.notice.realtime_link"));
+    noticeLink_.setURL(
+        juce::URL("https://docs.magda.land/interface/audio-settings/#real-time-priority"));
+    noticeLink_.setFont(FontManager::getInstance().getUIFont(13.0f), false,
+                        juce::Justification::centredRight);
+    addChildComponent(noticeLink_);
+    noticeSetupButton_.setButtonText(trEllipsis("audio_settings.notice.setup_button"));
+    noticeSetupButton_.onClick = [this] { runRealtimeSetup(); };
+    addChildComponent(noticeSetupButton_);
+
     // Where the browser auditions files: one of the output pairs.
     previewHeader_.setText(tr("audio_settings.toggle.preview"), juce::dontSendNotification);
     daw::ui::SettingsLookAndFeel::markSectionHeader(previewHeader_);
@@ -725,6 +741,16 @@ int AudioSettingsPage::layOut(int width, bool apply) {
                           12;
         place(deviceNameLabel_, bar.removeFromLeft(juce::jmin(nameW, bar.getWidth() / 2)));
         place(deviceDetailsLabel_, bar);
+    }
+    if (noticeLabel_.isVisible()) {
+        auto row = bounds.removeFromTop(40).withTrimmedTop(6);
+        if (noticeSetupButton_.isVisible()) {
+            place(noticeSetupButton_, row.removeFromRight(90).reduced(0, 4));
+            row.removeFromRight(8);
+        }
+        if (noticeLink_.isVisible())
+            place(noticeLink_, row.removeFromRight(140));
+        place(noticeLabel_, row);
     }
     bounds.removeFromTop(sectionGap);
 
@@ -1086,7 +1112,81 @@ void AudioSettingsPage::refreshChosenInterface() {
     resized();
 }
 
+void AudioSettingsPage::showNotice() {
+    juce::String notice;
+    if (audio_->status().realtimeRefused)
+        notice = tr("audio_settings.notice.realtime");
+    else if (driverComboBox_.getText() == "JACK" && audio_->interfaceNames("JACK", false).isEmpty())
+        notice = tr("audio_settings.notice.jack_no_interfaces");
+
+    const auto realtime = audio_->status().realtimeRefused;
+    if (notice == noticeLabel_.getText() && realtime == noticeLink_.isVisible() &&
+        notice.isNotEmpty() == noticeLabel_.isVisible())
+        return;
+    noticeLabel_.setText(notice, juce::dontSendNotification);
+    noticeLabel_.setVisible(notice.isNotEmpty());
+    noticeLink_.setVisible(realtime);
+#if JUCE_LINUX
+    noticeSetupButton_.setVisible(realtime);
+#endif
+    if (getWidth() > 0)
+        setSize(getWidth(), juce::jmax(getParentHeight(), getPreferredHeight(getWidth())));
+    resized();
+}
+
+void AudioSettingsPage::runRealtimeSetup() {
+    const auto script = paths::executableDir().getChildFile("linux-realtime-setup.sh");
+    const auto pkexec = juce::File("/usr/bin/pkexec");
+    if (!script.existsAsFile() || !pkexec.existsAsFile()) {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                                               tr("audio_settings.setup.title"),
+                                               tr("audio_settings.setup.unavailable"));
+        return;
+    }
+
+    // Root can't read an AppImage's FUSE mount, so pkexec runs a copy outside it.
+    const auto copy = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                          .getNonexistentChildFile("magda-realtime-setup", ".sh");
+    if (!script.copyFileTo(copy)) {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon, tr("audio_settings.setup.title"),
+            tr("audio_settings.setup.failed").replace("{0}", {}));
+        return;
+    }
+
+    noticeSetupButton_.setEnabled(false);
+    juce::Thread::launch([safe = juce::Component::SafePointer<AudioSettingsPage>(this), copy,
+                          pkexec] {
+        juce::ChildProcess process;
+        juce::String output;
+        auto exitCode = -1;
+        if (process.start(
+                {pkexec.getFullPathName(), "/bin/bash", copy.getFullPathName(), "--yes"})) {
+            output = process.readAllProcessOutput();
+            exitCode = static_cast<int>(process.getExitCode());
+        }
+        copy.deleteFile();
+
+        juce::MessageManager::callAsync([safe, output, exitCode] {
+            if (safe == nullptr)
+                return;
+            safe->noticeSetupButton_.setEnabled(true);
+            // pkexec: 126 when the password dialog was dismissed, 127 when not authorised.
+            if (exitCode == 126 || exitCode == 127)
+                return;
+            const auto done = exitCode == 0;
+            juce::AlertWindow::showMessageBoxAsync(
+                done ? juce::AlertWindow::InfoIcon : juce::AlertWindow::WarningIcon,
+                tr("audio_settings.setup.title"),
+                done ? tr("audio_settings.setup.done")
+                     : tr("audio_settings.setup.failed")
+                           .replace("{0}", output.trim().fromLastOccurrenceOf("\n", false, false)));
+        });
+    });
+}
+
 void AudioSettingsPage::showOpenInterface() {
+    showNotice();
     const auto status = audio_->status();
     if (const auto panel = audio_->hasControlPanel(); panel != controlPanelButton_.isVisible()) {
         controlPanelButton_.setVisible(panel);

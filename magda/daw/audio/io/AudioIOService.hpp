@@ -148,7 +148,13 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
         return callbackLoad_;
     }
 
+    /** @brief Where status() learns whether an audio thread was left time-shared (#3380). */
+    void setRealtimeRefusedProbe(std::function<bool()> probe) {
+        realtimeRefused_ = std::move(probe);
+    }
+
   private:
+    std::function<bool()> realtimeRefused_;
     Direction openDirection(bool inputs) const;
 
     /// What the open interface calls its channels. Asking it is a round trip per channel and every

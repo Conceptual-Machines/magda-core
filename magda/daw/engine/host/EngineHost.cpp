@@ -4788,6 +4788,10 @@ void EngineHost::getTimeSignature(int& numerator, int& denominator) const {
     denominator = impl_->denominator_;
 }
 
+bool EngineHost::realtimeRefused() const {
+    return engine::realtime::anyThreadRefused();
+}
+
 void EngineHost::setLoop(bool enabled, double startBeat, double endBeat) {
     const engine::LoopRange wanted{.enabled = enabled, .startBeat = startBeat, .endBeat = endBeat};
     if (impl_->loop_ == wanted)
