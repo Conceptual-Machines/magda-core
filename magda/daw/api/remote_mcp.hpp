@@ -154,6 +154,8 @@ inline constexpr const char* MAGDA_META_EXPECTED_REVISION =
     "com.conceptualmachines.magda/expectedRevision";
 inline constexpr const char* MAGDA_META_REVISION = "com.conceptualmachines.magda/revision";
 inline constexpr const char* MAGDA_META_REQUEST_ID = "com.conceptualmachines.magda/requestId";
+/// `"summary"` makes a write answer with its id and the new revision (#3376).
+inline constexpr const char* MAGDA_META_REPLY = "com.conceptualmachines.magda/reply";
 
 /**
  * @brief A JSON-RPC failure, plus the HTTP status a transport must answer with.

@@ -1735,6 +1735,47 @@ const juce::var& referenceImpactResultSchema() {
     return referenceImpactResultSchemaValue();
 }
 
+std::optional<ReplyShape> replyShapeFromJson(const juce::var& value) {
+    if (value.isString() && value.toString() == "full")
+        return ReplyShape::Full;
+    if (value.isString() && value.toString() == "summary")
+        return ReplyShape::Summary;
+    return std::nullopt;
+}
+
+juce::var summaryReply(const juce::var& result, Revision revision) {
+    auto summary = summaryIds(result);
+    summary.getDynamicObject()->setProperty("revision", static_cast<juce::int64>(revision));
+    return summary;
+}
+
+juce::var summaryIds(const juce::var& result) {
+    auto* summary = new juce::DynamicObject();
+    if (const auto& id = result["id"]; id.isInt() || id.isInt64() || id.isString())
+        summary->setProperty("id", id);
+    if (const auto* items = result.getArray()) {
+        juce::Array<juce::var> ids;
+        for (const auto& item : *items)
+            if (const auto& id = item["id"]; id.isInt() || id.isInt64() || id.isString())
+                ids.add(id);
+        summary->setProperty("ids", ids);
+    }
+    return summary;
+}
+
+const juce::var& summaryReplySchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "revision":{"type":"integer","minimum":0},
+            "id":{"anyOf":[{"type":"integer"},{"type":"string"}]},
+            "ids":{"type":"array","items":{"anyOf":[{"type":"integer"},{"type":"string"}]}}
+        },
+        "required":["revision"],"additionalProperties":false
+    })json");
+    return value;
+}
+
 // Shared by device listings, automation targets, and operation handlers: all
 // three address a device the same way, and must not drift apart. Defined
 // outside the anonymous namespace above so handlers in another translation
@@ -4757,6 +4798,45 @@ OperationRegistry::OperationRegistry() {
         })json"),
         okResult);
 
+    add("batch.apply",
+        "Apply up to 256 content edits as one undo step, or none if any fails; a step may use "
+        "an earlier step's id as {\"$ref\":\"N.id\"}",
+        OperationAccess::Write, &handlers::batchApply, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "steps":{"type":"array","minItems":1,"maxItems":256,"items":{
+                    "type":"object",
+                    "properties":{"method":{"type":"string"},"params":{"type":"object"}},
+                    "required":["method","params"],"additionalProperties":false
+                }}
+            },
+            "required":["steps"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "revision":{"type":"integer","minimum":0},
+                "results":{"type":"array","items":{
+                    "type":"object",
+                    "properties":{
+                        "id":{"anyOf":[{"type":"integer"},{"type":"string"}]},
+                        "ids":{"type":"array","items":{"anyOf":[{"type":"integer"},{"type":"string"}]}}
+                    },
+                    "additionalProperties":false
+                }}
+            },
+            "required":["revision","results"],"additionalProperties":false
+        })json"));
+    {
+        juce::Array<juce::var> methods;
+        for (const auto& name : batchStepOperations())
+            methods.add(name);
+        operations_.back()
+            .inputSchema["properties"]["steps"]["items"]["properties"]["method"]
+            .getDynamicObject()
+            ->setProperty("enum", methods);
+    }
+
     // -----------------------------------------------------------------------
     // Subscriptions (#1857)
     //
@@ -4952,6 +5032,7 @@ OperationRegistry::OperationRegistry() {
         // (#1860); these are the operations it was declared for.
         {"midi.send", Scope::HardwareMidi},
         {"midi.sendSysEx", Scope::HardwareMidi},
+        {"batch.apply", Scope::Edit},
     };
 
     for (const auto& [name, scope] : kWriteScopes) {

@@ -52,7 +52,9 @@ constexpr const char* kInstructions =
     "to the open project and is undoable as a single step. Reads are cheap; prefer a resource "
     "read over a tool call when you only need current state. Pass "
     "com.conceptualmachines.magda/expectedRevision in a request's _meta to make a write "
-    "conditional on the project not having changed since the revision you last saw.";
+    "conditional on the project not having changed since the revision you last saw. Pass "
+    "com.conceptualmachines.magda/reply: \"summary\" in _meta to have a write answer with the "
+    "changed object's id and the new revision instead of the whole object.";
 
 juce::var makeObject() {
     return {new juce::DynamicObject()};
@@ -89,6 +91,14 @@ juce::var wrappedArraySchema(const juce::var& arraySchema) {
     setProperty(schema, "properties", properties);
     setProperty(schema, "required", required);
     setProperty(schema, "additionalProperties", false);
+    return schema;
+}
+
+/// A write's output, or the summary a `reply: "summary"` request gets instead (#3376).
+juce::var orSummarySchema(const juce::var& output) {
+    auto schema = makeObject();
+    setProperty(schema, "type", "object");
+    setProperty(schema, "anyOf", juce::Array<juce::var>{output, summaryReplySchema()});
     return schema;
 }
 
@@ -313,9 +323,10 @@ McpEndpoint::McpEndpoint(RemoteApiService& service, Options options, Subscriptio
         // the second time — `tools/list` succeeded and every list *call* then
         // failed. Declaring the wrapper keeps the data, keeps it validated, and
         // keeps one shape across all four list operations.
+        const auto output = hasArrayOutput(operation) ? wrappedArraySchema(operation.outputSchema)
+                                                      : operation.outputSchema;
         setProperty(tool, "outputSchema",
-                    hasArrayOutput(operation) ? wrappedArraySchema(operation.outputSchema)
-                                              : operation.outputSchema);
+                    operation.access == OperationAccess::Write ? orSummarySchema(output) : output);
 
         // Only hints that are facts about the operation. `destructiveHint` and
         // `idempotentHint` would each be a guess per operation, and the
@@ -920,6 +931,18 @@ std::optional<RequestContext> McpEndpoint::requestContext(const Call& call, McpE
             return std::nullopt;
         }
         context.expectedRevision = static_cast<Revision>(*revision);
+    }
+
+    if (const auto& reply = meta[MAGDA_META_REPLY]; !reply.isVoid()) {
+        const auto shape = replyShapeFromJson(reply);
+        if (!shape) {
+            error = McpError{MCP_INVALID_PARAMS,
+                             juce::String(MAGDA_META_REPLY) + " must be \"full\" or \"summary\"",
+                             {},
+                             200};
+            return std::nullopt;
+        }
+        context.reply = *shape;
     }
 
     // Idempotency is opt-in, and the key is the client's to make unique.

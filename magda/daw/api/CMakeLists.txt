@@ -19,6 +19,7 @@ target_sources(magda_daw PRIVATE
     osc_feedback_live.cpp
     remote_api.cpp
     remote_api_projection.cpp
+    remote_batch.cpp
     remote_handlers.cpp
     remote_parameter_handlers.cpp
     remote_scopes.cpp

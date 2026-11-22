@@ -49,6 +49,8 @@ class SubscriptionHub;
  * clients that do not send one simply get the defaults.
  * JSON-RPC `id` is only a response-correlation id and may be reused; retries
  * are deduplicated only when `meta.idempotencyKey` is explicitly supplied.
+ * `meta.reply: "summary"` makes a write answer with its id and the new revision
+ * instead of the whole object (#3376).
  *
  * A reply mirrors that shape: `result` is the operation's output verbatim, and
  * `meta` beside it carries `revision` and `apiVersion`. Meta cannot live inside

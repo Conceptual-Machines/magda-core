@@ -157,6 +157,10 @@ class UndoManager {
      */
     void endCompoundOperation();
 
+    /// Undo and discard every command the open compound has collected, newest
+    /// first. The compound stays open, so its end records nothing.
+    void rollbackCompoundOperation();
+
     /**
      * Check if currently in a compound operation.
      */

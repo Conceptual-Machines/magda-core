@@ -30,3 +30,43 @@ results; and prove full rollback, one undo step, one revision, and correct
 change-topic publication. It must exclude lifecycle, transport, session
 performance, hardware, and asynchronous jobs. No public begin/end transaction
 calls should be exposed.
+
+## Reopened: `batch.apply` (#3377, 2026-11-21)
+
+**Workflow.** An agent building a project's content over MCP: tracks, a MIDI
+clip with notes on each, mixer levels and a loop. The content varies freely, so
+a purpose-built "build a project" operation would have to accept everything the
+individual writes already do. Before this it took about 35 calls and as many
+undo steps, and a failure halfway left a half-built project.
+
+**Rollback boundary.** Model edits only. Devices are added with their own calls
+first, then one batch carries everything else.
+
+**Allowlist.** `tracks.create`, `tracks.update`, `clips.createMidi`,
+`clips.addMidiEvents`, `clips.replaceMidiEvents`, `clips.updateMidiEvents`,
+`clips.deleteMidiEvents`, `clips.update`, `clips.duplicate`, `clips.transpose`,
+`clips.move`, `clips.resize`, `sends.create`, `sends.update`,
+`project.setLoopRange`. Each records its changes as undo commands, which is what
+lets a failed batch roll back.
+
+Left out although #3377 proposed them: `project.setTempo`,
+`project.setTimeSignature`, `devices.setParameter` and `devices.setParameters`.
+None of them records an undo command today, so a batch could not take them back.
+They can join once they do.
+
+**Contract.**
+
+- Every step's method, permission and schema is checked first, as if sent
+  alone, and nothing runs if one fails. The error names the step.
+- A step may use an earlier step's field as `{"$ref": "N.id"}`. Validation
+  checks that `N` is earlier and that its output declares the field; the value
+  itself is resolved while applying.
+- At most 256 steps and 16,384 MIDI events in total, inside the transport's
+  request size limit. No nesting.
+- One outer `expectedRevision` and `requestId`; steps carry neither.
+- The reply is `{"revision": N, "results": [...]}`, one entry per step in
+  order, each with the step's `id` or `ids` as in the #3376 summary form.
+- One undo step and one revision. Each change topic the steps touch is
+  published once, after commit. A failure while applying undoes every command
+  the batch recorded, with no revision and no publication.
+- No public begin/end transaction calls.

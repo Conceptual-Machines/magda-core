@@ -241,8 +241,11 @@ class RemoteApiService {
         Revision revisionAtRetirement = INITIAL_REVISION;
     };
 
+    /// Runs @p operation and shapes its reply as the request asked.
     Response execute(const OperationDescriptor& operation, const juce::var& input,
                      const RequestContext& context);
+    Response executeFull(const OperationDescriptor& operation, const juce::var& input,
+                         const RequestContext& context);
 
     /**
      * @brief One audit line for a completed dispatch.
