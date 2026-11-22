@@ -19,6 +19,9 @@ updates:
       # math imports). A Dependabot bump would move the pointer to an upstream
       # commit that lacks them and the build would stop configuring.
       - dependency-name: "third_party/faust"
+      # whisper.cpp builds against llama.cpp's ggml, so it moves by hand with llama.cpp:
+      # pin the whisper.cpp "sync : ggml" commit whose ggml/include matches.
+      - dependency-name: "third_party/whisper.cpp"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"

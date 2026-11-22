@@ -55,6 +55,7 @@
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "../../themes/ThemePrompt.hpp"
+#include "../state/PanelController.hpp"
 #include "BinaryData.h"
 #include "PluginBrowserContent.hpp"
 #include "audio/plugins/DrumGridRoles.hpp"
@@ -65,6 +66,9 @@
 namespace magda::daw::ui {
 
 namespace {
+/// The console last shown, for the mic command.
+AIChatConsoleContent* shownConsole = nullptr;
+
 // Forward declaration so RequestThread::run can call the formatter — the
 // definition lives further down in the file's other anon-namespace block,
 // next to isDrummerTrack().
@@ -1027,6 +1031,16 @@ AIChatConsoleContent::AIChatConsoleContent() {
     };
     addAndMakeVisible(copyButton_);
 
+    micButton_ =
+        std::make_unique<magda::SvgButton>("Mic", BinaryData::mic_svg, BinaryData::mic_svgSize);
+    micButton_->setTooltip("Hold to talk");
+    micButton_->setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    micButton_->setWantsKeyboardFocus(false);  // a transcript lands at the input's caret
+    micButton_->onStateChange = [this] { micStateChanged(); };
+    addAndMakeVisible(*micButton_);
+    voiceInput_.onStatus = [this](const juce::String& text) { showVoiceStatus(text); };
+    voiceInput_.onTranscript = [this](const juce::String& text) { handleTranscript(text); };
+
     // Config status bar
     configStatusLabel_.setFont(FontManager::getInstance().getMonoFont(10.0f));
     configStatusLabel_.setColour(juce::Label::textColourId,
@@ -1129,6 +1143,8 @@ AIChatConsoleContent::AIChatConsoleContent() {
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
+    if (shownConsole == this)
+        shownConsole = nullptr;
     magda::MixAnalysisService::getInstance().removeListener(this);
     magda::ViewModeController::getInstance().removeListener(this);
     if (inputBox_) {
@@ -1319,6 +1335,94 @@ void AIChatConsoleContent::updateSendState() {
     repaint(sendButton_.getBounds());
 }
 
+void AIChatConsoleContent::micStateChanged() {
+    const bool down = micButton_->isDown();
+    if (down == micHeld_)
+        return;
+    micHeld_ = down;
+
+    if (down) {
+        if (!processing_)
+            voiceInput_.press();
+    } else {
+        voiceInput_.release(voicePrompt());
+    }
+    micButton_->setActive(voiceInput_.isRecording());
+}
+
+void AIChatConsoleContent::showVoiceStatus(const juce::String& text) {
+    voiceStatus_ = text;
+    micButton_->setActive(voiceInput_.isRecording());
+    repaint(hintsBounds_);
+
+    // A note left once nothing is in progress clears itself.
+    if (text.isNotEmpty() && !voiceInput_.isBusy()) {
+        juce::Timer::callAfterDelay(
+            4000, [safe = juce::Component::SafePointer<AIChatConsoleContent>(this), text] {
+                if (safe != nullptr && safe->voiceStatus_ == text)
+                    safe->showVoiceStatus({});
+            });
+    }
+}
+
+void AIChatConsoleContent::handleTranscript(const juce::String& text) {
+    const auto draft = inputDocument_.getAllContent();
+    if (draft.trim().isEmpty() && !processing_) {
+        sendMessage(text);
+        return;
+    }
+    inputBox_->insertTextAtCaret(draft.isEmpty() || draft.endsWithChar(' ') ? text : " " + text);
+}
+
+void AIChatConsoleContent::voiceInput(magda::voice::Action action) {
+    using Action = magda::voice::Action;
+
+    // Tab switches build and activate their content synchronously, setting shownConsole.
+    if (action != Action::release) {
+        auto& panels = PanelController::getInstance();
+        for (const auto location :
+             {PanelLocation::Right, PanelLocation::Left, PanelLocation::Bottom}) {
+            if (panels.getPanelState(location).getTabIndex(PanelContentType::AIChatConsole) < 0)
+                continue;
+            panels.setCollapsed(location, false);
+            panels.setActiveTabByType(location, PanelContentType::AIChatConsole);
+            break;
+        }
+    }
+
+    auto* console = shownConsole;
+    if (console == nullptr || console->micHeld_)
+        return;
+    auto& mic = console->voiceInput_;
+    const bool canStart = !console->processing_;
+    switch (action) {
+        case Action::press:
+            if (canStart)
+                mic.press();
+            break;
+        case Action::release:
+            mic.release(voicePrompt());
+            break;
+        case Action::toggle:
+            if (mic.isRecording() || canStart)
+                mic.toggle(voicePrompt());
+            break;
+    }
+    console->micButton_->setActive(mic.isRecording());
+}
+
+juce::String AIChatConsoleContent::voicePrompt() {
+    // Whisper keeps at most 224 prompt tokens.
+    constexpr int kMaxNames = 40;
+    juce::StringArray names;
+    for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
+        if (names.size() == kMaxNames)
+            break;
+        names.addIfNotAlreadyThere(track.name);
+    }
+    return "Commands for the MAGDA DAW. Tracks: " + names.joinIntoString(", ") + ".";
+}
+
 void AIChatConsoleContent::setThemedButtonIcon(juce::DrawableButton& button, const void* svgData,
                                                std::size_t svgDataSize) {
     auto icon = juce::Drawable::createFromImageData(svgData, svgDataSize);
@@ -1475,6 +1579,11 @@ void AIChatConsoleContent::paintKeyHints(juce::Graphics& g) const {
         return;
     const auto font = FontManager::getInstance().getMonoFont(10.5f);
     g.setFont(font);
+    if (voiceStatus_.isNotEmpty()) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        g.drawFittedText(voiceStatus_, hintsBounds_, juce::Justification::centredRight, 1);
+        return;
+    }
     const auto shift = juce::String::fromUTF8("\xe2\x87\xa7");
     const auto enter = juce::String::fromUTF8("\xe2\x86\xb5");
     std::vector<std::pair<juce::String, juce::String>> hints = {
@@ -1559,6 +1668,8 @@ void AIChatConsoleContent::resized() {
     inputBox_->setBounds(composerBounds_.reduced(8, 8).withTrimmedLeft(4));
 
     sendButton_.setBounds(controls.removeFromRight(28));
+    controls.removeFromRight(4);
+    micButton_->setBounds(controls.removeFromRight(28).reduced(4));
     controls.removeFromRight(8);
     if (analysisChip_.isVisible()) {
         // Leaves the context chip its 60px minimum on a narrow console (#3117).
@@ -1580,9 +1691,11 @@ void AIChatConsoleContent::resized() {
 }
 
 void AIChatConsoleContent::onActivated() {
+    shownConsole = this;
     buildAliasList();
     updateConfigStatus();
     updateAnalysisChip();
+    voiceInput_.preload();
     if (isShowing())
         inputBox_->grabKeyboardFocus();
 }

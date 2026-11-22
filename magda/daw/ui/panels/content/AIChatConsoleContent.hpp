@@ -25,11 +25,13 @@
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/TrackMeasurementManager.hpp"
 #include "../../../core/ViewModeController.hpp"
+#include "../../../core/VoiceControl.hpp"
 #include "../../../project/ProjectManager.hpp"
 #include "../../code/ChatPromptTokeniser.hpp"
 #include "ConsoleTranscript.hpp"
 #include "PanelContent.hpp"
 #include "SlashCommands.hpp"
+#include "VoiceInput.hpp"
 
 namespace magda {
 namespace agent {
@@ -82,6 +84,9 @@ class AIChatConsoleContent : public PanelContent,
 
     void onActivated() override;
     void onDeactivated() override;
+
+    /** @brief The mic for a shortcut or a controller script: show the console, then act. */
+    static void voiceInput(magda::voice::Action action);
 
     // ProjectManagerListener
     void projectOpened(const magda::ProjectInfo& info) override;
@@ -187,6 +192,17 @@ class AIChatConsoleContent : public PanelContent,
     juce::DrawableButton sendButton_{"send", juce::DrawableButton::ImageFitted};
     juce::DrawableButton clearButton_{"clear", juce::DrawableButton::ImageFitted};
     juce::DrawableButton copyButton_{"copy", juce::DrawableButton::ImageFitted};
+
+    // Hold to talk: the transcript is sent, or typed into a draft already in the box.
+    std::unique_ptr<magda::SvgButton> micButton_;
+    VoiceInput voiceInput_;
+    bool micHeld_ = false;
+    juce::String voiceStatus_;  ///< Shown in place of the key hints while not empty.
+    void micStateChanged();
+    void showVoiceStatus(const juce::String& text);
+    void handleTranscript(const juce::String& text);
+    static juce::String voicePrompt();
+
     // Painted chrome placed by resized().
     juce::Rectangle<int> headerBounds_;
     juce::Rectangle<int> modelChipBounds_;

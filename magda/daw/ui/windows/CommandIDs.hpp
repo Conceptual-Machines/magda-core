@@ -105,6 +105,12 @@ enum {
     // Settings menu
     openPreferences = 0x6000,    // Cmd/Ctrl+, (#3019)
     openAudioSettings = 0x6001,  // no default: there is no convention to follow
+
+    // AI
+    // The console's mic. No default keys; the split pair is for a talk button's press/release.
+    toggleVoiceInput = 0x7000,
+    startVoiceInput = 0x7001,
+    stopVoiceInput = 0x7002,
 };
 
 }  // namespace magda::CommandIDs

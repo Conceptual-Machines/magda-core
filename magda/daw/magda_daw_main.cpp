@@ -49,6 +49,7 @@
 #include "project/ProjectManager.hpp"
 #include "scripting_app.hpp"
 #include "ui/dialogs/SplashScreen.hpp"
+#include "ui/panels/content/SpeechModel.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/MainLookAndFeel.hpp"
@@ -621,6 +622,7 @@ class MagdaDAWApplication : public JUCEApplication {
 
         DBG("[3a] Destroying MainWindow...");
         mainWindow_.reset();
+        magda::daw::ui::SpeechModel::getInstance().shutdown();
 
         // Tear down the Lua controller before the engine — its dtor
         // unregisters from MidiBridge::removeRawMidiListener.

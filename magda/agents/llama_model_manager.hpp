@@ -55,6 +55,9 @@ class LlamaModelManager {
 
     InferenceResult infer(const InferenceRequest& req, const TokenCallback& onToken = nullptr);
 
+    /** @brief Why this CPU cannot run ggml's baseline build, or empty when it can. */
+    static std::string currentCpuCompatibilityError();
+
   private:
 #ifdef MAGDA_ENABLE_TEST_HOOKS
     friend struct LlamaModelManagerTestAccess;
@@ -64,7 +67,6 @@ class LlamaModelManager {
     ~LlamaModelManager();
 
     static std::string cpuCompatibilityError(bool isIntel, bool hasSSE42, bool hasAVX);
-    static std::string currentCpuCompatibilityError();
     std::string applyTemplate(const std::string& systemPrompt, const std::string& userMessage);
 
     mutable std::mutex mutex_;

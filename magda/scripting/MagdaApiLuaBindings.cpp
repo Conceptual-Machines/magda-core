@@ -22,6 +22,7 @@
 #include "magda/daw/core/TrackInfo.hpp"
 #include "magda/daw/core/TrackTypes.hpp"
 #include "magda/daw/core/TypeIds.hpp"
+#include "magda/daw/core/VoiceControl.hpp"
 #include "magda/daw/project/ProjectInfo.hpp"
 #include "version.hpp"
 
@@ -713,6 +714,23 @@ int lua_app_version(lua_State* L) {
     return 1;
 }
 
+// ---- voice -----------------------------------------------------------------
+
+int lua_voice_press(lua_State*) {
+    voice::trigger(voice::Action::press);
+    return 0;
+}
+
+int lua_voice_release(lua_State*) {
+    voice::trigger(voice::Action::release);
+    return 0;
+}
+
+int lua_voice_toggle(lua_State*) {
+    voice::trigger(voice::Action::toggle);
+    return 0;
+}
+
 // ---- midi ------------------------------------------------------------------
 
 // Read a 1-indexed Lua array of byte values into a vector. luaL_error on
@@ -1056,6 +1074,13 @@ const FnReg kAppFns[] = {
     {nullptr, nullptr},
 };
 
+const FnReg kVoiceFns[] = {
+    {"press", lua_voice_press},
+    {"release", lua_voice_release},
+    {"toggle", lua_voice_toggle},
+    {nullptr, nullptr},
+};
+
 const FnReg kMidiFns[] = {
     {"send", lua_midi_send},
     {"send_cc", lua_midi_send_cc},
@@ -1122,6 +1147,7 @@ void registerMagdaApi(lua_State* L, MagdaApi& api) {
     installSubtable(L, "midi", kMidiFns);
     installSubtable(L, "transport", kTransportFns);
     installSubtable(L, "focused", kFocusedFns);
+    installSubtable(L, "voice", kVoiceFns);
     lua_setglobal(L, "magda");
 }
 

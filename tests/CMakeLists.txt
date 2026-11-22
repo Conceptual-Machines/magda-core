@@ -233,6 +233,10 @@ set(TEST_SOURCES
     # The input levels behind the input menu's meters
     ui/test_hardware_input_levels.cpp
     ../magda/daw/ui/components/mixer/HardwareInputLevels.cpp
+    # The console's mic and the audio it hands whisper
+    ui/test_voice_input.cpp
+    ../magda/daw/ui/panels/content/VoiceInput.cpp
+    ../magda/daw/ui/panels/content/SpeechModel.cpp
     # Panel tab layout survives a restart (#2103). The panel sources live in
     # magda_daw_app rather than the magda_daw library, so pull them in directly.
     ui/test_panel_tab_persistence.cpp

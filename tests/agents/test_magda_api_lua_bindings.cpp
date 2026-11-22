@@ -4,9 +4,11 @@
 #include <juce_core/juce_core.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <vector>
 
 #include "MockMagdaApi.hpp"
 #include "magda/daw/core/SessionViewState.hpp"
+#include "magda/daw/core/VoiceControl.hpp"
 #include "magda/scripting/LuaRuntime.hpp"
 #include "magda/scripting/MagdaApiLuaBindings.hpp"
 
@@ -426,6 +428,32 @@ TEST_CASE("magda.app.version returns application version", "[lua_bindings][app]"
     auto version = rt.evalToString("magda.app.version()");
     REQUIRE(version.has_value());
     REQUIRE(version->isNotEmpty());
+}
+
+// ---- voice -----------------------------------------------------------------
+
+TEST_CASE("magda.voice functions reach the mic's handler", "[lua_bindings][voice]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    std::vector<magda::voice::Action> actions;
+    magda::voice::setHandler(
+        [&actions](magda::voice::Action action) { actions.push_back(action); });
+
+    REQUIRE(rt.eval("magda.voice.press(); magda.voice.release(); magda.voice.toggle()"));
+    magda::voice::setHandler({});
+
+    using magda::voice::Action;
+    REQUIRE(actions == std::vector<Action>{Action::press, Action::release, Action::toggle});
+}
+
+TEST_CASE("magda.voice is a no-op with no mic to drive", "[lua_bindings][voice]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    REQUIRE(rt.eval("magda.voice.toggle()"));
 }
 
 // ---- midi ------------------------------------------------------------------

@@ -47,6 +47,7 @@ class AISettingsPages {
     class BeatTrackerPage;
     class StemSeparationPage;
     class CommandModelPage;
+    class SpeechModelPage;
     class ModelDownloadsPage;
 
     std::unique_ptr<CloudPage> cloudPage_;
@@ -56,6 +57,7 @@ class AISettingsPages {
     std::unique_ptr<BeatTrackerPage> beatTrackerPage_;
     std::unique_ptr<StemSeparationPage> stemsPage_;
     std::unique_ptr<CommandModelPage> commandModelPage_;
+    std::unique_ptr<SpeechModelPage> speechPage_;
     std::unique_ptr<ModelDownloadsPage> modelDownloadsPage_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AISettingsPages)

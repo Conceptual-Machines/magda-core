@@ -44,6 +44,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/fonts/NotoSansCJKsc-Regular.otf
     # General UI icons
     ../../assets/icons/general/enter.svg
+    ../../assets/icons/general/mic.svg
     ../../assets/icons/general/track.svg
     ../../assets/icons/general/clip.svg
     ../../assets/icons/general/copy.svg

@@ -28,6 +28,7 @@
 #include "../panels/PanelFocusTracker.hpp"
 #include "../panels/RightPanel.hpp"
 #include "../panels/TransportPanel.hpp"
+#include "../panels/content/AIChatConsoleContent.hpp"
 #include "../state/KeyMappingStore.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
@@ -60,6 +61,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "core/UserAlert.hpp"
+#include "core/VoiceControl.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/PlaybackPositionTimer.hpp"
 #include "extensions/Extension.hpp"
@@ -666,6 +668,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     daw::audio::engine_adapter::EngineExternalDevice::setApplicationCommands(&commandManager, this);
     // MAGDA's own floating windows route unconsumed keys the same way.
     setAppShortcuts(&commandManager, this);
+    voice::setHandler(&daw::ui::AIChatConsoleContent::voiceInput);
     setFloatingWindowOwner(this);
     daw::audio::engine_adapter::EngineExternalDevice::setFloatingWindowHooks(&floatOverMainWindow,
                                                                              &releaseToMainWindow);
@@ -1534,6 +1537,7 @@ MainWindow::MainComponent::~MainComponent() {
     // Stop plugin editor windows referencing this command manager once it's gone.
     daw::audio::engine_adapter::EngineExternalDevice::setApplicationCommands(nullptr, nullptr);
     setAppShortcuts(nullptr, nullptr);
+    voice::setHandler({});
     daw::audio::engine_adapter::EngineExternalDevice::setFloatingWindowHooks(nullptr, nullptr);
     setFloatingWindowOwner(nullptr);
 

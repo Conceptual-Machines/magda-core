@@ -15,6 +15,7 @@
 #include "../../../../agents/llm_presets.hpp"
 #include "../../../../agents/model_downloader.hpp"
 #include "../../../../agents/openai_url.hpp"
+#include "../../../../agents/speech_transcriber.hpp"
 #include "../../../core/AppPaths.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/StringTable.hpp"
@@ -22,6 +23,7 @@
 #include "../../../media_db/MediaModelDownloader.hpp"
 #include "../../../stem_separation/DemucsSeparator.hpp"
 #include "../../../stem_separation/StemModelDownloader.hpp"
+#include "../../panels/content/SpeechModel.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/DialogLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
@@ -2710,6 +2712,139 @@ class AISettingsPages::CommandModelPage : public juce::Component {
 };
 
 // ============================================================================
+// SpeechModelPage — the AI console mic's speech-to-text model
+// ============================================================================
+
+class AISettingsPages::SpeechModelPage : public juce::Component, private juce::ChangeListener {
+  public:
+    SpeechModelPage() {
+        blurbLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        blurbLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+        blurbLabel_.setJustificationType(juce::Justification::topLeft);
+        blurbLabel_.setText(
+            "The AI console's mic turns what you say into a request with this model. The audio "
+            "stays on this computer; only the text goes to the assistant. Loaded ahead of time, "
+            "the first request is as quick as the rest.",
+            juce::dontSendNotification);
+        addAndMakeVisible(blurbLabel_);
+
+        nameLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+        addAndMakeVisible(nameLabel_);
+
+        const auto url = SpeechTranscriber::modelUrl();
+        sourceLink_ =
+            std::make_unique<juce::HyperlinkButton>(url.replace("https://", ""), juce::URL(url));
+        sourceLink_->setFont(FontManager::getInstance().getUIFont(11.0f), false,
+                             juce::Justification::centredLeft);
+        sourceLink_->setColour(juce::HyperlinkButton::textColourId,
+                               ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        addAndMakeVisible(*sourceLink_);
+
+        progressBar_.setColour(juce::ProgressBar::backgroundColourId,
+                               ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
+        progressBar_.setColour(juce::ProgressBar::foregroundColourId,
+                               ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        progressBar_.setPercentageDisplay(false);
+        addAndMakeVisible(progressBar_);
+
+        actionButton_.onClick = [] {
+            auto& model = daw::ui::SpeechModel::getInstance();
+            if (model.isDownloading())
+                model.cancelDownload();
+            else if (model.isDownloaded())
+                model.remove();
+            else
+                model.download();
+        };
+        addAndMakeVisible(actionButton_);
+
+        loadButton_.onClick = [] {
+            auto& model = daw::ui::SpeechModel::getInstance();
+            if (model.isLoaded())
+                model.unload();
+            else
+                model.load();
+        };
+        addAndMakeVisible(loadButton_);
+
+        daw::ui::SpeechModel::getInstance().addChangeListener(this);
+        refreshStatus();
+    }
+
+    ~SpeechModelPage() override {
+        daw::ui::SpeechModel::getInstance().removeChangeListener(this);
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(12);
+        blurbLabel_.setBounds(bounds.removeFromTop(56));
+        bounds.removeFromTop(8);
+        nameLabel_.setBounds(bounds.removeFromTop(30));
+        sourceLink_->setBounds(bounds.removeFromTop(16));
+        bounds.removeFromTop(4);
+        progressBar_.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(6);
+        auto row = bounds.removeFromTop(26);
+        actionButton_.setBounds(row.removeFromLeft(200));
+        row.removeFromLeft(8);
+        loadButton_.setBounds(row.removeFromLeft(120));
+    }
+
+    void load(const magda::Config&) {
+        refreshStatus();
+    }
+    // Download, load and remove act immediately; nothing batches up for OK.
+    void apply(magda::Config&) const {}
+
+  private:
+    void changeListenerCallback(juce::ChangeBroadcaster*) override {
+        refreshStatus();
+    }
+
+    void refreshStatus() {
+        const auto& model = daw::ui::SpeechModel::getInstance();
+        const bool downloading = model.isDownloading();
+        const bool downloaded = model.isDownloaded();
+        const bool busy = model.isBusy();
+        const bool loaded = model.isLoaded();
+
+        juce::String state;
+        if (downloading)
+            state = "Downloading.";
+        else if (busy)
+            state = model.isLoading() ? "Loading..." : "Unloading...";
+        else if (model.lastError().isNotEmpty())
+            state = model.lastError();
+        else if (!downloaded)
+            state = "Not installed. The mic downloads it the first time it is used.";
+        else
+            state = loaded ? "Loaded." : "Installed, not loaded. Opening the console loads it.";
+        nameLabel_.setText("Whisper small (English) - " + state, juce::dontSendNotification);
+
+        progressValue_ = model.downloadProgress();
+        progressBar_.setVisible(downloading);
+
+        const auto sizeMb = juce::String(SpeechTranscriber::kModelBytes / (1024 * 1024));
+        actionButton_.setButtonText(downloading  ? "Cancel"
+                                    : downloaded ? "Remove"
+                                                 : "Download (" + sizeMb + " MB)");
+        actionButton_.setEnabled(!busy);
+        loadButton_.setButtonText(loaded ? "Unload" : "Load");
+        loadButton_.setEnabled(downloaded && !downloading && !busy);
+    }
+
+    juce::Label blurbLabel_;
+    juce::Label nameLabel_;
+    std::unique_ptr<juce::HyperlinkButton> sourceLink_;
+    // ProgressBar holds a reference to the value; declare the value first.
+    double progressValue_ = 0.0;
+    juce::ProgressBar progressBar_{progressValue_};
+    juce::TextButton actionButton_;
+    juce::TextButton loadButton_;
+};
+
+// ============================================================================
 // ModelDownloadsPage — one place for every optional downloadable model.
 //
 // The category selector keeps the individual model workflows compact while
@@ -2720,12 +2855,13 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
   public:
     ModelDownloadsPage(LocalPage& localPage, SampleTaggerPage* samplePage,
                        BeatTrackerPage* beatPage, StemSeparationPage* stemsPage,
-                       CommandModelPage* commandPage)
+                       CommandModelPage* commandPage, SpeechModelPage* speechPage)
         : localPage_(localPage),
           samplePage_(samplePage),
           beatPage_(beatPage),
           stemsPage_(stemsPage),
-          commandPage_(commandPage) {
+          commandPage_(commandPage),
+          speechPage_(speechPage) {
         modelHeader_.setText("Model", juce::dontSendNotification);
         daw::ui::SettingsLookAndFeel::markSectionHeader(modelHeader_);
         addAndMakeVisible(modelHeader_);
@@ -2743,6 +2879,8 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
             categoryCombo_.addItem("Stem separation", kStems);
         if (commandPage_ != nullptr)
             categoryCombo_.addItem("Command model", kCommandModel);
+        if (speechPage_ != nullptr)
+            categoryCombo_.addItem("Speech to text", kSpeech);
         categoryCombo_.setSelectedId(kLocal, juce::dontSendNotification);
         categoryCombo_.onChange = [this]() { updateVisiblePage(); };
         styleCombo(categoryCombo_);
@@ -2757,6 +2895,8 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
             addAndMakeVisible(*stemsPage_);
         if (commandPage_ != nullptr)
             addAndMakeVisible(*commandPage_);
+        if (speechPage_ != nullptr)
+            addAndMakeVisible(*speechPage_);
         updateVisiblePage();
     }
 
@@ -2781,6 +2921,8 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
             stemsPage_->setBounds(bounds);
         if (commandPage_ != nullptr)
             commandPage_->setBounds(bounds);
+        if (speechPage_ != nullptr)
+            speechPage_->setBounds(bounds);
     }
 
     // Preserve existing callers that deep-link to the former download tabs.
@@ -2801,7 +2943,7 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
     }
 
   private:
-    enum Category { kLocal = 1, kSampleAnalyzer, kBeatTracker, kStems, kCommandModel };
+    enum Category { kLocal = 1, kSampleAnalyzer, kBeatTracker, kStems, kCommandModel, kSpeech };
 
     void updateVisiblePage() {
         const int category = categoryCombo_.getSelectedId();
@@ -2814,6 +2956,8 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
             stemsPage_->setVisible(category == kStems);
         if (commandPage_ != nullptr)
             commandPage_->setVisible(category == kCommandModel);
+        if (speechPage_ != nullptr)
+            speechPage_->setVisible(category == kSpeech);
         resized();
     }
 
@@ -2829,6 +2973,7 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
     BeatTrackerPage* beatPage_;
     StemSeparationPage* stemsPage_;
     CommandModelPage* commandPage_;
+    SpeechModelPage* speechPage_;
     juce::Label categoryLabel_;
     juce::ComboBox categoryCombo_;
 };
@@ -2853,9 +2998,11 @@ AISettingsPages::AISettingsPages() {
     if constexpr (magda::media::clapBackendAvailable()) {
         commandModelPage_ = std::make_unique<CommandModelPage>();
     }
-    modelDownloadsPage_ =
-        std::make_unique<ModelDownloadsPage>(*localPage_, samplePage_.get(), beatTrackerPage_.get(),
-                                             stemsPage_.get(), commandModelPage_.get());
+    if (SpeechTranscriber::isAvailable())
+        speechPage_ = std::make_unique<SpeechModelPage>();
+    modelDownloadsPage_ = std::make_unique<ModelDownloadsPage>(
+        *localPage_, samplePage_.get(), beatTrackerPage_.get(), stemsPage_.get(),
+        commandModelPage_.get(), speechPage_.get());
 
     configPage_->cloudPage = cloudPage_.get();
     configPage_->localPage = localPage_.get();
@@ -2905,6 +3052,8 @@ void AISettingsPages::load(Config& config) {
         stemsPage_->load(config);
     if (commandModelPage_)
         commandModelPage_->load(config);
+    if (speechPage_)
+        speechPage_->load(config);
 }
 
 void AISettingsPages::apply(Config& config) {

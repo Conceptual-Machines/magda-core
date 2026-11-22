@@ -34,6 +34,7 @@
 #include "core/LinkModeManager.hpp"
 #include "core/TempoAutomationCommands.hpp"
 #include "core/ViewModeController.hpp"
+#include "core/VoiceControl.hpp"
 #include "engine/AudioEngine.hpp"
 #include "project/ProjectManager.hpp"
 
@@ -186,7 +187,9 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         // Help
         about,
         // Settings
-        openPreferences, openAudioSettings};
+        openPreferences, openAudioSettings,
+        // AI
+        toggleVoiceInput, startVoiceInput, stopVoiceInput};
 
     commands.addArray(allCommands, juce::numElementsInArray(allCommands));
 }
@@ -644,6 +647,19 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case openAudioSettings:
             result.setInfo("Audio/MIDI Settings", "Open the audio and MIDI device settings",
                            "Settings", 0);
+            break;
+
+        case toggleVoiceInput:
+            result.setInfo("Voice Input",
+                           "Start listening in the AI console, or stop and send what was said",
+                           "AI", 0);
+            break;
+        case startVoiceInput:
+            result.setInfo("Start Listening", "Start listening in the AI console", "AI", 0);
+            break;
+        case stopVoiceInput:
+            result.setInfo("Stop and Send", "Stop listening and send what was said to the AI", "AI",
+                           0);
             break;
 
         default:
@@ -2165,6 +2181,14 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
         case showToolPalette:
             return mainView != nullptr && mainView->showToolPalette();
+
+        case toggleVoiceInput:
+        case startVoiceInput:
+        case stopVoiceInput:
+            voice::trigger(info.commandID == toggleVoiceInput  ? voice::Action::toggle
+                           : info.commandID == startVoiceInput ? voice::Action::press
+                                                               : voice::Action::release);
+            return true;
 
         default:
             // Command-backed application/menu actions share the same callback

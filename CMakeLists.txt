@@ -266,6 +266,13 @@ if(MAGDA_LOCAL_LLM)
     set(MAGDA_CXX_STANDARD ${CMAKE_CXX_STANDARD})
     set(CMAKE_CXX_STANDARD 17)
     add_subdirectory(third_party/llama.cpp)
+    # Speech to text for the console's mic. whisper.cpp builds against llama.cpp's ggml target
+    # rather than its own, so its pin must keep ggml/include in step with llama.cpp's.
+    set(WHISPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(WHISPER_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+    set(WHISPER_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(third_party/whisper.cpp EXCLUDE_FROM_ALL)
     set(CMAKE_CXX_STANDARD ${MAGDA_CXX_STANDARD})
     unset(BUILD_SHARED_LIBS)
 

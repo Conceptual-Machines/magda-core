@@ -952,7 +952,8 @@ jobs:
         # are present, because a missing DLL is a broken release.
         $dlls = Get-ChildItem -Path $exeDir -Filter *.dll -File
         foreach ($required in @("onnxruntime.dll", "onnxruntime_providers_shared.dll", "libxml2.dll",
-                               "llama.dll", "ggml.dll", "ggml-base.dll", "ggml-vulkan.dll", "ggml-cpu-x64.dll")) {
+                               "llama.dll", "whisper.dll", "ggml.dll", "ggml-base.dll", "ggml-vulkan.dll",
+                               "ggml-cpu-x64.dll")) {
           if (-not ($dlls | Where-Object { $_.Name -ieq $required })) {
             Write-Error "$required missing next to MAGDA.exe at $exeDir"
             exit 1

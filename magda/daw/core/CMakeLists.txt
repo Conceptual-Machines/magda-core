@@ -14,6 +14,7 @@ target_sources(magda_daw PRIVATE
     ControlTarget.cpp
     MixerStripOrder.cpp
     UIScale.cpp
+    VoiceControl.cpp
     UpdateChecker.cpp
     ViewModeController.cpp
     ConsoleRouting.cpp
@@ -102,6 +103,7 @@ target_sources(magda_daw PRIVATE
     GridDivision.hpp
     AppPaths.hpp
     UIScale.hpp
+    VoiceControl.hpp
     DeviceUiContext.hpp
     ViewModeState.hpp
     ViewModeEvents.hpp
