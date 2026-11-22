@@ -14,7 +14,7 @@ juce::var sinceValue(int since) {
 
 juce::var callbackValue(const XrunLog::Callback& callback) {
     auto* entry = new juce::DynamicObject();
-    entry->setProperty("atMs", callback.atMs);
+    entry->setProperty("atMs", static_cast<juce::int64>(callback.atMs));
     entry->setProperty("renderMs", callback.renderMs);
     entry->setProperty("lengthMs", callback.lengthMs);
     entry->setProperty("sincePreviousMs", callback.sincePreviousMs);
