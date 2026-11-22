@@ -112,6 +112,13 @@ DeviceInfo padSamplerDevice(const juce::String& samplePath, int rootNote);
 /// sample it plays. Empty for a pad with no device.
 juce::String padVoiceName(const ChainInfo& pad);
 
+/// What an unnamed @p pad is called: its voice, else its note.
+juce::String padDefaultName(const ChainInfo& pad);
+
+/// What @p pad is called on its button, in the editor and on its channel: the name it was
+/// given, else its default. `ChainInfo::name` holds only a given name.
+juce::String padDisplayName(const ChainInfo& pad);
+
 /// The notes @p pad answers to that started, given the notes its devices were
 /// @p played: a pad plays its notes transposed onto its root (#2669).
 std::vector<int> padNotesPlayed(const ChainInfo& pad, const std::bitset<128>& played);

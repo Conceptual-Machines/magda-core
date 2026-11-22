@@ -3,6 +3,8 @@
 
 #include "DrumGridPads.hpp"
 
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include <algorithm>
 
 #include "DeviceState.hpp"
@@ -428,6 +430,16 @@ juce::String padVoiceName(const ChainInfo& pad) {
                 return sample.getFileNameWithoutExtension();
         }
     return device.name;
+}
+
+juce::String padDefaultName(const ChainInfo& pad) {
+    if (auto voice = padVoiceName(pad); voice.isNotEmpty())
+        return voice;
+    return juce::MidiMessage::getMidiNoteName(pad.lowNote, true, true, 3);
+}
+
+juce::String padDisplayName(const ChainInfo& pad) {
+    return pad.name.isNotEmpty() ? pad.name : padDefaultName(pad);
 }
 
 std::vector<int> padNotesPlayed(const ChainInfo& pad, const std::bitset<128>& played) {

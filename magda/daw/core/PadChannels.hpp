@@ -30,6 +30,13 @@ juce::String gridRoute(TrackId gridTrackId);
 /// becomes its channel, one fed by several a group. True when anything changed.
 bool sync(std::vector<TrackInfo>& tracks, TrackId& nextTrackId, Stash* stash = nullptr);
 
+/// A saved channel whose name its pad does not give it hands that name to the pad, so a
+/// project saved before pads carried their channel's name keeps its track names. On load.
+void adoptChannelNames(std::vector<TrackInfo>& tracks);
+
+/// The pad @p channel is the mixer channel of, or null.
+ChainInfo* findPad(std::vector<TrackInfo>& tracks, const TrackInfo& channel);
+
 /// The Pad track for @p padId of grid @p gridId, or null.
 TrackInfo* findChannel(std::vector<TrackInfo>& tracks, DeviceId gridId, ChainId padId);
 const TrackInfo* findChannel(const std::vector<TrackInfo>& tracks, DeviceId gridId, ChainId padId);

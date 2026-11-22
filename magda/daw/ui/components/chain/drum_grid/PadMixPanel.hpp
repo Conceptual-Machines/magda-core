@@ -41,21 +41,31 @@ class PadMixPanel : public juce::Component {
     std::function<void(float, float)> onMixChanged;
     std::function<void()> onGestureEnd;
     std::function<void(bool mute, bool solo, bool bypassed)> onSwitchesChanged;
+    /// The pad named here; an empty name unnames it.
+    std::function<void(const juce::String&)> onRenamed;
+
+    /// Edit the pad's name in place, when there is a pad to name.
+    void startRename();
 
     static constexpr int kWidth = 200;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
     void lookAndFeelChanged() override;
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDoubleClick(const juce::MouseEvent& e) override;
 
   private:
     void styleControls();
     void reportSwitches();
+    juce::Rectangle<int> nameTextArea() const;
+    void finishRename(bool commit);
 
     PadMixView pad_;
     bool mixable_ = false;
     bool dragging_ = false;
     juce::Rectangle<int> nameArea_, noteArea_, gainCaption_, panCaption_;
+    std::unique_ptr<juce::TextEditor> nameEditor_;
 
     magda::DraggableValueLabel gainLabel_{magda::DraggableValueLabel::Format::Decibels};
     magda::DraggableValueLabel panLabel_{magda::DraggableValueLabel::Format::Pan};

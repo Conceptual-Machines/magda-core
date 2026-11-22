@@ -219,7 +219,8 @@ TEST_CASE("Dropping an instrument on a pad replaces what it held", "[drumgrid][p
     REQUIRE(padNow->elements.size() == 1);
     CHECK(getDevice(padNow->elements[0]).id == snareId);
     CHECK(getDevice(padNow->elements[0]).name == "Snare");
-    CHECK(padNow->name == "Snare");
+    CHECK(padNow->name.isEmpty());
+    CHECK(padDisplayName(*padNow) == "Snare");
 }
 
 TEST_CASE("A pad is made on the note it answers to, and cleared off the grid",

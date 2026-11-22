@@ -11,6 +11,7 @@
 
 #include "core/DrumGridPads.hpp"
 #include "core/TrackManager.hpp"
+#include "drum_grid/PadNameEditor.hpp"
 #include "layout/DeviceShellPainter.hpp"
 #include "layout/NodeHeaderStyles.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
@@ -166,21 +167,66 @@ void DrumGridUI::PadButton::paint(juce::Graphics& g) {
     // A pad of a 200px device is about 33px tall: its two lines close up to fit (#3201).
     const bool tight = getHeight() < 44;
     const int noteRow = tight ? 11 : 14;
-    auto text = getLocalBounds().reduced(10, tight ? 4 : 7);
+    const auto text = getLocalBounds().reduced(10, tight ? 4 : 7);
     g.setColour(colour(ActiveTheme::DEVICE_ICON_INACTIVE));
     g.setFont(fonts.getMonoFont(9.5f));
-    g.drawText(noteName_, text.removeFromTop(noteRow), juce::Justification::topLeft, false);
+    g.drawText(noteName_, text.withHeight(noteRow), juce::Justification::topLeft, false);
     if (soloed_ || muted_) {
         g.setColour(colour(soloed_ ? ActiveTheme::DEVICE_AMBER : ActiveTheme::DEVICE_RED));
         g.setFont(fonts.getMonoFont(8.5f).boldened());
-        g.drawText(soloed_ ? "S" : "M", text.withHeight(noteRow).translated(0, -noteRow),
-                   juce::Justification::topRight, false);
+        g.drawText(soloed_ ? "S" : "M", text.withHeight(noteRow), juce::Justification::topRight,
+                   false);
     }
 
+    if (nameEditor_ != nullptr)
+        return;
     g.setColour(colour(ActiveTheme::DEVICE_VALUE_TEXT));
     g.setFont(fonts.getUIFontMedium(11.5f));
-    g.drawText(sampleName_, text.removeFromBottom(tight ? 14 : 16), juce::Justification::bottomLeft,
-               true);
+    g.drawText(sampleName_, nameBounds(), juce::Justification::bottomLeft, true);
+}
+
+juce::Rectangle<int> DrumGridUI::PadButton::nameBounds() const {
+    const bool tight = getHeight() < 44;
+    return getLocalBounds().reduced(10, tight ? 4 : 7).removeFromBottom(tight ? 14 : 16);
+}
+
+void DrumGridUI::PadButton::startRename() {
+    if (!hasSample_ || nameEditor_ != nullptr)
+        return;
+
+    nameEditor_ = makePadNameEditor(sampleName_, FontManager::getInstance().getUIFontMedium(11.5f));
+    nameEditor_->setBounds(nameBounds().expanded(4, 2).getIntersection(getLocalBounds()));
+    nameEditor_->onReturnKey = [this]() { finishRename(true); };
+    nameEditor_->onEscapeKey = [this]() { finishRename(false); };
+    nameEditor_->onFocusLost = [this]() { finishRename(true); };
+    addAndMakeVisible(*nameEditor_);
+    nameEditor_->grabKeyboardFocus();
+    repaint();
+}
+
+void DrumGridUI::PadButton::finishRename(bool commit) {
+    if (nameEditor_ == nullptr || !nameEditor_->isVisible())
+        return;
+
+    const auto text = nameEditor_->getText().trim();
+    nameEditor_->setVisible(false);
+    // Not freed inside its own callback.
+    juce::MessageManager::callAsync([safe = juce::Component::SafePointer<PadButton>(this)]() {
+        if (safe == nullptr)
+            return;
+        safe->nameEditor_.reset();
+        safe->repaint();
+    });
+
+    if (commit && text != sampleName_ && onRenamed)
+        onRenamed(padIndex_, text);
+}
+
+void DrumGridUI::PadButton::mouseDoubleClick(const juce::MouseEvent& e) {
+    if (playButton_ != nullptr && playButton_->isVisible() &&
+        playButton_->getBounds().contains(e.getPosition()))
+        return;
+    startRename();
 }
 
 void DrumGridUI::PadButton::mouseDown(const juce::MouseEvent& e) {
@@ -243,6 +289,10 @@ DrumGridUI::DrumGridUI() {
         pad.onRightClicked = [this](int padIndex, juce::Point<int> screenPos) {
             showPadContextMenu(padIndex, screenPos);
         };
+        pad.onRenamed = [this](int padIndex, const juce::String& name) {
+            if (onPadRenamed)
+                onPadRenamed(padIndex, name);
+        };
         addAndMakeVisible(pad);
     }
 
@@ -264,6 +314,10 @@ DrumGridUI::DrumGridUI() {
             onPadMixChanged(selectedPad_, volume, pan);
     };
     padMixPanel_.onGestureEnd = [this]() { endFaderGesture(); };
+    padMixPanel_.onRenamed = [this](const juce::String& name) {
+        if (onPadRenamed)
+            onPadRenamed(selectedPad_, name);
+    };
     padMixPanel_.onSwitchesChanged = [this](bool mute, bool solo, bool bypassed) {
         auto& info = padInfos_[static_cast<size_t>(selectedPad_)];
         info.mute = mute;
@@ -715,6 +769,7 @@ void DrumGridUI::showPadContextMenu(int padIndex, juce::Point<int> screenPos) {
         return;
 
     juce::PopupMenu menu;
+    menu.addItem(3, "Rename");
     menu.addItem(1, "Analyze pad role");
     menu.addSeparator();
     menu.addItem(2, "Delete");
@@ -726,7 +781,15 @@ void DrumGridUI::showPadContextMenu(int padIndex, juce::Point<int> screenPos) {
                                onAnalyzePadRoleRequested(padIndex);
                            else if (result == 2 && onClearRequested)
                                onClearRequested(padIndex);
+                           else if (result == 3)
+                               startRenamePad(padIndex);
                        });
+}
+
+void DrumGridUI::startRenamePad(int padIndex) {
+    const int slot = padIndex - currentPage_ * kPadsPerPage;
+    if (slot >= 0 && slot < kPadsPerPage)
+        padButtons_[static_cast<size_t>(slot)].startRename();
 }
 
 int DrumGridUI::fixedContentWidth() const {

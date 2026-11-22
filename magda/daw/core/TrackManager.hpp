@@ -780,6 +780,9 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     /// Put @p device on pad @p padIndex on its own, replacing whatever it held.
     DeviceId setPadDevice(const ChainNodePath& gridPath, int padIndex, const DeviceInfo& device);
 
+    /// Name pad @p padIndex, and so its mixer channel. Empty, or its default name, unnames it.
+    void setPadName(const ChainNodePath& gridPath, int padIndex, const juce::String& name);
+
     /// Take pad @p padIndex off the grid. A chain shared with neighbouring pads
     /// is left alone: it is their sound too.
     void clearPad(const ChainNodePath& gridPath, int padIndex);

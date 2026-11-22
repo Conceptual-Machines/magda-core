@@ -3,6 +3,7 @@
 
 #include "drum_grid/PadMixPanel.hpp"
 
+#include "drum_grid/PadNameEditor.hpp"
 #include "layout/DeviceShellPainter.hpp"
 #include "layout/NodeHeaderStyles.hpp"
 #include "ui/components/common/MasterSpeakerButton.hpp"
@@ -125,14 +126,14 @@ void PadMixPanel::paint(juce::Graphics& g) {
     g.setColour(colour(ActiveTheme::DEVICE_LINE));
     g.fillRect(getLocalBounds().withWidth(1));
 
-    auto name = nameArea_;
     g.setColour(device_shell::chainColour(pad_.colourIndex));
-    g.fillEllipse(name.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat());
-    name.removeFromLeft(6);
-    g.setColour(colour(ActiveTheme::DEVICE_VALUE_TEXT));
-    g.setFont(fonts.getUIFontMedium(12.0f));
-    g.drawText(pad_.name.isNotEmpty() ? pad_.name : juce::String("empty"), name,
-               juce::Justification::centredLeft, true);
+    g.fillEllipse(nameArea_.withWidth(8).withSizeKeepingCentre(8, 8).toFloat());
+    if (nameEditor_ == nullptr) {
+        g.setColour(colour(ActiveTheme::DEVICE_VALUE_TEXT));
+        g.setFont(fonts.getUIFontMedium(12.0f));
+        g.drawText(pad_.name.isNotEmpty() ? pad_.name : juce::String("empty"), nameTextArea(),
+                   juce::Justification::centredLeft, true);
+    }
     g.setColour(colour(ActiveTheme::DEVICE_DIM2));
     g.setFont(fonts.getMonoFont(11.0f));
     g.drawText(pad_.note, noteArea_, juce::Justification::centredLeft, false);
@@ -149,6 +150,60 @@ void PadMixPanel::paint(juce::Graphics& g) {
     device_shell::paintGainSlider(g, gainLabel_.getBounds(), gainLabel_.getValue(), kMinGainDb);
     device_shell::paintPanSlider(g, panLabel_.getBounds(), panLabel_.getValue());
     g.endTransparencyLayer();
+}
+
+juce::Rectangle<int> PadMixPanel::nameTextArea() const {
+    return nameArea_.withTrimmedLeft(14);
+}
+
+void PadMixPanel::mouseDown(const juce::MouseEvent& e) {
+    if (!e.mods.isPopupMenu() || !mixable_)
+        return;
+    juce::PopupMenu menu;
+    menu.addItem(1, "Rename");
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+                           juce::Rectangle<int>(e.getScreenX(), e.getScreenY(), 1, 1)),
+                       [safe = juce::Component::SafePointer<PadMixPanel>(this)](int result) {
+                           if (result == 1 && safe != nullptr)
+                               safe->startRename();
+                       });
+}
+
+void PadMixPanel::mouseDoubleClick(const juce::MouseEvent& e) {
+    if (nameArea_.contains(e.getPosition()))
+        startRename();
+}
+
+void PadMixPanel::startRename() {
+    if (!mixable_ || nameEditor_ != nullptr)
+        return;
+
+    nameEditor_ = makePadNameEditor(pad_.name, FontManager::getInstance().getUIFontMedium(12.0f));
+    nameEditor_->setBounds(nameTextArea().expanded(2, 2).getIntersection(getLocalBounds()));
+    nameEditor_->onReturnKey = [this]() { finishRename(true); };
+    nameEditor_->onEscapeKey = [this]() { finishRename(false); };
+    nameEditor_->onFocusLost = [this]() { finishRename(true); };
+    addAndMakeVisible(*nameEditor_);
+    nameEditor_->grabKeyboardFocus();
+    repaint();
+}
+
+void PadMixPanel::finishRename(bool commit) {
+    if (nameEditor_ == nullptr || !nameEditor_->isVisible())
+        return;
+
+    const auto text = nameEditor_->getText().trim();
+    nameEditor_->setVisible(false);
+    // Not freed inside its own callback.
+    juce::MessageManager::callAsync([safe = juce::Component::SafePointer<PadMixPanel>(this)]() {
+        if (safe == nullptr)
+            return;
+        safe->nameEditor_.reset();
+        safe->repaint();
+    });
+
+    if (commit && text != pad_.name && onRenamed)
+        onRenamed(text);
 }
 
 void PadMixPanel::resized() {

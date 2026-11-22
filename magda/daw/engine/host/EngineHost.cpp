@@ -64,6 +64,7 @@
 #include "ExternalPluginLoader.hpp"
 #include "HardwareInputMap.hpp"
 #include "HardwareMidiOutput.hpp"
+#include "HeldAuditions.hpp"
 #include "LiveMidiCollector.hpp"
 #include "LiveMidiQueue.hpp"
 #include "LiveMidiRouting.hpp"
@@ -821,15 +822,25 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         return tracks;
     }
 
-    static std::set<TrackId> playedInstruments() {
-        return tracksBeingPlayed(TrackManager::getInstance().getTracks(),
-                                 SelectionManager::getInstance(), ClipManager::getInstance());
+    std::set<TrackId> playedInstruments() const {
+        auto played =
+            tracksBeingPlayed(TrackManager::getInstance().getTracks(),
+                              SelectionManager::getInstance(), ClipManager::getInstance());
+        played.insert(heldAuditions_.promoted().begin(), heldAuditions_.promoted().end());
+        return played;
     }
 
     /// A selection that moves which instruments are played moves the plan's boundary.
     void selectionMoved() {
         if (sessionRendersAhead_ && playedInstruments() != compiledPlayedInstruments_)
             wantPlan();
+    }
+
+    /// A previewed track stays live until the track selection moves, unless notes still wait.
+    void trackSelectionMoved() {
+        if (!heldAuditions_.waiting())
+            heldAuditions_.forgetPromotions();
+        selectionMoved();
     }
 
     void selectionTypeChanged(SelectionType) override {
@@ -839,10 +850,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         selectionMoved();
     }
     void trackSelectionChanged(TrackId) override {
-        selectionMoved();
+        trackSelectionMoved();
     }
     void multiTrackSelectionChanged(const std::unordered_set<TrackId>&) override {
-        selectionMoved();
+        trackSelectionMoved();
     }
     void clipSelectionChanged(ClipId) override {
         selectionMoved();
@@ -895,13 +906,17 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // routing resolved from the same reading of the model (#2592).
         publishRouting(tracks);
 
+        // The live plan again, for its inserts: it renders the played set it was compiled with.
+        const auto republished = plan != nullptr && plan == livePlan_;
         if (plan == nullptr)
             plan = compilePlan(tracks, *master);
         const auto compiled = juce::Time::getMillisecondCounterHiRes();
-        compiledSessionTracks_ = sessionRendersAhead_ ? sessionTracks() : std::set<TrackId>{};
         auto played = sessionRendersAhead_ ? playedInstruments() : std::set<TrackId>{};
-        const auto playedMoved = played != compiledPlayedInstruments_;
-        compiledPlayedInstruments_ = std::move(played);
+        const auto playedMoved = !republished && played != compiledPlayedInstruments_;
+        if (!republished) {
+            compiledSessionTracks_ = sessionRendersAhead_ ? sessionTracks() : std::set<TrackId>{};
+            compiledPlayedInstruments_ = std::move(played);
+        }
         report("plan", plan->diagnostics);
 
         // Values and ids off the model rather than what plays: a frozen chain's
@@ -921,6 +936,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             "[engine] plan published in " + juce::String(finished - started, 1) + " ms (compile " +
             juce::String(compiled - started, 1) + ", swap " + juce::String(finished - compiled, 1) +
             ")" + (playedMoved ? ", played instruments moved" : ""));
+
+        // The publish returned once the callback took the plan, so a promoted track hears them.
+        if (!republished)
+            heldAuditions_.release([this](TrackId trackId, const juce::MidiMessage& message) {
+                play(trackId, message);
+            });
 
         if (!result.published)
             return false;
@@ -2676,6 +2697,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (araTracks_ != nullptr)
             araTracks_->forgetProject();
         routing_.reset();
+        heldAuditions_.clear();
+        {
+            const juce::ScopedLock held(incomingAuditionsLock_);
+            incomingAuditions_.clear();
+        }
         devicePaths_.clear();
         deviceKeys_.clear();
         ++publishCount_;
@@ -2813,6 +2839,48 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         plan_.store(true, std::memory_order_relaxed);
         triggerAsyncUpdate();
     }
+
+    // ===== Previews =====
+
+    /// A preview, from any thread. What the played set needs is the message thread's.
+    void audition(TrackId trackId, const juce::MidiMessage& message) {
+        if (juce::MessageManager::existsAndIsCurrentThread()) {
+            // Behind whatever another thread queued first, so a note-off cannot overtake its
+            // note-on.
+            admitIncomingAuditions();
+            admitAudition(trackId, message);
+            return;
+        }
+        {
+            const juce::ScopedLock held(incomingAuditionsLock_);
+            incomingAuditions_.emplace_back(trackId, message);
+        }
+        triggerAsyncUpdate();
+    }
+
+    void admitIncomingAuditions() {
+        std::vector<std::pair<TrackId, juce::MidiMessage>> incoming;
+        {
+            const juce::ScopedLock held(incomingAuditionsLock_);
+            incoming.swap(incomingAuditions_);
+        }
+        for (const auto& [trackId, message] : incoming)
+            admitAudition(trackId, message);
+    }
+
+    /// A track rendered ahead has no live input, so its preview promotes it and waits (#1898).
+    void admitAudition(TrackId trackId, const juce::MidiMessage& message) {
+        const auto live = !sessionRendersAhead_ || compiledPlayedInstruments_.contains(trackId);
+        if (heldAuditions_.admit(trackId, message, live))
+            play(trackId, message);
+        else if (!live)
+            wantPlan();
+    }
+
+    void play(TrackId trackId, const juce::MidiMessage& message) {
+        const auto source = sources_.auditionSourceFor(trackId);
+        queue_.push(source, sources_.slotFor(source), message);
+    }
     void wantValues(Shape shape) {
         requests_.fetch_add(1, std::memory_order_relaxed);
         if (shape == Shape::MayHaveMoved)
@@ -2862,6 +2930,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     void handleAsyncUpdate() override {
         if (const auto thread = callbackThreadToRaise_.exchange(0, std::memory_order_acq_rel))
             raiseCallbackThread(thread);
+
+        admitIncomingAuditions();
 
         // Restart/rebuild interleavings and the ready-generation gate: specs/tla/device_restart.
         // Held rather than dropped: the flags stay set, and the end of the render asks again.
@@ -4196,6 +4266,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     LiveMidiRouting routing_{sources_};
     LiveMidiQueue queue_;
 
+    /// Previews waiting for a plan that renders their track live; message thread.
+    HeldAuditions heldAuditions_;
+    /// Previews from other threads, on their way to the message thread.
+    juce::CriticalSection incomingAuditionsLock_;
+    std::vector<std::pair<TrackId, juce::MidiMessage>> incomingAuditions_;
+
     /// The queue's events as per-slot streams, sized in rebuild().
     LiveMidiCollector collector_;
 
@@ -4557,8 +4633,7 @@ void EngineHost::stop() {
 }
 
 void EngineHost::audition(TrackId trackId, const juce::MidiMessage& message) {
-    const auto source = impl_->sources_.auditionSourceFor(trackId);
-    impl_->queue_.push(source, impl_->sources_.slotFor(source), message);
+    impl_->audition(trackId, message);
 }
 
 void EngineHost::pushMidi(const juce::String& deviceId, const juce::MidiMessage& message) {

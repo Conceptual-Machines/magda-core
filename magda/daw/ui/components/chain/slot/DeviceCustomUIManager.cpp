@@ -1293,8 +1293,9 @@ void DeviceCustomUIManager::showPad(int padIndex, const magda::ChainInfo* pad) {
         return;
     }
 
-    drumGridUI_->updatePadInfo(padIndex, magda::padVoiceName(*pad), pad->muted, pad->solo,
-                               pad->volume, pad->pan, pad->id, pad->bypassed);
+    const auto name = magda::padHasDevices(*pad) ? magda::padDisplayName(*pad) : pad->name;
+    drumGridUI_->updatePadInfo(padIndex, name, pad->muted, pad->solo, pad->volume, pad->pan,
+                               pad->id, pad->bypassed);
 }
 
 bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
@@ -1378,6 +1379,16 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             [this, padIndex]() {
                 drumGridUI_->updatePadInfo(padIndex, "", false, false, 0.0f, 0.0f, -1);
             });
+    };
+
+    drumGridUI_->onPadRenamed = [postPadEdit, updatePadFromModel](int padIndex,
+                                                                  const juce::String& name) {
+        postPadEdit(
+            "Rename Pad",
+            [padIndex, name](const magda::ChainNodePath& grid) {
+                magda::TrackManager::getInstance().setPadName(grid, padIndex, name);
+            },
+            [padIndex, updatePadFromModel]() { updatePadFromModel(padIndex); });
     };
 
     // Plugin drag and drop onto pads: an instrument replaces the pad

@@ -697,9 +697,7 @@ std::vector<PadDto> makePadDtos(const DeviceInfo& grid, const ChainNodePath& gri
             dto.lowNote = pad->lowNote;
             dto.highNote = pad->highNote;
             dto.rootNote = pad->rootNote;
-            dto.name = padVoiceName(*pad);
-            if (dto.name.isEmpty())
-                dto.name = pad->name;
+            dto.name = padHasDevices(*pad) ? padDisplayName(*pad) : pad->name;
             dto.levelDb = pad->volume;
             dto.pan = pad->pan;
             dto.muted = pad->muted;

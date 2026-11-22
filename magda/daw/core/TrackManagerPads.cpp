@@ -297,10 +297,26 @@ DeviceId TrackManager::setPadDevice(const ChainNodePath& gridPath, int padIndex,
     clearSelectionsUnderPad(*pad, padChainPath(gridPath, padChainId));
     pad->elements.clear();
 
-    // Named after what is on it, which is what the grid shows on the pad.
-    pad->name = device.name;
+    // A new sound is a new pad, called after it until it is named (padDisplayName).
+    pad->name.clear();
 
     return addDeviceToPad(gridPath, padChainId, device);
+}
+
+void TrackManager::setPadName(const ChainNodePath& gridPath, int padIndex,
+                              const juce::String& name) {
+    auto* pad = mutablePad(gridPath, padIndex);
+    if (pad == nullptr)
+        return;
+
+    auto given = name.trim();
+    if (given == padDefaultName(*pad))
+        given.clear();
+    if (pad->name == given)
+        return;
+
+    pad->name = given;
+    notifyTrackDevicesChanged(gridPath.trackId);
 }
 
 void TrackManager::clearPad(const ChainNodePath& gridPath, int padIndex) {

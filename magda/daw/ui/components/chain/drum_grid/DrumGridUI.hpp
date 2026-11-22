@@ -93,6 +93,12 @@ class DrumGridUI : public juce::Component,
     /** Called when play button is pressed/released on a pad. (padIndex, isNoteOn) */
     std::function<void(int, bool)> onNotePreview;
 
+    /// A pad named in place; an empty name unnames it. (padIndex, name)
+    std::function<void(int, const juce::String&)> onPadRenamed;
+
+    /// Edit pad @p padIndex's name in place, when it is on the page shown and holds a sound.
+    void startRenamePad(int padIndex);
+
     /** @brief A pad's switches and faders, which are its mixer channel's (#3010). */
     struct PadMix {
         float level = 0.0f;
@@ -198,12 +204,17 @@ class DrumGridUI : public juce::Component,
         std::function<void(int)> onClicked;
         std::function<void(int, bool)> onNotePreview;  // (padIndex, isNoteOn)
         std::function<void(int, juce::Point<int>)> onRightClicked;
+        std::function<void(int, const juce::String&)> onRenamed;
+
+        /// Edit the name in place, over the line that shows it.
+        void startRename();
 
         void paint(juce::Graphics& g) override;
         void resized() override;
         void mouseDown(const juce::MouseEvent& e) override;
         void mouseDrag(const juce::MouseEvent& e) override;
         void mouseUp(const juce::MouseEvent& e) override;
+        void mouseDoubleClick(const juce::MouseEvent& e) override;
         void mouseEnter(const juce::MouseEvent& e) override;
         void mouseExit(const juce::MouseEvent& e) override;
 
@@ -220,6 +231,10 @@ class DrumGridUI : public juce::Component,
         bool triggered_ = false;
         bool playPressed_ = false;
         std::unique_ptr<magda::SvgButton> playButton_;
+        std::unique_ptr<juce::TextEditor> nameEditor_;
+
+        juce::Rectangle<int> nameBounds() const;
+        void finishRename(bool commit);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PadButton)
     };
