@@ -785,12 +785,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         const int minHeight = minimumBottomPanelHeight();
         bottomPanelHeight =
             juce::jlimit(minHeight, juce::jmax(minHeight, maxHeight), optimalHeight);
-        if (bottomPanelCollapsed) {
-            bottomPanelCollapsed = false;
-            bottomPanel->setCollapsed(false);
-            if (footerBar)
-                footerBar->setBottomPanelCollapsed(false);
-        }
+        setBottomPanelCollapsed(false);
         resized();
     };
     addAndMakeVisible(*bottomPanel);
@@ -798,9 +793,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     juce::Logger::writeToLog("[MainComponent] Creating FooterBar...");
     footerBar = std::make_unique<FooterBar>(&commandManager);
     footerBar->onBottomPanelCollapseToggle = [this]() {
-        bottomPanelCollapsed = !bottomPanelCollapsed;
-        bottomPanel->setCollapsed(bottomPanelCollapsed);
-        footerBar->setBottomPanelCollapsed(bottomPanelCollapsed);
+        setBottomPanelCollapsed(!bottomPanelCollapsed);
         resized();
     };
     footerBar->onControllersClicked = [] { SettingsWindow::show(SettingsSectionId::Controllers); };
@@ -948,6 +941,13 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         }
     };
 
+    // A track header's double-click has already selected it, so the expanded panel shows its chain.
+    mainView->onTrackChainRequested = [this]() {
+        if (bottomPanelCollapsed) {
+            setBottomPanelCollapsed(false);
+            resized();
+        }
+    };
     // Wire render time selection callback
     mainView->onRenderTimeSelectionRequested = [this]() {
         getCommandManager().invokeDirectly(CommandIDs::renderTimeSelection, false);
@@ -1168,17 +1168,9 @@ void MainWindow::MainComponent::setupResizeHandles() {
 
         int newHeight = bottomPanelHeight - delta;
         if (newHeight < layout.panelCollapseThreshold) {
-            bottomPanelCollapsed = true;
-            bottomPanel->setCollapsed(true);
-            if (footerBar)
-                footerBar->setBottomPanelCollapsed(true);
+            setBottomPanelCollapsed(true);
         } else {
-            if (bottomPanelCollapsed) {
-                bottomPanelCollapsed = false;
-                bottomPanel->setCollapsed(false);
-                if (footerBar)
-                    footerBar->setBottomPanelCollapsed(false);
-            }
+            setBottomPanelCollapsed(false);
             int maxHeight = static_cast<int>(getHeight() * layout.maxBottomPanelRatio);
             const int minHeight = minimumBottomPanelHeight();
             bottomPanelHeight =
@@ -1749,6 +1741,15 @@ int MainWindow::MainComponent::minimumBottomPanelHeight() const {
     const int layoutMinimum = LayoutConfig::getInstance().minBottomPanelHeight;
     return bottomPanel ? juce::jmax(layoutMinimum, bottomPanel->getPanelHeightRange().minimum)
                        : layoutMinimum;
+}
+
+void MainWindow::MainComponent::setBottomPanelCollapsed(bool collapsed) {
+    if (collapsed == bottomPanelCollapsed)
+        return;
+    bottomPanelCollapsed = collapsed;
+    bottomPanel->setCollapsed(collapsed);
+    if (footerBar)
+        footerBar->setBottomPanelCollapsed(collapsed);
 }
 
 void MainWindow::MainComponent::toggleEditorFullscreen() {

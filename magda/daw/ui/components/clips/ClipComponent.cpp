@@ -1004,13 +1004,15 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         return;
 
     const auto colour = displayColour(clip);
-    // Full bar fades the header into the clip colour; Spine keeps it flat (#3307).
+    // Full bar fades the header up into the clip colour, so the fade holds at any zoom; Spine
+    // keeps it flat (#3307).
     const bool fullBar = Config::getInstance().getTrackColourStyle() == "full";
     if (!compact) {
         // 2px past its bottom, where the body's content area starts.
         const auto fill = headerArea.withBottom(headerArea.getBottom() + 2);
         if (fullBar)
-            g.setGradientFill(deriveTrackHeadGradient(colour, 0.0f, fill.toFloat()));
+            g.setGradientFill(deriveTrackHeadGradient(colour, 0.0f, fill.toFloat().getBottomLeft(),
+                                                      fill.toFloat().getTopLeft()));
         else
             g.setColour(deriveTrackSwatch(colour));
         g.fillRect(fill);
@@ -1111,7 +1113,21 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                 g.drawText(displayName, nameArea.translated(1, 1), juce::Justification::centredLeft,
                            true);
             }
-            g.setColour(headerForeground);
+            if (!compact && fullBar) {
+                // The name sits in a dark socket, as the marks do, so it reads on any colour.
+                const auto textWidth =
+                    juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), displayName);
+                g.setColour(headMarkSocket());
+                g.fillRoundedRectangle(
+                    nameArea.withWidth(juce::jmin(nameArea.getWidth(), textWidth))
+                        .expanded(3, 0)
+                        .toFloat()
+                        .reduced(0.0f, 2.0f),
+                    3.0f);
+                g.setColour(juce::Colours::white.withAlpha(0.92f));
+            } else {
+                g.setColour(headerForeground);
+            }
             g.drawText(displayName, nameArea, juce::Justification::centredLeft, true);
         }
     }

@@ -362,6 +362,18 @@ juce::var toJsonArray(const std::vector<juce::var>& items) {
     return array;
 }
 
+/// The `offset`/`limit` window of a filtered read list; absent means everything (#3383).
+juce::var pagedJsonArray(const std::vector<juce::var>& items, const juce::var& input) {
+    const auto size = static_cast<int>(items.size());
+    const auto first = std::min(readInt(input, "offset", 0), size);
+    const auto count =
+        has(input, "limit") ? std::min(readInt(input, "limit"), size - first) : size - first;
+    juce::Array<juce::var> array;
+    for (int i = first; i < first + count; ++i)
+        array.add(items[static_cast<size_t>(i)]);
+    return array;
+}
+
 HandlerResult notFound(const juce::String& what, int id) {
     return HandlerResult::fail(ErrorCode::NotFound, what + " " + juce::String(id) + " not found");
 }
@@ -3217,11 +3229,31 @@ HandlerResult padsUpdate(MagdaApi& api, const juce::var& input, const RequestCon
         toJson(edited != after.end() ? *edited : after[static_cast<size_t>(index)]));
 }
 
-HandlerResult devicesCatalog(MagdaApi& api, const juce::var&, const RequestContext&) {
+HandlerResult devicesCatalog(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto query = input["query"].toString();
     std::vector<juce::var> items;
-    for (const auto& entry : api.devices().getCatalog())
-        items.push_back(toJson(makeDeviceCatalogEntryDto(entry)));
-    return HandlerResult::ok(toJsonArray(items));
+    for (const auto& entry : api.devices().getCatalog()) {
+        const auto dto = makeDeviceCatalogEntryDto(entry);
+        if (query.isNotEmpty() && !dto.name.containsIgnoreCase(query) &&
+            !dto.manufacturer.containsIgnoreCase(query))
+            continue;
+        if (has(input, "startsWith") &&
+            !dto.name.startsWithIgnoreCase(input["startsWith"].toString()))
+            continue;
+        if (has(input, "manufacturer") &&
+            !dto.manufacturer.equalsIgnoreCase(input["manufacturer"].toString()))
+            continue;
+        if (has(input, "category") && !dto.category.equalsIgnoreCase(input["category"].toString()))
+            continue;
+        if (has(input, "format") && dto.format != input["format"].toString())
+            continue;
+        if (has(input, "type") && dto.type != input["type"].toString())
+            continue;
+        if (has(input, "instrument") && dto.instrument != readBool(input, "instrument"))
+            continue;
+        items.push_back(toJson(dto));
+    }
+    return HandlerResult::ok(pagedJsonArray(items, input));
 }
 
 HandlerResult devicePresetsList(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -3441,10 +3473,12 @@ HandlerResult devicesListParameters(MagdaApi& api, const juce::var& input, const
     if (device == nullptr)
         return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
 
+    const auto query = input["query"].toString();
     std::vector<juce::var> items;
     for (const auto& parameter : makeDeviceParameterDtos(*device, *path))
-        items.push_back(toJson(parameter));
-    return HandlerResult::ok(toJsonArray(items));
+        if (query.isEmpty() || parameter.name.containsIgnoreCase(query))
+            items.push_back(toJson(parameter));
+    return HandlerResult::ok(pagedJsonArray(items, input));
 }
 
 HandlerResult devicesSetParameterConfig(MagdaApi& api, const juce::var& input,
