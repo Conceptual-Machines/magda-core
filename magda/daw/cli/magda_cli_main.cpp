@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "api/clip_api.hpp"
+#include "api/device_api.hpp"
 #include "api/magda_api.hpp"
 #include "api/project_api.hpp"
 #include "api/remote_api.hpp"
@@ -133,6 +134,20 @@ juce::var trackToJson(magda::MagdaApi& api, const magda::TrackInfo& track) {
             clips.add(clipToJson(api, *clip));
     }
     obj->setProperty("clips", clips);
+
+    juce::Array<juce::var> devices;
+    for (const auto& element : track.chain.fxChainElements) {
+        if (!magda::isDevice(element))
+            continue;
+        const auto& device = magda::getDevice(element);
+        auto* entry = new juce::DynamicObject();
+        entry->setProperty("id", device.id);
+        entry->setProperty("name", device.name);
+        entry->setProperty("pluginId", device.pluginId);
+        entry->setProperty("instrument", device.isInstrument);
+        devices.add(juce::var(entry));
+    }
+    obj->setProperty("devices", devices);
     return value;
 }
 
@@ -171,8 +186,10 @@ class CommandDispatcher {
         static const std::vector<CommandSpec> specs = {
             {"set-tempo", "set-tempo <bpm>", &CommandDispatcher::setTempo},
             {"add-track", "add-track <audio|group|aux|chord> [name]", &CommandDispatcher::addTrack},
-            {"add-internal-instrument", "add-internal-instrument <track-id> <plugin-id> [name]",
-             &CommandDispatcher::addInternalInstrument},
+            {"add-internal-device", "add-internal-device <track-id> <plugin-id> [name]",
+             &CommandDispatcher::addInternalDevice},
+            {"add-internal-instrument", "add-internal-device <track-id> <plugin-id> [name]",
+             &CommandDispatcher::addInternalDevice, false},
             {"delete-track", "delete-track <track-id>", &CommandDispatcher::deleteTrack},
             {"set-track-input", "set-track-input <track-id> <audio|midi> <track:N|device|all|none>",
              &CommandDispatcher::setTrackInput},
@@ -364,15 +381,20 @@ class CommandDispatcher {
         return {};
     }
 
-    CommandResult addInternalInstrument(const juce::StringArray& tokens, size_t& index) {
-        auto trackId = takeInt(tokens, index, "add-internal-instrument requires <track-id>");
+    // Instrument or effect comes from the catalogue entry, not the command name (#3385).
+    CommandResult addInternalDevice(const juce::StringArray& tokens, size_t& index) {
+        auto trackId = takeInt(tokens, index, "add-internal-device requires <track-id>");
         if (!trackId)
             return fail(lastParseError_);
         if (index >= static_cast<size_t>(tokens.size()))
-            return fail("add-internal-instrument requires <plugin-id>");
+            return fail("add-internal-device requires <plugin-id>");
 
         const auto& pluginId = tokens[static_cast<int>(index++)];
-        auto name = pluginId;
+        const auto entry = engine_.getMagdaApi().devices().findCatalogEntry(pluginId);
+        if (!entry || entry->format != magda::PluginFormat::Internal)
+            return fail("add-internal-device: unknown internal device " + pluginId);
+
+        auto name = entry->name;
         if (index < static_cast<size_t>(tokens.size()) &&
             !isCommand(tokens[static_cast<int>(index)]))
             name = tokens[static_cast<int>(index++)];
@@ -383,13 +405,13 @@ class CommandDispatcher {
         device.pluginId = pluginId;
         device.uniqueId = pluginId;
         device.fileOrIdentifier = pluginId;
-        device.isInstrument = true;
-        device.deviceType = magda::DeviceType::Instrument;
+        device.isInstrument = entry->isInstrument;
+        device.deviceType = entry->type;
         device.format = magda::PluginFormat::Internal;
 
         const auto deviceId = engine_.getMagdaApi().tracks().addDeviceToTrack(*trackId, device);
         if (deviceId == magda::INVALID_DEVICE_ID)
-            return fail("Failed to add internal instrument");
+            return fail("Failed to add internal device");
         std::cout << "device " << deviceId << "\n";
         return {};
     }
@@ -801,6 +823,9 @@ bool executeCommandFile(CommandDispatcher& dispatcher, const juce::File& file) {
 
         juce::StringArray tokens;
         tokens.addTokens(line, true);
+        // addTokens keeps a quoted token's quotes; the shell strips them for exec (#3385).
+        for (auto& token : tokens)
+            token = token.unquoted();
         if (!executeCommandTokens(dispatcher, tokens))
             return false;
     }

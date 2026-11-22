@@ -89,7 +89,8 @@ either transport, by the name it gave. Tick what you want it to be able to do:
 
 Device sound design uses the same operations over MCP and WebSocket. Call
 `devices.listParameters` to find a device's parameter indices and its
-`aiAgentEnabled` flags, then `mods.list` or `macros.list` with that device's
+`aiAgentEnabled` flags (a large plugin can have hundreds, so pass `query` to
+match names, or `offset` and `limit` to page; indices stay the device's own), then `mods.list` or `macros.list` with that device's
 `devicePath`. An edit-scoped client can create an LFO with `mods.create`
 (`type: "lfo"`, optional `waveform`, `rate`, `parameterIndex`, and `amount`),
 change it with `mods.update`, and use `mods.link` / `mods.unlink` or
@@ -368,7 +369,11 @@ wrapper is MCP's constraint, not the contract's.
 
 `magda://devices` lists devices that exist on tracks; `magda://devices/catalog`
 lists device *kinds* that can be added, addressed by `catalogId`. The two are not
-interchangeable, and neither carries a filesystem path.
+interchangeable, and neither carries a filesystem path. The resource is the whole
+catalogue; the `devices.catalog` tool narrows it with `query` (part of the name
+or manufacturer), `startsWith` (the name's first letters), `manufacturer` and
+`category` (whole value, any case), `format`, `type`, and `instrument`, and pages
+with `offset` and `limit` (#3383).
 
 A URI that names nothing, or a well-formed URI for something that does not exist,
 returns `-32602` — never the `-32002` earlier revisions used, which this revision

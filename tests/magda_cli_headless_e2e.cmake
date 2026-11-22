@@ -258,6 +258,43 @@ if(midiself_result EQUAL 0)
         "route-midi-to self-routing (6 6) was not rejected: ${midiself_stdout}")
 endif()
 
+# Command files (#3385): a quoted name loses its quotes, and an internal effect
+# is added as an effect. The new track is 9, after the eight above.
+set(cmds_file "${MAGDA_CLI_WORK_DIR}/cmds.txt")
+file(WRITE "${cmds_file}" "add-track audio \"Poly 1\"\nadd-internal-device 9 magda_reverb\n")
+execute_process(
+    COMMAND "${MAGDA_CLI}" run "${mutated_file}" --cmds "${cmds_file}" --dump-json
+            --out "${MAGDA_CLI_WORK_DIR}/headless_fixture_cmds.mgd"
+    RESULT_VARIABLE cmds_result
+    OUTPUT_VARIABLE cmds_stdout
+    ERROR_VARIABLE cmds_stderr
+)
+if(NOT cmds_result EQUAL 0)
+    message(FATAL_ERROR "magda-cli run --cmds failed: ${cmds_stderr}\n${cmds_stdout}")
+endif()
+string(FIND "${cmds_stdout}" "\"name\": \"Poly 1\"" unquoted_pos)
+string(REGEX MATCH "\"pluginId\": \"magda_reverb\",[ \t\r\n]*\"instrument\": false"
+       reverb_effect "${cmds_stdout}")
+string(REGEX MATCH "\"pluginId\": \"magda_polysynth\",[ \t\r\n]*\"instrument\": true"
+       synth_instrument "${cmds_stdout}")
+if(unquoted_pos EQUAL -1 OR NOT reverb_effect OR NOT synth_instrument)
+    file(WRITE "${json_file}" "${cmds_stdout}")
+    message(FATAL_ERROR
+        "run --cmds kept a name's quotes or got a device's instrument flag wrong; see ${json_file}")
+endif()
+
+execute_process(
+    COMMAND "${MAGDA_CLI}" exec "${mutated_file}"
+            add-internal-device 1 no_such_device
+            --out "${MAGDA_CLI_WORK_DIR}/headless_fixture_unknown_device.mgd"
+    RESULT_VARIABLE unknown_device_result
+    OUTPUT_QUIET
+    ERROR_QUIET
+)
+if(unknown_device_result EQUAL 0)
+    message(FATAL_ERROR "add-internal-device accepted an id that is not in the catalogue")
+endif()
+
 execute_process(
     COMMAND "${MAGDA_CLI}" render "${mutated_file}" --wav "${wav_file}" --from 0 --to 1bar
     RESULT_VARIABLE render_result
