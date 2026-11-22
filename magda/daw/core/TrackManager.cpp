@@ -19,6 +19,7 @@
 #include "DeviceState.hpp"
 #include "DrumGridPads.hpp"
 #include "LegacyDeviceAliases.hpp"
+#include "PadChannels.hpp"
 #include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
@@ -1505,10 +1506,26 @@ int TrackManager::getTrackIndex(TrackId trackId) const {
 // ============================================================================
 
 void TrackManager::setTrackName(TrackId trackId, const juce::String& name) {
-    if (auto* track = getTrack(trackId)) {
-        track->name = name;
+    auto* track = getTrack(trackId);
+    if (track == nullptr)
+        return;
+
+    // A pad channel is named by its pad (#3010), so the name goes there first.
+    if (auto* pad =
+            track->type == TrackType::Pad ? pad_channels::findPad(tracks_, *track) : nullptr) {
+        auto given = name.trim();
+        if (given == padDefaultName(*pad))
+            given.clear();
+        pad->name = given;
+        track->name = padDisplayName(*pad);
+        const auto gridTrackId = track->parentId;
         notifyTrackPropertyChanged(trackId);
+        notifyTrackDevicesChanged(gridTrackId);
+        return;
     }
+
+    track->name = name;
+    notifyTrackPropertyChanged(trackId);
 }
 
 void TrackManager::setTrackColour(TrackId trackId, juce::Colour colour) {

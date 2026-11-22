@@ -45,6 +45,7 @@ void migratePadChannels(std::vector<TrackInfo>& tracks) {
     TrackId nextTrackId = 1;
     for (const auto& track : tracks)
         nextTrackId = std::max(nextTrackId, track.id + 1);
+    pad_channels::adoptChannelNames(tracks);
     pad_channels::sync(tracks, nextTrackId);
 }
 

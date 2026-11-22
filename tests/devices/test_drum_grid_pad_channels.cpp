@@ -396,3 +396,67 @@ TEST_CASE("Selecting a device in a pad channel's chain keeps the channel selecte
     selection.selectChainNode(padPath.withDevice(voiceId));
     CHECK(selection.getSelectedTrack() == grid.trackId);
 }
+
+TEST_CASE("A pad's name is its channel's, renamed from either side",
+          "[drumgrid][pads][channels][rename]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    const auto grid = makeGrid();
+    REQUIRE(tm.setPadDevice(grid.path, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+    const auto channelId = tm.getPadChannel(grid.path, 0)->id;
+    CHECK(tm.getTrack(channelId)->name == "Kick");
+
+    editPads(grid.path, "Rename Pad", [&] { tm.setPadName(grid.path, 0, "Boom"); });
+    CHECK(tm.getPad(grid.path, 0)->name == "Boom");
+    CHECK(tm.getTrack(channelId)->name == "Boom");
+
+    tm.setTrackName(channelId, "Thud");
+    CHECK(tm.getPad(grid.path, 0)->name == "Thud");
+    CHECK(tm.getTrack(channelId)->name == "Thud");
+
+    REQUIRE(UndoManager::getInstance().undo());
+    CHECK(tm.getPad(grid.path, 0)->name.isEmpty());
+    CHECK(tm.getTrack(channelId)->name == "Kick");
+}
+
+TEST_CASE("An unnamed pad's channel follows what is on the pad",
+          "[drumgrid][pads][channels][rename]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    const auto grid = makeGrid();
+    REQUIRE(tm.setPadDevice(grid.path, 0, padVoice("Rhythmica")) != INVALID_DEVICE_ID);
+    const auto channelId = tm.getPadChannel(grid.path, 0)->id;
+
+    REQUIRE(tm.setPadDevice(grid.path, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+    CHECK(tm.getTrack(channelId)->name == "Kick");
+
+    // A name matching what the pad would be called anyway leaves it unnamed.
+    tm.setTrackName(channelId, "Kick");
+    CHECK(tm.getPad(grid.path, 0)->name.isEmpty());
+
+    // An empty name goes back to the default.
+    tm.setPadName(grid.path, 0, "Boom");
+    tm.setPadName(grid.path, 0, "  ");
+    CHECK(tm.getPad(grid.path, 0)->name.isEmpty());
+    CHECK(tm.getTrack(channelId)->name == "Kick");
+}
+
+TEST_CASE("A project's saved channel name becomes its pad's on load",
+          "[drumgrid][pads][channels][rename]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    const auto grid = makeGrid();
+    REQUIRE(tm.setPadDevice(grid.path, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+    const auto channelId = tm.getPadChannel(grid.path, 0)->id;
+
+    // As a project saved before the two were kept in step can hold them.
+    auto saved = tm.getTracks();
+    const auto channel = std::ranges::find(saved, channelId, &TrackInfo::id);
+    REQUIRE(channel != saved.end());
+    channel->name = "Big Kick";
+
+    pad_channels::adoptChannelNames(saved);
+    const auto* pad = pad_channels::findPad(saved, *channel);
+    REQUIRE(pad != nullptr);
+    CHECK(pad->name == "Big Kick");
+}

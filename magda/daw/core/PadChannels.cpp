@@ -24,20 +24,13 @@ struct WantedPad {
     int slot = 0;
     int bus = 0;
     juce::String name;
+    ChainInfo* pad = nullptr;
     // The pad's own mix, moved onto a channel made for it.
     float volumeDb = 0.0f;
     float pan = 0.0f;
     bool muted = false;
     bool solo = false;
 };
-
-juce::String channelName(const ChainInfo& pad) {
-    if (pad.name.isNotEmpty())
-        return pad.name;
-    if (auto voice = padVoiceName(pad); voice.isNotEmpty())
-        return voice;
-    return juce::MidiMessage::getMidiNoteName(pad.lowNote, true, true, 3);
-}
 
 const TrackInfo* trackById(const std::vector<TrackInfo>& tracks, TrackId id) {
     const auto found = std::ranges::find(tracks, id, &TrackInfo::id);
@@ -62,40 +55,37 @@ std::vector<WantedPad> collectPads(std::vector<TrackInfo>& tracks, const std::se
     for (auto& track : tracks) {
         if (isChannel(track))
             continue;
-        chain_walk::forEachDevice(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
-                                  chain_walk::Pads::Enter,
-                                  [&](DeviceInfo& device, const ChainNodePath&) {
-                                      if (!device.pads || !isPadRackDevice(device.pluginId))
-                                          return;
-                                      grids.insert(device.id);
-                                      if (device.multiOut.isMultiOut) {
-                                          device.multiOut = {};
-                                          changed = true;
-                                      }
+        chain_walk::forEachDevice(
+            track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+            chain_walk::Pads::Enter, [&](DeviceInfo& device, const ChainNodePath&) {
+                if (!device.pads || !isPadRackDevice(device.pluginId))
+                    return;
+                grids.insert(device.id);
+                if (device.multiOut.isMultiOut) {
+                    device.multiOut = {};
+                    changed = true;
+                }
 
-                                      std::vector<WantedPad> grid;
-                                      for (auto& pad : device.pads->chains) {
-                                          const auto bus = std::exchange(pad.outputIndex, 0);
-                                          changed = changed || bus != 0;
-                                          if (!padHasDevices(pad))
-                                              continue;
+                std::vector<WantedPad> grid;
+                for (auto& pad : device.pads->chains) {
+                    const auto bus = std::exchange(pad.outputIndex, 0);
+                    changed = changed || bus != 0;
+                    if (!padHasDevices(pad))
+                        continue;
 
-                                          WantedPad want{track.id,
-                                                         {device.id, pad.id},
-                                                         padParameterSlot(pad),
-                                                         bus,
-                                                         channelName(pad)};
-                                          if (!linked.contains(want.key)) {
-                                              want.volumeDb = std::exchange(pad.volume, 0.0f);
-                                              want.pan = std::exchange(pad.pan, 0.0f);
-                                              want.muted = std::exchange(pad.muted, false);
-                                              want.solo = std::exchange(pad.solo, false);
-                                          }
-                                          grid.push_back(std::move(want));
-                                      }
-                                      std::ranges::stable_sort(grid, {}, &WantedPad::slot);
-                                      wanted.insert(wanted.end(), grid.begin(), grid.end());
-                                  });
+                    WantedPad want{track.id, {device.id, pad.id}, padParameterSlot(pad),
+                                   bus,      padDisplayName(pad), &pad};
+                    if (!linked.contains(want.key)) {
+                        want.volumeDb = std::exchange(pad.volume, 0.0f);
+                        want.pan = std::exchange(pad.pan, 0.0f);
+                        want.muted = std::exchange(pad.muted, false);
+                        want.solo = std::exchange(pad.solo, false);
+                    }
+                    grid.push_back(std::move(want));
+                }
+                std::ranges::stable_sort(grid, {}, &WantedPad::slot);
+                wanted.insert(wanted.end(), grid.begin(), grid.end());
+            });
     }
     return wanted;
 }
@@ -122,7 +112,13 @@ void convertBusTracks(std::vector<TrackInfo>& tracks, const std::set<DeviceId>& 
         if (fed.empty()) {
             emptied.insert(track.id);
         } else if (fed.size() == 1 && !linked.contains(fed.front()->key)) {
-            const auto& want = *fed.front();
+            auto& want = *fed.front();
+            // The channel is named by its pad, so the bus's name moves onto the pad.
+            if (track.name != want.name) {
+                want.pad->name =
+                    track.name == padDefaultName(*want.pad) ? juce::String() : track.name;
+                want.name = track.name;
+            }
             track.type = TrackType::Pad;
             track.padLink = PadChannelLink{want.key.first, want.key.second};
             track.volume *= juce::Decibels::decibelsToGain(want.volumeDb, -60.0f);
@@ -200,6 +196,30 @@ juce::String gridRoute(TrackId gridTrackId) {
     return "track:" + juce::String(gridTrackId);
 }
 
+ChainInfo* findPad(std::vector<TrackInfo>& tracks, const TrackInfo& channel) {
+    if (!channel.padLink)
+        return nullptr;
+    ChainInfo* found = nullptr;
+    for (auto& track : tracks) {
+        if (track.id != channel.parentId)
+            continue;
+        chain_walk::forEachDevice(
+            track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+            chain_walk::Pads::Enter, [&](DeviceInfo& device, const ChainNodePath&) {
+                if (found == nullptr && device.pads && device.id == channel.padLink->gridId)
+                    found = findPadChainById(*device.pads.get(), channel.padLink->padId);
+            });
+    }
+    return found;
+}
+
+void adoptChannelNames(std::vector<TrackInfo>& tracks) {
+    for (const auto& channel : tracks)
+        if (auto* pad = isChannel(channel) ? findPad(tracks, channel) : nullptr;
+            pad != nullptr && channel.name != padDisplayName(*pad))
+            pad->name = channel.name == padDefaultName(*pad) ? juce::String() : channel.name;
+}
+
 TrackInfo* findChannel(std::vector<TrackInfo>& tracks, DeviceId gridId, ChainId padId) {
     const auto found = std::ranges::find_if(tracks, [&](const TrackInfo& track) {
         return isChannel(track) && keyOf(track) == PadKey{gridId, padId};
@@ -240,6 +260,11 @@ bool sync(std::vector<TrackInfo>& tracks, TrackId& nextTrackId, Stash* stash) {
         wantedKeys.insert(want.key);
 
         if (auto* channel = findChannel(tracks, want.key.first, want.key.second)) {
+            // The pad's name is the channel's, whichever side renamed it.
+            if (channel->name != want.name) {
+                channel->name = want.name;
+                changed = true;
+            }
             if (channel->parentId == want.gridTrackId)
                 continue;
             // The grid moved to another track, and its channels follow it.
@@ -255,6 +280,7 @@ bool sync(std::vector<TrackInfo>& tracks, TrackId& nextTrackId, Stash* stash) {
         if (stash != nullptr && stashed != stash->end()) {
             channel = std::move(stashed->second);
             stash->erase(stashed);
+            channel.name = want.name;
             if (channel.audioOutputDevice == gridRoute(channel.parentId))
                 channel.audioOutputDevice = gridRoute(want.gridTrackId);
         } else {

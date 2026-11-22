@@ -482,6 +482,7 @@ set(TEST_SOURCES
     # An instrument moving sides as a selection plays it (#1898).
     list(APPEND TEST_SOURCES engine/test_render_ahead_played.cpp)
     list(APPEND TEST_SOURCES engine/test_tracks_being_played.cpp)
+    list(APPEND TEST_SOURCES engine/test_held_auditions.cpp)
     # Each track's share of the period, for the CPU view (#3357).
     list(APPEND TEST_SOURCES engine/test_render_load_shares.cpp)
     list(APPEND TEST_SOURCES engine/test_modulation_liveness.cpp)
