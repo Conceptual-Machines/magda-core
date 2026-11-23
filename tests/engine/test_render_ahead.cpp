@@ -327,6 +327,73 @@ TEST_CASE("A callback says how it rendered, for the xrun record", "[engine][sess
     CHECK(ahead.session.lastCallback().published);
 }
 
+namespace {
+
+magda::engine::TransportSnapshot stopped() {
+    magda::engine::TransportSnapshot transport;
+    transport.request.generation = 1;
+    return transport;
+}
+
+magda::engine::TransportSnapshot startedFromStop() {
+    auto transport = rolling(0.0);
+    transport.request.generation = 2;
+    return transport;
+}
+
+}  // namespace
+
+TEST_CASE("A start from stopped waits out the look-ahead and is rendered ahead",
+          "[engine][session][3400]") {
+    // Against a session rendering everything at the callback, told to start at the block the
+    // primed start reaches: the two must agree on every sample.
+    constexpr int kStartAt = 20;
+    Rig whole(0), ahead(3);
+    for (auto* rig : {&whole, &ahead})
+        rig->session.publishTransport(stopped());
+
+    juce::AudioBuffer<float> a(2, kBlockSize), b(2, kBlockSize);
+    int heardStart = -1;
+    for (int callback = 0; callback < 200; ++callback) {
+        if (callback == kStartAt)
+            ahead.session.publishTransport(startedFromStop());
+        if (callback == kStartAt + 3)
+            whole.session.publishTransport(startedFromStop());
+        whole.callback(a);
+        ahead.callback(b);
+        INFO("callback " << callback);
+        if (ahead.session.lastCallback().started) {
+            heardStart = callback;
+            CHECK(ahead.session.lastCallback().wholeBlocks == 0);
+        }
+        for (int channel = 0; channel < 2; ++channel)
+            REQUIRE(std::memcmp(a.getReadPointer(channel), b.getReadPointer(channel),
+                                kBlockSize * sizeof(float)) == 0);
+    }
+
+    CHECK(heardStart == kStartAt + 3);
+    CHECK(b.getMagnitude(0, 0, kBlockSize) > 0.0f);
+    CHECK(ahead.session.renderAheadMisses() == 0);
+    CHECK(ahead.session.renderAheadDiscards() == 0);
+}
+
+TEST_CASE("A start from stopped under an external phase starts at once",
+          "[engine][session][3400]") {
+    // The phase holds a start at the callback, which the ahead side cannot predict.
+    Rig ahead(3);
+    ahead.session.publishTransport(stopped());
+    const magda::engine::PhaseReference phase{.beat = 0.0, .quantum = 4.0};
+
+    juce::AudioBuffer<float> out(2, kBlockSize);
+    for (int callback = 0; callback < 10; ++callback) {
+        ahead.session.process(kBlockSize, out, {}, &phase);
+        ahead.session.renderAheadOnce();
+    }
+    ahead.session.publishTransport(startedFromStop());
+    ahead.session.process(kBlockSize, out, {}, &phase);
+    CHECK(ahead.session.lastCallback().started);
+}
+
 TEST_CASE("A track holding session clips renders at the callback", "[engine][plan][1898]") {
     // A launch has to be heard when it fires, so its clips are never rendered ahead; a track
     // playing only its arrangement still is.

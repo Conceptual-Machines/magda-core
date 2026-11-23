@@ -48,6 +48,9 @@ class AheadLaunches final : public AheadSlots, public PlanExecutor::AheadState {
 
     void beginAheadBlock(const BlockInfo& block) override;
     void renderedWhole() override;
+    bool holdsLaunches() const override {
+        return holdsLaunches_.load(std::memory_order_acquire);
+    }
 
     /// What the ahead side's blocks read in place of the real tables.
     const LaunchHandleTable& handles() const {
@@ -96,6 +99,7 @@ class AheadLaunches final : public AheadSlots, public PlanExecutor::AheadState {
     std::atomic<std::uint64_t> written_{0};
     std::atomic<std::uint64_t> read_{0};
     std::atomic<int> overflows_{0};
+    std::atomic<bool> holdsLaunches_{false};
 };
 
 }  // namespace magda::engine

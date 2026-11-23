@@ -1750,10 +1750,12 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
                                const BlockInfo& requestedBlock, juce::AudioBuffer<float>& output,
                                const std::function<bool()>& underClaim) {
     // A table without sides resolves whole on the ahead side, which may be blocks early.
-    // A roll's first block renders at the callback, so a launch from stopped sounds with it and
-    // the ahead side's launch handles start from the real ones (#3316).
+    // With session slots ahead, a roll's first block renders at the callback, so a launch from
+    // stopped sounds with it and the ahead copies start from the real handles (#3316).
     const auto* table = appliesValues(values) ? values.params.get() : nullptr;
-    const bool splits = guarded_ && !requestedBlock.started &&
+    const bool seedsLaunches =
+        requestedBlock.started && (aheadState_ == nullptr || aheadState_->holdsLaunches());
+    const bool splits = guarded_ && !seedsLaunches &&
                         (table == nullptr || (!table->opSide.empty() && table->sidesAgree));
 
     if (side == 0) {

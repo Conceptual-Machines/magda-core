@@ -34,10 +34,6 @@ double projectEndBeat();
 }  // namespace magda::daw::engine_host
 
 namespace {
-/// How far ahead of the device the arrangement renders (#1898); the block size turns it into
-/// blocks.
-constexpr int kRenderAheadMs = 20;
-
 /// What has named itself unwired, in the order it first did. Message thread
 /// only, like every caller of the surface below.
 std::vector<std::string_view>& unwiredSoFar() {
@@ -196,7 +192,6 @@ bool MagdaAudioEngine::initialize() {
     audioIO_->addListener(this);
     if (!app_services::isHeadless(headless_))
         audioIO_->open();
-    host_->setRenderAhead(kRenderAheadMs);
     configChanged();
     Config::getInstance().addListener(this);
     host_->start(audioIO_->getDeviceManager(), &audioIO_->callbackLoad(), &audioIO_->xrunLog());
@@ -230,6 +225,7 @@ void MagdaAudioEngine::configChanged() {
         if (capturing || !host_->hasCaptureHistory())
             host_->setCaptureSeconds(capturing ? config.getCaptureSeconds() : 0);
         host_->setCaptureWriting(capturing);
+        host_->setRenderAhead(config.getRenderAheadMs());
 
         std::vector<juce::String> clockOutputs;
         for (const auto& name : config.getMidiClockOutputs())

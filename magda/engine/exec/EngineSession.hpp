@@ -711,6 +711,12 @@ class EngineSession {
     std::set<TakeKey> deferredTakes_;
     std::atomic<bool> takeCompletionPending_{false};
 
+    /// Whether a start from stopped renders its first blocks ahead (#3400). Publishing thread.
+    bool rendersStartAhead() const;
+
+    /// Set by the callback: the transport follows an external phase (Link).
+    std::atomic<bool> followsPhase_{false};
+
     // Audio thread only.
     CallbackSummary lastCallback_;
     std::uint64_t lastEpoch_ = 0;

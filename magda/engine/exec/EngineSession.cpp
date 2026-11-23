@@ -391,8 +391,14 @@ void EngineSession::publishTransport(TransportSnapshot transport) {
     const auto movesNothing = lastTransport_.request.generation == transport.request.generation &&
                               lastTransport_.loop == transport.loop &&
                               lastTransport_.punch == transport.punch;
+    // A start from stopped waits behind the stopped blocks already rendered, about the
+    // look-ahead, so its first blocks are rendered ahead too (#3400).
+    const auto primesStart = !lastTransport_.request.playing && transport.request.playing &&
+                             lastTransport_.loop == transport.loop &&
+                             lastTransport_.punch == transport.punch && rendersStartAhead();
+    const auto steps = movesNothing || primesStart;
     lastTransport_ = transport;
-    if (renderAhead_ == nullptr || !movesNothing) {
+    if (renderAhead_ == nullptr || !steps) {
         sequenced_.steps.clear();
         sequenced_.steps.push_back({0, std::move(transport)});
     }
@@ -401,12 +407,18 @@ void EngineSession::publishTransport(TransportSnapshot transport) {
         return;
     }
     renderAhead_->whileIdle([&] {
-        if (movesNothing)
+        if (steps)
             sequenced_.stepTo(std::move(transport), renderAhead_->firstUnrendered(),
                               renderAhead_->firstPending());
         renderAhead_->setTransport(std::make_shared<const SequencedTransport>(sequenced_));
         transport_.nonRealtimeReplace(sequenced_);
     });
+}
+
+bool EngineSession::rendersStartAhead() const {
+    // A phase holds the start at the callback, which the ahead side cannot predict.
+    return renderAhead_ != nullptr && live_ != nullptr && live_->launches != nullptr &&
+           !live_->launches->holdsLaunches() && !followsPhase_.load(std::memory_order_relaxed);
 }
 
 void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
@@ -449,6 +461,7 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
     jassert(numSamples <= output.getNumSamples());
     numSamples = std::min(numSamples, output.getNumSamples());
     render_probe::setRole(render_probe::Role::callback);
+    followsPhase_.store(phase != nullptr, std::memory_order_relaxed);
     lastCallback_ = {};
 
     // Before the clear, and before anything else touches the output: a host may

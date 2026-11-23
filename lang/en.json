@@ -499,6 +499,8 @@
     "slider.interval": "Interval",
     "slider.capture_buffer": "Capture Buffer",
     "slider.capture_length": "Capture Length",
+    "slider.render_ahead": "Render-Ahead Time",
+    "render_ahead_off": "Off",
     "toggle.enable_autosave": "Enable auto-save",
     "toggle.stop_updates_playhead": "Stop updates playhead",
     "toggle.follow_playhead": "Follow playhead during playback",
