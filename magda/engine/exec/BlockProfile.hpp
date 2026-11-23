@@ -14,7 +14,7 @@
  *
  * Off, it costs one predictable branch per op. On, each thread tallies into its own table, so
  * the profile adds no lock and no shared cache line to the drain it measures, and the tables
- * are summed and printed to stderr at exit. A measuring aid, never a feature.
+ * are summed and printed to stderr when the engine shuts down. A measuring aid, never a feature.
  */
 
 namespace magda::engine {
@@ -34,6 +34,9 @@ class BlockProfile {
         CallbackSide,
         WriterFinishWait,
         CallbackClaimWait,
+        /// The writer's side of a render-ahead block: one it published, and one it gave up.
+        AheadBlock,
+        AheadGivenUp,
         PhaseCount
     };
 
@@ -60,7 +63,8 @@ class BlockProfile {
 
     static void count(Counter counter, int amount = 1);
 
-    /// Print the tallies to stderr. Registered with atexit when the profile is on.
+    /// Print the tallies to stderr, once. The app calls it at engine teardown, since it ends in
+    /// _Exit; registered with atexit too, for the benches and tests that exit normally.
     static void report();
 
     static constexpr std::size_t kKinds = 64;

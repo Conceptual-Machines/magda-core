@@ -123,9 +123,14 @@ void BlockProfile::count(Counter counter, int amount) {
 }
 
 void BlockProfile::report() {
+    static std::atomic<bool> reported{false};
+    if (!enabled_ || reported.exchange(true))
+        return;
+
     static const char* const kPhaseNames[PhaseCount] = {
-        "beginBlock", "midiPrefix", "resolveParams", "drain (ops)",      "serialTail",
-        "wholeBlock", "callback",   "callbackSide",  "writerFinishWait", "claimWait"};
+        "beginBlock",       "midiPrefix", "resolveParams", "drain (ops)",
+        "serialTail",       "wholeBlock", "callback",      "callbackSide",
+        "writerFinishWait", "claimWait",  "aheadBlock",    "aheadGivenUp"};
     static const char* const kCounterNames[CounterCount] = {
         "initial ready", "  of them caller-only", "workers signalled",
         "worker sleeps", "wakes without work",    "chains on workers"};
@@ -167,12 +172,14 @@ void BlockProfile::report() {
     if (blocks == 0)
         return;
 
-    std::fprintf(stderr, "  %-18s %10s %10s\n", "phase", "us/block", "calls/blk");
+    std::fprintf(stderr, "  %-18s %10s %10s %10s\n", "phase", "us/block", "calls/blk", "us/call");
     for (std::size_t phase = 0; phase < PhaseCount; ++phase)
         if (phaseCounts[phase] != 0)
-            std::fprintf(stderr, "  %-18s %10.1f %10.2f\n", kPhaseNames[phase],
+            std::fprintf(stderr, "  %-18s %10.1f %10.2f %10.1f\n", kPhaseNames[phase],
                          static_cast<double>(phaseNanos[phase]) / 1000.0 / blocks,
-                         static_cast<double>(phaseCounts[phase]) / blocks);
+                         static_cast<double>(phaseCounts[phase]) / blocks,
+                         static_cast<double>(phaseNanos[phase]) / 1000.0 /
+                             static_cast<double>(phaseCounts[phase]));
 
     std::fprintf(stderr, "  %-22s %10s\n", "scheduling", "per blk");
     for (std::size_t counter = 0; counter < CounterCount; ++counter)
