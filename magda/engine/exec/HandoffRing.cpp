@@ -8,7 +8,6 @@
 #include <cstring>
 
 #include "exec/EngineDevice.hpp"
-#include "exec/ResidentBuffers.hpp"
 
 namespace magda::engine {
 
@@ -96,7 +95,7 @@ void HandoffRing::prepare(const RenderPlan& plan, int depth, int numChannels, in
             const auto op = handoffOps[h];
             auto& handoff = entry->handoffs[h];
             if (plan.ops[op].outputs.front().kind == SignalKind::Audio) {
-                setSizeResident(handoff.audio, numChannels, maxBlockSize);
+                handoff.audio.prepare(numChannels, maxBlockSize);
                 continue;
             }
             const auto bytes = op < midiBytes.size() ? midiBytes[op] : 0;

@@ -13,7 +13,6 @@
 
 #include "exec/BlockProfile.hpp"
 #include "exec/ModulationLiveness.hpp"
-#include "exec/ResidentBuffers.hpp"
 #include "plan/PlanHandoff.hpp"
 
 namespace magda::engine {
@@ -148,7 +147,7 @@ void applyGain(juce::dsp::AudioBlock<float> block, const OpValue& value, int num
 void AudioDelayLine::prepare(int numChannels, int delaySamples, int maxBlockSize) {
     delay_ = delaySamples;
     writePosition_ = 0;
-    setSizeResident(ring_, numChannels, delaySamples + maxBlockSize);
+    ring_.prepare(numChannels, delaySamples + maxBlockSize);
 }
 
 void AudioDelayLine::process(juce::dsp::AudioBlock<float> block, int numSamples) {
@@ -185,7 +184,7 @@ void AudioDelayLine::process(juce::dsp::AudioBlock<float> block, int numSamples)
 }
 
 void FeedbackCarry::prepare(int numChannels, int maxBlockSize) {
-    setSizeResident(audio_, numChannels, maxBlockSize);
+    audio_.prepare(numChannels, maxBlockSize);
 }
 
 void FeedbackCarry::read(juce::dsp::AudioBlock<float> block, int numSamples) const {
@@ -769,7 +768,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
                 sessionSourceForOp_[i] = findAudioSource(bindings.sessionAudio, trackId);
                 if (sessionSourceForOp_[i] != nullptr)
-                    setSizeResident(sessionScratch_[i], context.numChannels, context.maxBlockSize);
+                    sessionScratch_[i].prepare(context.numChannels, context.maxBlockSize);
                 else if (!bindings.sessionAudio.empty())
                     messages.push_back(describe(i) + "no session audio source bound for track " +
                                        std::to_string(trackId) + ", its session is silent");
@@ -930,7 +929,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
     audioSlots_.resize(static_cast<std::size_t>(layout.numAudioSlots));
     for (auto& buffer : audioSlots_)
-        setSizeResident(buffer, context_.numChannels, context_.maxBlockSize);
+        buffer.prepare(context_.numChannels, context_.maxBlockSize);
 
     // Reserving a flat amount per MIDI port is not enough: a merge carries
     // everything that reaches it, so fan-in outgrows any fixed figure and the
@@ -1260,8 +1259,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         feedbackCarries_.push_back(std::move(carry));
     }
 
-    setSizeResident(silence_, context_.numChannels, context_.maxBlockSize);
-    setSizeResident(aheadOutput_, context_.numChannels, context_.maxBlockSize);
+    silence_.prepare(context_.numChannels, context_.maxBlockSize);
+    aheadOutput_.prepare(context_.numChannels, context_.maxBlockSize);
     noMidi_.clear();
 
     // The arena, as the render path sees it. Taken once, here, so that nothing
