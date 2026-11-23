@@ -10,6 +10,7 @@
 #include "clip/ClipSnapshot.hpp"
 #include "clip/ClipStreamFeed.hpp"
 #include "exec/AheadLaunches.hpp"
+#include "exec/BlockProfile.hpp"
 #include "exec/ParallelPlanExecutor.hpp"
 #include "exec/RenderProbe.hpp"
 #include "exec/RenderThreadPool.hpp"
@@ -196,9 +197,13 @@ int RenderAhead::renderOnce() {
             const auto started = std::chrono::steady_clock::now();
             const auto rendered =
                 epoch.executor->processSide(0, sequence, *values, block, scratch_, cue);
+            const auto elapsed = std::chrono::steady_clock::now() - started;
             if (load != nullptr)
-                load->addAheadBlock(std::chrono::steady_clock::now() - started, block.numSamples,
-                                    clock.sampleRate);
+                load->addAheadBlock(elapsed, block.numSamples, clock.sampleRate);
+            if (BlockProfile::enabled())
+                BlockProfile::addPhase(rendered && !discarded ? BlockProfile::AheadBlock
+                                                              : BlockProfile::AheadGivenUp,
+                                       elapsed);
             if (!rendered || discarded)
                 return count;
             rendered_ = sequence + 1;

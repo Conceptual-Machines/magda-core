@@ -76,6 +76,7 @@
 #include "TracksBeingPlayed.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/ClipVoicePool.hpp"
+#include "exec/BlockProfile.hpp"
 #include "exec/EngineSession.hpp"
 #include "exec/ModulationLiveness.hpp"
 #include "exec/PlanValues.hpp"
@@ -493,6 +494,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         stopTimer();
         detach();
         dropCaptureHistory();
+        engine::BlockProfile::report();
     }
 
     /// Audio thread: a slot's pass wrap or a voice's read window, into the
