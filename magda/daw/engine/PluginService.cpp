@@ -132,6 +132,28 @@ bool shouldPreserveUnavailablePlugin(
     return root.has_value() && !volumeIsMounted(*root);
 }
 
+/// An LV2 description is keyed by plugin URI, not by the bundle discovery returns, so a
+/// bundle is known when every URI it declares is. Reading them parses the bundle's TTL only.
+bool isKnownPluginFile(juce::AudioPluginFormatManager& formats,
+                       const PluginScanCoordinator::PluginToScan& plugin,
+                       const juce::StringArray& knownPaths) {
+    if (knownPaths.contains(plugin.pluginPath))
+        return true;
+    if (plugin.formatName != "LV2")
+        return false;
+
+    for (auto* format : formats.getFormats()) {
+        if (format == nullptr || format->getName() != plugin.formatName)
+            continue;
+        juce::OwnedArray<juce::PluginDescription> types;
+        format->findAllTypesForFile(types, plugin.pluginPath);
+        return !types.isEmpty() && std::ranges::all_of(types, [&](const auto* type) {
+            return knownPaths.contains(type->fileOrIdentifier);
+        });
+    }
+    return false;
+}
+
 }  // namespace
 
 PluginService& PluginService::getInstance() {
@@ -533,7 +555,7 @@ void PluginService::detectNewPlugins(
 
         std::vector<PluginScanCoordinator::PluginToScan> newPlugins;
         for (const auto& plugin : allPlugins) {
-            if (!knownPaths.contains(plugin.pluginPath))
+            if (!isKnownPluginFile(formats, plugin, knownPaths))
                 newPlugins.push_back(plugin);
         }
 
