@@ -492,6 +492,7 @@ bool PresetManager::saveRackPreset(const RackInfo& rack, const juce::String& pre
         return false;
     }
     mirrorToMediaDb(getPresetsDirectory(), target);
+    notifyRackPresetsChanged();
     return true;
 }
 
@@ -521,17 +522,36 @@ juce::StringArray PresetManager::getRackPresets() const {
     return out;
 }
 
+bool PresetManager::isMultibandRackPreset(const juce::String& presetName) const {
+    const auto source =
+        getRacksDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
+    juce::var payload;
+    juce::String error;
+    return readPresetFile(source, kKindRack, payload, error) &&
+           static_cast<bool>(payload.getProperty("multiband", false));
+}
+
 bool PresetManager::deleteRackPreset(const juce::String& presetName) {
     auto target =
         getRacksDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
-    return deletePresetFile(target, lastError_);
+    if (!deletePresetFile(target, lastError_))
+        return false;
+    notifyRackPresetsChanged();
+    return true;
 }
 
 bool PresetManager::renameRackPreset(const juce::String& oldName, const juce::String& newName) {
     auto source =
         getRacksDirectory().getChildFile(sanitizeRelativePath(oldName) + kPresetExtension);
     auto dest = getRacksDirectory().getChildFile(sanitizeRelativePath(newName) + kPresetExtension);
-    return renamePresetFile(getPresetsDirectory(), source, dest, lastError_);
+    if (!renamePresetFile(getPresetsDirectory(), source, dest, lastError_))
+        return false;
+    notifyRackPresetsChanged();
+    return true;
+}
+
+void PresetManager::notifyRackPresetsChanged() {
+    listeners_.call([](Listener& listener) { listener.rackPresetsChanged(); });
 }
 
 // ============================================================================

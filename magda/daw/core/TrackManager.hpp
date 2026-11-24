@@ -568,9 +568,13 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     DeviceId addDeviceToMixerAnalysis(TrackId trackId, const DeviceInfo& device);
     DeviceId findMixerAnalysisDevice(TrackId trackId, const juce::String& pluginId) const;
 
-    // Device management on track
+    // Device management on track. Every device add takes a rack device (isRackDevice) as the rack
+    // it stands for and returns INVALID_DEVICE_ID for it, since no device was made (#3417).
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device);
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device, int insertIndex);
+    /// Inserts the rack @p rackDevice stands for into @p chainPath at @p insertIndex, clamped.
+    RackId addRackDevice(const ChainNodePath& chainPath, const DeviceInfo& rackDevice,
+                         int insertIndex);
     void removeDeviceFromTrack(TrackId trackId, DeviceId deviceId);
     void setDeviceBypassed(TrackId trackId, DeviceId deviceId, bool bypassed);
     // Path-based variant — preferred for new code; sections will become

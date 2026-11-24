@@ -26,6 +26,7 @@ target_sources(magda_daw_app PRIVATE
     PanelContent.hpp
     PanelContentFactory.hpp
     PluginBrowserContent.hpp
+    PluginBrowserOrder.hpp
     MediaExplorerContent.hpp
     PresetBrowserContent.hpp
     EmptyContent.hpp

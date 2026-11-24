@@ -4,6 +4,7 @@
 #include "TrackManager.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <magda/sdk/lockfree/SidechainTriggerBus.hpp>
 #include <map>
 #include <ranges>
@@ -22,6 +23,7 @@
 #include "PadChannels.hpp"
 #include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
+#include "RackDevices.hpp"
 #include "RackInfo.hpp"
 #include "RangesHelpers.hpp"
 #include "SelectionManager.hpp"
@@ -2248,6 +2250,10 @@ void TrackManager::seedSidechainModIfMissing(DeviceInfo& dev, const ChainNodePat
 }
 
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device) {
+    if (isRackDevice(device)) {
+        addRackDevice(ChainNodePath::trackLevel(trackId), device, std::numeric_limits<int>::max());
+        return INVALID_DEVICE_ID;
+    }
     if (auto* track = getTrack(trackId)) {
         if (!track->carriesSignal())
             return INVALID_DEVICE_ID;
@@ -2279,6 +2285,10 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
 
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device,
                                         int insertIndex) {
+    if (isRackDevice(device)) {
+        addRackDevice(ChainNodePath::trackLevel(trackId), device, insertIndex);
+        return INVALID_DEVICE_ID;
+    }
     if (auto* track = getTrack(trackId)) {
         if (!track->carriesSignal())
             return INVALID_DEVICE_ID;
@@ -2336,7 +2346,7 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
 DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& device,
                                          int insertIndex) {
     auto* track = getTrack(trackId);
-    if (!track || !track->carriesSignal())
+    if (!track || !track->carriesSignal() || isRackDevice(device))
         return INVALID_DEVICE_ID;
 
     // Post-fader FX is effects/analysis only — nothing generates sound after

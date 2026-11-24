@@ -7,6 +7,7 @@
 
 #include "PluginBrowserContent.hpp"
 #include "core/ChainNodePath.hpp"
+#include "core/RackDevices.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
@@ -89,8 +90,10 @@ class PostFxPanelContent::Container : public juce::Component, public juce::DragA
     bool isInterestedInDragSource(const SourceDetails& details) override {
         if (owner_.trackId_ == magda::INVALID_TRACK_ID)
             return false;
+        // Post-fader FX is a flat device list, so it takes no racks.
         if (auto* obj = details.description.getDynamicObject())
-            return obj->getProperty("type").toString() == "plugin";
+            return obj->getProperty("type").toString() == "plugin" &&
+                   !magda::isRackDevice(deviceInfoFromPluginDrag(*obj));
         return false;
     }
 

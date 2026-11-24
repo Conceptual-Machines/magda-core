@@ -41,6 +41,7 @@
 #include "core/DrumGridPads.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/PadCommands.hpp"
+#include "core/RackDevices.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StepPatternCommands.hpp"
 #include "core/TrackManager.hpp"
@@ -1398,6 +1399,18 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         juce::String uniqueId = obj.getProperty("uniqueId").toString();
 
         const auto refreshPad = [padIndex, updatePadFromModel]() { updatePadFromModel(padIndex); };
+
+        // A rack replaces the pad, as an instrument does.
+        if (auto rackDevice = magda::TrackManager::deviceInfoFromPluginObject(obj);
+            magda::isRackDevice(rackDevice)) {
+            postPadEdit(
+                "Set Pad Rack",
+                [padIndex, rackDevice](const magda::ChainNodePath& grid) {
+                    magda::TrackManager::getInstance().setPadDevice(grid, padIndex, rackDevice);
+                },
+                refreshPad);
+            return;
+        }
 
         // Handle internal plugins (MagdaSampler, etc.)
         if (!isExternal) {
