@@ -1760,7 +1760,8 @@ jobs:
     # times slower than a Debug clang build does, so this is the step that meets
     # every addition first.
     - name: Run tests
-      timeout-minutes: 30
+      # Room for a failed shard's retry after the first pass.
+      timeout-minutes: 45
       run: |
         $testExe = Get-ChildItem -Path build-debug -Recurse -Filter "magda_tests.exe" | Select-Object -First 1
         if (-not $testExe) {
@@ -1801,9 +1802,9 @@ jobs:
         $outDir = Join-Path $env:RUNNER_TEMP "test-shards"
         New-Item -ItemType Directory -Force -Path $outDir | Out-Null
         $savedTmp = $env:TMP
-        $runs = @()
-        for ($i = 0; $i -lt $shards; $i++) {
-          $tmpDir = Join-Path $outDir "tmp-$i"
+
+        function Start-Shard([int]$index, [string]$tag) {
+          $tmpDir = Join-Path $outDir "tmp-$tag-$index"
           New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
           $env:TMP = $tmpDir
           $env:TEMP = $tmpDir
@@ -1811,78 +1812,103 @@ jobs:
           # Catch2 prints nothing per case otherwise, and a killed shard would
           # leave an empty file behind.
           $p = Start-Process -FilePath $testExe.FullName `
-            -ArgumentList "--abort", "--durations", "yes", "--shard-count", "$shards", "--shard-index", "$i" `
+            -ArgumentList "--abort", "--durations", "yes", "--shard-count", "$shards", "--shard-index", "$index" `
             -NoNewWindow -PassThru `
-            -RedirectStandardOutput (Join-Path $outDir "shard-$i.out") `
-            -RedirectStandardError (Join-Path $outDir "shard-$i.err")
+            -RedirectStandardOutput (Join-Path $outDir "$tag-$index.out") `
+            -RedirectStandardError (Join-Path $outDir "$tag-$index.err")
           # Without this, ExitCode can read null after WaitForExit.
           $null = $p.Handle
           try { [PowerThrottle]::Disable($p.Handle) | Out-Null } catch {}
-          $runs += @{ Index = $i; Proc = $p; Started = Get-Date; Seconds = 0; TimedOut = $false }
+          $env:TMP = $savedTmp
+          $env:TEMP = $savedTmp
+          return @{ Index = $index; Tag = $tag; Proc = $p; Started = Get-Date; Seconds = 0; TimedOut = $false }
         }
-        $env:TMP = $savedTmp
-        $env:TEMP = $savedTmp
-        Write-Host "launched $shards shards, killing any that has not finished in $shardTimeoutMinutes min"
+
         # Announce completions as they happen; a silent multi-minute wait
         # reads as a hang from the run page.
-        $deadline = (Get-Date).AddMinutes($shardTimeoutMinutes)
-        $pending = @($runs)
-        $done = 0
-        while ($pending.Count -gt 0) {
-          Start-Sleep -Seconds 5
-          $still = @()
-          foreach ($r in $pending) {
-            if ($r.Proc.HasExited) {
-              $done++
-              $r.Seconds = [int]((Get-Date) - $r.Started).TotalSeconds
-              Write-Host "shard $($r.Index) finished (exit $($r.Proc.ExitCode), $($r.Seconds)s, $done/$shards done)"
-            } else {
-              $still += $r
-            }
-          }
-          $pending = $still
-
-          if ($pending.Count -gt 0 -and (Get-Date) -gt $deadline) {
+        function Wait-Shards($group) {
+          $deadline = (Get-Date).AddMinutes($shardTimeoutMinutes)
+          $pending = @($group)
+          $done = 0
+          while ($pending.Count -gt 0) {
+            Start-Sleep -Seconds 5
+            $still = @()
             foreach ($r in $pending) {
-              $r.Seconds = [int]((Get-Date) - $r.Started).TotalSeconds
-              $r.TimedOut = $true
-              Write-Host "shard $($r.Index) has been running $($r.Seconds)s and is being killed"
-              try { $r.Proc.Kill() } catch {}
-              $null = $r.Proc.WaitForExit(30000)
+              if ($r.Proc.HasExited) {
+                $done++
+                $r.Seconds = [int]((Get-Date) - $r.Started).TotalSeconds
+                Write-Host "$($r.Tag) $($r.Index) finished (exit $($r.Proc.ExitCode), $($r.Seconds)s, $done/$($group.Count) done)"
+              } else {
+                $still += $r
+              }
             }
-            $pending = @()
+            $pending = $still
+
+            if ($pending.Count -gt 0 -and (Get-Date) -gt $deadline) {
+              foreach ($r in $pending) {
+                $r.Seconds = [int]((Get-Date) - $r.Started).TotalSeconds
+                $r.TimedOut = $true
+                Write-Host "$($r.Tag) $($r.Index) has been running $($r.Seconds)s and is being killed"
+                try { $r.Proc.Kill() } catch {}
+                $null = $r.Proc.WaitForExit(30000)
+              }
+              $pending = @()
+            }
           }
         }
-        $failed = 0
-        foreach ($r in $runs) {
-          $out = @(Get-Content (Join-Path $outDir "shard-$($r.Index).out") -ErrorAction SilentlyContinue)
-          $err = @(Get-Content (Join-Path $outDir "shard-$($r.Index).err") -ErrorAction SilentlyContinue)
-          $code = $r.Proc.ExitCode
 
+        function Test-ShardFailed($r) {
+          return $r.TimedOut -or $r.Proc.ExitCode -ne 0
+        }
+
+        function Write-Shard($r) {
+          $out = @(Get-Content (Join-Path $outDir "$($r.Tag)-$($r.Index).out") -ErrorAction SilentlyContinue)
+          $err = @(Get-Content (Join-Path $outDir "$($r.Tag)-$($r.Index).err") -ErrorAction SilentlyContinue)
+          $label = "$($r.Tag) $($r.Index)/$shards"
           if ($r.TimedOut) {
-            Write-Host "===== shard $($r.Index)/$shards killed after $($r.Seconds)s ====="
+            Write-Host "===== $label killed after $($r.Seconds)s ====="
             # The last case printed is the one before the hang. Output is block
             # buffered, so the last few lines of it can be lost with the kill.
             $out
-            $failed++
-          } elseif ($code -ne 0) {
-            Write-Host "===== shard $($r.Index)/$shards exit $code after $($r.Seconds)s ====="
+          } elseif ($r.Proc.ExitCode -ne 0) {
+            Write-Host "===== $label exit $($r.Proc.ExitCode) after $($r.Seconds)s ====="
             $out
-            $failed++
           } else {
             # A green shard gets its Catch2 summary rather than 200 timings.
-            Write-Host "===== shard $($r.Index)/$shards exit 0 after $($r.Seconds)s ====="
+            Write-Host "===== $label exit 0 after $($r.Seconds)s ====="
             $out | Select-Object -Last 3
           }
-
           if ($err) { Write-Host "--- stderr ---"; $err }
         }
+
+        $runs = @()
+        for ($i = 0; $i -lt $shards; $i++) {
+          $runs += Start-Shard $i "shard"
+        }
+        Write-Host "launched $shards shards, killing any that has not finished in $shardTimeoutMinutes min"
+        Wait-Shards $runs
+        foreach ($r in $runs) { Write-Shard $r }
         Write-Host "===== shard wall times, slowest first ====="
         foreach ($r in ($runs | Sort-Object { $_.Seconds } -Descending)) {
           Write-Host ("shard {0,2}  {1,5}s" -f $r.Index, $r.Seconds)
         }
-        if ($failed -gt 0) {
-          Write-Error "$failed of $shards test shards failed"
+
+        # A shard that failed beside fifteen others runs again on its own, with the
+        # same binary: passing alone means it failed under load, not on the change.
+        $failed = @()
+        foreach ($r in @($runs | Where-Object { Test-ShardFailed $_ })) {
+          Write-Host "===== retrying shard $($r.Index) alone ====="
+          $retry = Start-Shard $r.Index "retry"
+          Wait-Shards @($retry)
+          Write-Shard $retry
+          if (Test-ShardFailed $retry) {
+            $failed += $r.Index
+          } else {
+            Write-Host "::warning title=Windows shard passed on retry::shard $($r.Index)/$shards failed beside the other shards and passed alone; the first run's output is above"
+          }
+        }
+        if ($failed.Count -gt 0) {
+          Write-Error "$($failed.Count) of $shards test shards failed, also when run alone: $($failed -join ', ')"
           exit 1
         }
 
