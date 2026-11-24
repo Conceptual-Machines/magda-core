@@ -71,6 +71,9 @@ class DrumGridUI : public juce::Component,
     /** Called when a sample file is dropped onto a pad. (padIndex, file) */
     std::function<void(int, const juce::File&)> onSampleDropped;
 
+    /** Called when a chain, rack or device preset is dropped onto a pad. (padIndex, file) */
+    std::function<void(int, const juce::File&)> onPresetDropped;
+
     /** Called when Clear button is clicked for the selected pad. (padIndex) */
     std::function<void(int)> onClearRequested;
 

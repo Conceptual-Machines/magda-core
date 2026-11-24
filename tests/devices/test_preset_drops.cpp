@@ -125,8 +125,8 @@ TEST_CASE("A dropped rack preset inserts a fresh rack where it lands", "[presets
     REQUIRE(presets.loadRackPreset(ref->name, loaded));
 
     // Twice at the front: the same preset has to make two independent racks.
-    REQUIRE(insertRackPreset(trackId, loaded, 0));
-    REQUIRE(insertRackPreset(trackId, loaded, 0));
+    REQUIRE(insertRackPreset(ChainNodePath::trackLevel(trackId), loaded, 0));
+    REQUIRE(insertRackPreset(ChainNodePath::trackLevel(trackId), loaded, 0));
     REQUIRE(tm.getChainElements(trackId).size() == 3);
 
     const auto* first = rackAt(trackId, 0);
@@ -192,4 +192,88 @@ TEST_CASE("A plugin's preset file fits only its own plugin", "[presets][drop]") 
     }
 
     folder.deleteRecursively();
+}
+
+namespace {
+
+DeviceInfo drumGrid() {
+    DeviceInfo device;
+    device.name = "Drum Grid";
+    device.pluginId = "drumgrid";
+    device.format = PluginFormat::Internal;
+    device.isInstrument = true;
+    device.deviceType = DeviceType::Instrument;
+    return device;
+}
+
+PresetManager::PresetRef savedRackPreset(const juce::String& name) {
+    RackInfo rack;
+    rack.name = name;
+    ChainInfo chain;
+    chain.elements.push_back(makeDeviceElement(effect("Inside")));
+    rack.chains.push_back(std::move(chain));
+    REQUIRE(PresetManager::getInstance().saveRackPreset(rack, name));
+    return {PresetManager::PresetRef::Kind::Rack, name, {}};
+}
+
+}  // namespace
+
+TEST_CASE("A preset dropped on a pad's chain lands in that chain, one pad edit each",
+          "[presets][drop][drumgrid]") {
+    PresetDirectoryScope scope;
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    auto& presets = PresetManager::getInstance();
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridPath =
+        ChainNodePath::topLevelDevice(trackId, tm.addDeviceToTrack(trackId, drumGrid()));
+    tm.setPadDevice(gridPath, 0, effect("Voice"));
+    const auto* pad = tm.getPad(gridPath, 0);
+    REQUIRE(pad != nullptr);
+    const auto padPath = TrackManager::padChainPath(gridPath, pad->id);
+
+    std::vector<ChainElement> pair;
+    pair.push_back(makeDeviceElement(effect("First")));
+    pair.push_back(makeDeviceElement(effect("Second")));
+    REQUIRE(presets.saveChainPreset(pair, "Pair"));
+    const PresetManager::PresetRef chainRef{PresetManager::PresetRef::Kind::Chain, "Pair", {}};
+
+    const auto rack = dropPresetIntoChain(savedRackPreset("Layer"), padPath, 100);
+    CHECK(rack.applied);
+    CHECK(rack.elementsInserted == 1);
+    const auto chain = dropPresetIntoChain(chainRef, padPath, 100);
+    CHECK(chain.applied);
+    CHECK(chain.elementsInserted == 2);
+
+    pad = tm.getPad(gridPath, 0);
+    REQUIRE(pad != nullptr);
+    REQUIRE(pad->elements.size() == 4);
+    CHECK(isRack(pad->elements[1]));
+    // The track's own chain holds only the grid.
+    CHECK(tm.getChainElements(trackId).size() == 1);
+
+    REQUIRE(UndoManager::getInstance().undo());
+    pad = tm.getPad(gridPath, 0);
+    REQUIRE(pad != nullptr);
+    CHECK(pad->elements.size() == 2);
+}
+
+TEST_CASE("A rack preset dropped on a rack's chain lands in that chain", "[presets][drop]") {
+    PresetDirectoryScope scope;
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    const auto trackId = tm.createTrack("Track");
+    const auto outerId = tm.addRackToTrack(trackId);
+    const auto chainPath =
+        ChainNodePath::chain(trackId, outerId, tm.getRack(trackId, outerId)->chains.front().id);
+
+    const auto result = dropPresetIntoChain(savedRackPreset("Nested"), chainPath, 0);
+    CHECK(result.applied);
+    const auto* chain = tm.getChainByPath(chainPath);
+    REQUIRE(chain != nullptr);
+    REQUIRE(chain->elements.size() == 1);
+    CHECK(isRack(chain->elements.front()));
+
+    REQUIRE(UndoManager::getInstance().undo());
+    CHECK(tm.getChainByPath(chainPath)->elements.empty());
 }
