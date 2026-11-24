@@ -93,6 +93,8 @@
     "cpu.buffer": "バッファ",
     "cpu.cpu": "CPU",
     "cpu.peak": "ピーク",
+    "cpu.slowest_block": "最も遅いブロック",
+    "cpu.of_deadline": "（処理期限に対する割合）",
     "cpu.xruns": "Xrun"
   },
   "tracks": {
@@ -497,6 +499,8 @@
     "slider.interval": "間隔",
     "slider.capture_buffer": "キャプチャ・バッファ",
     "slider.capture_length": "キャプチャの長さ",
+    "slider.render_ahead": "先行レンダリング時間",
+    "render_ahead_off": "オフ",
     "toggle.enable_autosave": "自動保存を有効にする",
     "toggle.stop_updates_playhead": "停止した位置から再生する",
     "toggle.follow_playhead": "再生中は再生ヘッドをフォロー",
@@ -777,6 +781,29 @@
     "crash_recovery.default": "オーディオドライバー",
     "section.device": "デバイス",
     "label.preview_output": "ブラウザファイルの試聴オン",
-    "status.channels": "{0} 入力· {1} 出力"
+    "status.channels": "{0} 入力· {1} 出力",
+    "notice.realtime": "MAGDAのオーディオスレッドはリアルタイム優先度なしで動作しているため、コンピューターに負荷がかかると再生にノイズが入ることがあります。",
+    "notice.realtime_link": "解決方法",
+    "notice.jack_no_interfaces": "JACKにインターフェースが表示されません。JACKサーバーが起動しているか、PipeWireの場合はpipewire-jackがインストールされているか確認してください。",
+    "notice.setup_button": "設定する",
+    "setup.title": "リアルタイム優先度",
+    "setup.done": "リアルタイム優先度を設定しました。反映するには、一度ログアウトして再ログインし、MAGDAを再起動してください。",
+    "setup.failed": "設定が完了しませんでした。{0}",
+    "setup.unavailable": "この環境ではMAGDAから設定を実行できません。pkexecまたは設定スクリプトが見つかりません。代わりに「解決方法」の手順に従ってください。"
+  },
+  "cpu_load": {
+    "title": "CPU負荷",
+    "callback": "リアルタイムスレッド",
+    "ahead": "先行レンダリング",
+    "other": "その他",
+    "last_30s": "直近30秒",
+    "where_callback": "リアルタイム",
+    "where_ahead": "先行",
+    "where_both": "両方",
+    "devices": "デバイス",
+    "armed": "録音待機中",
+    "monitoring": "モニタリング中",
+    "in_editor": "エディターで表示中",
+    "latency": "レイテンシー"
   }
 }

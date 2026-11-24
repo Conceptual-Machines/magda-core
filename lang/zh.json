@@ -93,6 +93,8 @@
     "cpu.buffer": "缓冲区",
     "cpu.cpu": "处理器",
     "cpu.peak": "峰值",
+    "cpu.slowest_block": "最慢的处理块",
+    "cpu.of_deadline": "（占处理时限的比例）",
     "cpu.xruns": "Xruns"
   },
   "tracks": {
@@ -497,6 +499,8 @@
     "slider.interval": "间隔",
     "slider.capture_buffer": "捕获缓冲区",
     "slider.capture_length": "捕获时长",
+    "slider.render_ahead": "提前渲染时间",
+    "render_ahead_off": "关闭",
     "toggle.enable_autosave": "启用自动保存",
     "toggle.stop_updates_playhead": "停止时更新播放头位置",
     "toggle.follow_playhead": "播放时跟随播放头",
@@ -777,6 +781,29 @@
     "crash_recovery.default": "音频驱动",
     "section.device": "设备",
     "label.preview_output": "试听浏览器文件的输出",
-    "status.channels": "{0} 入 · {1} 出"
+    "status.channels": "{0} 入 · {1} 出",
+    "notice.realtime": "MAGDA 的音频线程未以实时优先级运行，因此电脑繁忙时播放可能出现爆音。",
+    "notice.realtime_link": "如何解决",
+    "notice.jack_no_interfaces": "JACK 未列出任何接口。请检查 JACK 服务器是否正在运行；如果使用 PipeWire，请确认已安装 pipewire-jack。",
+    "notice.setup_button": "设置",
+    "setup.title": "实时优先级",
+    "setup.done": "实时优先级已设置。请注销并重新登录，然后重新启动 MAGDA 使其生效。",
+    "setup.failed": "设置未完成。{0}",
+    "setup.unavailable": "MAGDA 无法在此运行设置：缺少 pkexec 或设置脚本。请改为按照“如何解决”中的步骤操作。"
+  },
+  "cpu_load": {
+    "title": "CPU 负载",
+    "callback": "实时线程",
+    "ahead": "提前渲染",
+    "other": "其他",
+    "last_30s": "最近 30 秒",
+    "where_callback": "实时",
+    "where_ahead": "提前",
+    "where_both": "两者",
+    "devices": "个设备",
+    "armed": "已准备录音",
+    "monitoring": "监听中",
+    "in_editor": "在编辑器中",
+    "latency": "延迟"
   }
 }
