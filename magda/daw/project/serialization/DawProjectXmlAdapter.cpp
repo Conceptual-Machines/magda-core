@@ -829,6 +829,50 @@ SourceId adoptImportedSource(const juce::String& path, double declaredDuration) 
     return sourceId;
 }
 
+/** @brief A `File` path as written, with an archive entry's `./` and backslashes normalised
+ *  so it matches the zip entry. */
+juce::String importedFilePath(const juce::XmlElement& fileElement) {
+    auto path = fileElement.getStringAttribute("path");
+    if (fileElement.getBoolAttribute("external", false))
+        return path;
+    path = path.replaceCharacter('\\', '/');
+    while (path.startsWith("./"))
+        path = path.substring(2);
+    return path;
+}
+
+bool unitIsSeconds(const juce::XmlElement& element, const juce::String& attribute, bool inherited) {
+    const auto& unit = element.getStringAttribute(attribute);
+    return unit.isEmpty() ? inherited : unit == "seconds";
+}
+
+/** @brief Where a clip's content lives: the element holding its Notes, Warps or Audio, and
+ *  the innermost Clip around it. Clip > Clips > Clip and Clip > Lanes are both legal. */
+struct ClipContent {
+    const juce::XmlElement* holder = nullptr;
+    const juce::XmlElement* clip = nullptr;
+};
+
+ClipContent findClipContent(const juce::XmlElement& element, const juce::XmlElement& clip) {
+    if (element.getChildByName("Notes") != nullptr || element.getChildByName("Warps") != nullptr ||
+        element.getChildByName("Audio") != nullptr)
+        return {&element, &clip};
+    for (auto* child : element.getChildIterator()) {
+        if (child->hasTagName("Clips")) {
+            for (auto* inner : child->getChildWithTagNameIterator("Clip")) {
+                const auto found = findClipContent(*inner, *inner);
+                if (found.holder != nullptr)
+                    return found;
+            }
+        } else if (child->hasTagName("Lanes")) {
+            const auto found = findClipContent(*child, clip);
+            if (found.holder != nullptr)
+                return found;
+        }
+    }
+    return {};
+}
+
 /**
  * @brief One clip of an imported arrangement or scene.
  *
@@ -845,7 +889,7 @@ SourceId adoptImportedSource(const juce::String& path, double declaredDuration) 
  * the importer they came from.
  */
 ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipId clipId,
-                     double projectTempo, juce::Colour trackColour) {
+                     double projectTempo, juce::Colour trackColour, bool timelineInSeconds) {
     ClipInfo clip;
     clip.id = clipId;
     clip.trackId = trackId;
@@ -854,15 +898,56 @@ ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipI
     if (clip.colour.isTransparent())
         clip.colour = trackColour;
     clip.view = ClipView::Arrangement;
-    clip.setPlacementBeats(clipElement.getDoubleAttribute("time", 0.0),
-                           clipElement.getDoubleAttribute("duration", 0.0));
 
-    if (auto* notesElement = clipElement.getChildByName("Notes")) {
+    // Seconds convert at the project tempo: a tempo map isn't applied to imported times.
+    const double tempo = isValidBpm(projectTempo) ? projectTempo : DEFAULT_BPM;
+    const auto toBeats = [tempo](double value, bool inSeconds) {
+        return inSeconds ? value * tempo / 60.0 : value;
+    };
+    const auto toSeconds = [tempo](double value, bool inSeconds) {
+        return inSeconds ? value : value * 60.0 / tempo;
+    };
+
+    clip.setPlacementBeats(
+        toBeats(clipElement.getDoubleAttribute("time", 0.0), timelineInSeconds),
+        toBeats(clipElement.getDoubleAttribute("duration", 0.0), timelineInSeconds));
+
+    const auto content = findClipContent(clipElement, clipElement);
+    if (content.holder == nullptr) {
         clip.setMidiContent();
+        return clip;
+    }
+
+    // The content clip's attributes place the content. A nested clip sits on the outer clip's
+    // content timeline, so the outer playStart past the inner clip's start offsets it further.
+    const auto& source = *content.clip;
+    const bool outerContentInSeconds =
+        unitIsSeconds(clipElement, "contentTimeUnit", timelineInSeconds);
+    const bool contentInSeconds =
+        &source == &clipElement ? outerContentInSeconds
+                                : unitIsSeconds(source, "contentTimeUnit", outerContentInSeconds);
+    double nestedOffset = 0.0;
+    if (&source != &clipElement) {
+        const double outerOffset =
+            juce::jmax(0.0, clipElement.getDoubleAttribute("playStart", 0.0) -
+                                source.getDoubleAttribute("time", 0.0));
+        nestedOffset = contentInSeconds ? toSeconds(outerOffset, outerContentInSeconds)
+                                        : toBeats(outerOffset, outerContentInSeconds);
+    }
+    const double playStart = source.getDoubleAttribute("playStart", 0.0) + nestedOffset;
+    const bool hasLoop = source.hasAttribute("loopStart") && source.hasAttribute("loopEnd");
+    const double loopStart = source.getDoubleAttribute("loopStart", 0.0);
+    const double loopLength =
+        juce::jmax(0.0, source.getDoubleAttribute("loopEnd", 0.0) - loopStart);
+
+    if (auto* notesElement = content.holder->getChildByName("Notes")) {
+        clip.setMidiContent();
+        const bool notesInSeconds = unitIsSeconds(*notesElement, "timeUnit", contentInSeconds);
         for (auto* noteElement : notesElement->getChildWithTagNameIterator("Note")) {
             MidiNote note;
-            note.startBeat = noteElement->getDoubleAttribute("time", 0.0);
-            note.lengthBeats = noteElement->getDoubleAttribute("duration", 1.0);
+            note.startBeat = toBeats(noteElement->getDoubleAttribute("time", 0.0), notesInSeconds);
+            note.lengthBeats =
+                toBeats(noteElement->getDoubleAttribute("duration", 1.0), notesInSeconds);
             note.noteNumber = noteElement->getIntAttribute("key", 60);
             note.velocity = juce::jlimit(
                 0, 127,
@@ -870,13 +955,11 @@ ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipI
             clip.midiNotes.push_back(note);
         }
 
-        // Read offset and loop region (content time = beats for MIDI).
-        clip.midiOffset = clipElement.getDoubleAttribute("playStart", 0.0);
-        if (clipElement.hasAttribute("loopStart") && clipElement.hasAttribute("loopEnd")) {
+        clip.midiOffset = toBeats(playStart, contentInSeconds);
+        if (hasLoop) {
             clip.loopEnabled = true;
-            clip.loopStartBeats = clipElement.getDoubleAttribute("loopStart", 0.0);
-            clip.loopLengthBeats = juce::jmax(0.0, clipElement.getDoubleAttribute("loopEnd", 0.0) -
-                                                       clip.loopStartBeats);
+            clip.loopStartBeats = toBeats(loopStart, contentInSeconds);
+            clip.loopLengthBeats = toBeats(loopLength, contentInSeconds);
         }
         return clip;
     }
@@ -884,20 +967,22 @@ ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipI
     // Beat-locked (warped) audio: the <Audio> is wrapped in <Warps> and the clip
     // content is beats-domain. Recover the source length/BPM from the warp
     // markers and read the offset/loop region in beats.
-    if (auto* warps = clipElement.getChildByName("Warps")) {
+    if (auto* warps = content.holder->getChildByName("Warps")) {
         clip.setAudioContent();
         auto& event = clip.audio().addEvent({});
         event.playbackIntent = PlaybackIntent::Beat;  // granted once a tempo is adopted
         if (auto* audioElement = warps->getChildByName("Audio")) {
             if (auto* fileElement = audioElement->getChildByName("File"))
                 event.sourceId =
-                    adoptImportedSource(fileElement->getStringAttribute("path"),
+                    adoptImportedSource(importedFilePath(*fileElement),
                                         audioElement->getDoubleAttribute("duration", 0.0));
         }
 
+        const bool warpsInSeconds = unitIsSeconds(*warps, "timeUnit", contentInSeconds);
         double maxBeats = 0.0, maxSeconds = 0.0;
         for (auto* w : warps->getChildWithTagNameIterator("Warp")) {
-            maxBeats = juce::jmax(maxBeats, w->getDoubleAttribute("time", 0.0));
+            maxBeats =
+                juce::jmax(maxBeats, toBeats(w->getDoubleAttribute("time", 0.0), warpsInSeconds));
             maxSeconds = juce::jmax(maxSeconds, w->getDoubleAttribute("contentTime", 0.0));
         }
         event.adoptTotalBeats(maxBeats, Provenance::FileMetadata);
@@ -908,45 +993,36 @@ ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipI
         // anchor and region would stay at zero. The project's tempo is a guess,
         // adopted as Analysis so anything better can replace it.
         if (!isValidBpm(event.interpBpm) && maxBeats > 0.0)
-            event.adoptBpm(isValidBpm(projectTempo) ? projectTempo : DEFAULT_BPM,
-                           Provenance::Analysis);
+            event.adoptBpm(tempo, Provenance::Analysis);
 
         const bool regionApplicable = isValidBpm(event.interpBpm);
 
-        event.setAnchorBeats(clipElement.getDoubleAttribute("playStart", 0.0));
-        if (regionApplicable && clipElement.hasAttribute("loopStart") &&
-            clipElement.hasAttribute("loopEnd")) {
+        event.setAnchorBeats(toBeats(playStart, contentInSeconds));
+        if (regionApplicable && hasLoop) {
             clip.loopEnabled = true;
-            const double loopStartBeats = clipElement.getDoubleAttribute("loopStart", 0.0);
-            event.setLoopStartBeats(loopStartBeats);
-            event.setLoopLengthBeats(
-                juce::jmax(0.0, clipElement.getDoubleAttribute("loopEnd", 0.0) - loopStartBeats));
+            event.setLoopStartBeats(toBeats(loopStart, contentInSeconds));
+            event.setLoopLengthBeats(toBeats(loopLength, contentInSeconds));
         }
         clip.syncSingleEventToClipBounds();
         return clip;
     }
 
-    if (auto* audioElement = clipElement.getChildByName("Audio")) {
-        clip.setAudioContent();
-        auto& event = clip.audio().addEvent({});
-        if (auto* fileElement = audioElement->getChildByName("File"))
-            event.sourceId = adoptImportedSource(fileElement->getStringAttribute("path"),
-                                                 audioElement->getDoubleAttribute("duration", 0.0));
+    auto* audioElement = content.holder->getChildByName("Audio");
+    clip.setAudioContent();
+    auto& event = clip.audio().addEvent({});
+    if (auto* fileElement = audioElement->getChildByName("File"))
+        event.sourceId = adoptImportedSource(importedFilePath(*fileElement),
+                                             audioElement->getDoubleAttribute("duration", 0.0));
 
-        // Source read offset and loop region (content time = seconds for audio).
-        event.setAnchorSeconds(clipElement.getDoubleAttribute("playStart", 0.0));
-        if (clipElement.hasAttribute("loopStart") && clipElement.hasAttribute("loopEnd")) {
-            clip.loopEnabled = true;
-            const double loopStart = clipElement.getDoubleAttribute("loopStart", 0.0);
-            event.setLoopStartSeconds(loopStart);
-            event.setLoopLengthSeconds(
-                juce::jmax(0.0, clipElement.getDoubleAttribute("loopEnd", 0.0) - loopStart));
-        }
-        clip.syncSingleEventToClipBounds();
-        return clip;
+    // Source read offset and loop region (content time = seconds for audio).
+    const bool audioContentInSeconds = unitIsSeconds(source, "contentTimeUnit", true);
+    event.setAnchorSeconds(toSeconds(playStart, audioContentInSeconds));
+    if (hasLoop) {
+        clip.loopEnabled = true;
+        event.setLoopStartSeconds(toSeconds(loopStart, audioContentInSeconds));
+        event.setLoopLengthSeconds(toSeconds(loopLength, audioContentInSeconds));
     }
-
-    clip.setMidiContent();
+    clip.syncSingleEventToClipBounds();
     return clip;
 }
 
@@ -1403,18 +1479,33 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
     ClipId nextClipId = 1;
     if (auto* arrangement = root->getChildByName("Arrangement")) {
         if (auto* rootLanes = arrangement->getChildByName("Lanes")) {
+            // Clips may sit under nested Lanes or carry their own track; units inherit downward.
+            std::function<void(const juce::XmlElement&, const juce::String&, bool)> collectClips =
+                [&](const juce::XmlElement& timeline, const juce::String& inheritedTrack,
+                    bool inheritedSeconds) {
+                    const auto trackRef = timeline.getStringAttribute("track", inheritedTrack);
+                    const bool inSeconds = unitIsSeconds(timeline, "timeUnit", inheritedSeconds);
+                    if (timeline.hasTagName("Clips")) {
+                        const auto trackIt = trackIds.find(trackRef);
+                        if (trackIt == trackIds.end())
+                            return;
+                        for (auto* clipElement : timeline.getChildWithTagNameIterator("Clip"))
+                            document.clips.push_back(clipFromXml(
+                                *clipElement, trackIt->second, nextClipId++, document.info.tempo,
+                                importedTrackColour(trackIt->second), inSeconds));
+                        return;
+                    }
+                    for (auto* child : timeline.getChildIterator())
+                        if (child->hasTagName("Lanes") || child->hasTagName("Clips"))
+                            collectClips(*child, trackRef, inSeconds);
+                };
+            collectClips(*rootLanes, {}, false);
+
             for (auto* trackLanes : rootLanes->getChildWithTagNameIterator("Lanes")) {
                 const auto trackRef = trackLanes->getStringAttribute("track");
                 auto trackIt = trackIds.find(trackRef);
                 if (trackIt == trackIds.end())
                     continue;
-
-                if (auto* clips = trackLanes->getChildByName("Clips")) {
-                    for (auto* clipElement : clips->getChildWithTagNameIterator("Clip"))
-                        document.clips.push_back(clipFromXml(*clipElement, trackIt->second,
-                                                             nextClipId++, document.info.tempo,
-                                                             importedTrackColour(trackIt->second)));
-                }
 
                 for (auto* pointsElement : trackLanes->getChildWithTagNameIterator("Points")) {
                     auto* targetElement = pointsElement->getChildByName("Target");
@@ -1505,7 +1596,8 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                         if (auto* clipElement = timeline->getChildByName("Clip")) {
                             auto clip = clipFromXml(*clipElement, trackIt->second, nextClipId++,
                                                     document.info.tempo,
-                                                    importedTrackColour(trackIt->second));
+                                                    importedTrackColour(trackIt->second),
+                                                    unitIsSeconds(*timeline, "timeUnit", false));
                             clip.view = ClipView::Session;
                             clip.sceneIndex = sceneIndex;
                             clip.setPlacementBeats(0.0, clip.placement.lengthBeats);

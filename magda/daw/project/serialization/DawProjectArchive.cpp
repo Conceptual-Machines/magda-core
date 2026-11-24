@@ -91,9 +91,8 @@ bool DawProjectArchive::writeToFile(const juce::File& file, const ProjectDocumen
         }
 
         juce::ZipFile::Builder builder;
-        builder.addEntry(streamForXml(projectXml).release(), 9, "project.xml",
-                         juce::Time::getCurrentTime());
-        builder.addEntry(streamForXml(metadataXml).release(), 9, "metadata.xml",
+        builder.addEntry(streamForXml(projectXml), 9, "project.xml", juce::Time::getCurrentTime());
+        builder.addEntry(streamForXml(metadataXml), 9, "metadata.xml",
                          juce::Time::getCurrentTime());
 
         // Embed referenced audio so the project is self-contained and portable.
@@ -105,8 +104,8 @@ bool DawProjectArchive::writeToFile(const juce::File& file, const ProjectDocumen
         // Embed device state files (a VST3 .vstpreset, or the opaque plugin-state blob for
         // other devices) as the files their <State> references point at.
         for (const auto& state : DawProjectXmlAdapter::collectDeviceStates(document))
-            builder.addEntry(new juce::MemoryInputStream(state.bytes, true), 9, state.archivePath,
-                             juce::Time::getCurrentTime());
+            builder.addEntry(std::make_unique<juce::MemoryInputStream>(state.bytes, true), 9,
+                             state.archivePath, juce::Time::getCurrentTime());
 
         double progress = 0.0;
         if (!builder.writeToStream(output, &progress)) {
@@ -182,8 +181,18 @@ bool DawProjectArchive::readFromFile(const juce::File& file, ProjectDocument& ou
         if (entryName.isEmpty())
             continue;
         const int entryIndex = zip.getIndexOfFileName(entryName, false);
-        if (entryIndex < 0)
-            continue;  // external/absolute reference, nothing to extract
+        if (entryIndex < 0) {
+            // An external path that isn't absolute is relative to the .dawproject file.
+            if (juce::File::isAbsolutePath(entryName))
+                continue;
+            const auto beside = file.getParentDirectory().getChildFile(entryName);
+            if (!beside.existsAsFile())
+                continue;
+            const double stagedRate = sourceRateOf(event->sourceId);
+            event->sourceId = SourcePool::getInstance().acquire(beside.getFullPathName());
+            event->rescaleSourcePositions(stagedRate, sourceRateOf(event->sourceId));
+            continue;
+        }
 
         mediaDir.createDirectory();
         if (zip.uncompressEntry(entryIndex, mediaDir, true).wasOk()) {
