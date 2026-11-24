@@ -67,6 +67,7 @@ add_library(magda_engine STATIC
     exec/BlockProfile.cpp
     exec/RenderThreadPool.cpp
     exec/RealtimePriority.cpp
+    exec/PowerThrottling.cpp
     exec/PlanLayout.cpp
     exec/PlanLayoutDump.cpp
     exec/PlanValues.cpp

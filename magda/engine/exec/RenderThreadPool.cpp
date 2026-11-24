@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "exec/BlockProfile.hpp"
+#include "exec/PowerThrottling.hpp"
 #include "exec/RealtimePriority.hpp"
 #include "exec/RenderProbe.hpp"
 
@@ -229,6 +230,7 @@ void RenderThreadPool::raiseToRenderPriority() {
     // The fallback when MMCSS is unavailable; a registered task schedules above it.
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     thread_local const ProAudioTask task;
+    power_throttling::exemptCurrentThread();
 #elif !JUCE_MAC
     // Below PipeWire's data loop (83). SCHED_RR's maximum of 99 was above the audio group's
     // RLIMIT_RTPRIO of 95, so the request was refused and every render thread ran time-shared.
