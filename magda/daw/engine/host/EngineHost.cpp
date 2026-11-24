@@ -80,6 +80,7 @@
 #include "exec/EngineSession.hpp"
 #include "exec/ModulationLiveness.hpp"
 #include "exec/PlanValues.hpp"
+#include "exec/PowerThrottling.hpp"
 #include "exec/RealtimePriority.hpp"
 #include "exec/RenderLoad.hpp"
 #include "exec/RenderThreadPool.hpp"
@@ -3571,6 +3572,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         inputGeneration_.fetch_add(1, std::memory_order_relaxed);
         if (xruns_ != nullptr)
             xruns_->restart();
+        engine::power_throttling::exemptProcess(true);
         audioRunning_.store(true, std::memory_order_release);
         renderedStale_.store(true, std::memory_order_release);
         hardwareOutputGeneration_.fetch_add(1, std::memory_order_acq_rel);
@@ -3590,6 +3592,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// Also called by removeAudioCallback, so a rebuild passes through here.
     void audioDeviceStopped() override {
         audioRunning_.store(false, std::memory_order_release);
+        engine::power_throttling::exemptProcess(false);
         if (const auto capture =
                 std::atomic_load_explicit(&masterCapture_, std::memory_order_acquire))
             capture->markFailed();
@@ -3628,10 +3631,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         bool rendered = false;
         // JUCE's ALSA thread starts time-shared; JACK's callback is the server's and is real-time.
         thread_local bool priorityChecked = false;
-        if (!std::exchange(priorityChecked, true) && !engine::realtime::currentThreadIsRealtime()) {
-            callbackThreadToRaise_.store(engine::realtime::currentThreadId(),
-                                         std::memory_order_release);
-            triggerAsyncUpdate();
+        if (!std::exchange(priorityChecked, true)) {
+            engine::power_throttling::exemptCurrentThread();
+            if (!engine::realtime::currentThreadIsRealtime()) {
+                callbackThreadToRaise_.store(engine::realtime::currentThreadId(),
+                                             std::memory_order_release);
+                triggerAsyncUpdate();
+            }
         }
 
         const juce::ScopeGuard recordLoad{[&] {

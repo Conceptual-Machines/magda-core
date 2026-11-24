@@ -137,6 +137,7 @@ set(TEST_SOURCES
     ui/test_clip_slot_button.cpp
     clips/test_waveform_editor_absolute_mode.cpp
     clips/test_clip_batch_edit.cpp
+    clips/test_slice_to_drum_grid.cpp
     clips/test_clip_commands.cpp
     clips/test_warp_marker_commands.cpp
     clips/test_clip_gain_envelope.cpp
