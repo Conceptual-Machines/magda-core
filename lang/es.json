@@ -93,6 +93,8 @@
     "cpu.buffer": "Búfer",
     "cpu.cpu": "CPU",
     "cpu.peak": "pico",
+    "cpu.slowest_block": "Bloque más lento",
+    "cpu.of_deadline": "de su tiempo límite",
     "cpu.xruns": "Sobrecarga"
   },
   "tracks": {
@@ -497,6 +499,8 @@
     "slider.interval": "Intervalo",
     "slider.capture_buffer": "Búfer de captura",
     "slider.capture_length": "Duración de captura",
+    "slider.render_ahead": "Tiempo de prerenderizado",
+    "render_ahead_off": "Desactivado",
     "toggle.enable_autosave": "Activar autoguardado",
     "toggle.stop_updates_playhead": "Actualizar cursor al parar",
     "toggle.follow_playhead": "Seguir cursor durante la reproducción",
@@ -777,6 +781,29 @@
     "crash_recovery.default": "el controlador de audio",
     "section.device": "Dispositivo",
     "label.preview_output": "Previsualizar archivos del navegador en",
-    "status.channels": "{0} entradas · {1} salidas"
+    "status.channels": "{0} entradas · {1} salidas",
+    "notice.realtime": "Los hilos de audio de MAGDA se ejecutan sin prioridad de tiempo real, por lo que la reproducción puede chasquear cuando el equipo está ocupado.",
+    "notice.realtime_link": "Cómo solucionarlo",
+    "notice.jack_no_interfaces": "JACK no muestra ninguna interfaz. Compruebe que haya un servidor JACK en ejecución o, con PipeWire, que pipewire-jack esté instalado.",
+    "notice.setup_button": "Configurar",
+    "setup.title": "Prioridad de tiempo real",
+    "setup.done": "La prioridad de tiempo real está configurada. Cierre la sesión, vuelva a iniciarla y abra MAGDA de nuevo para que surta efecto.",
+    "setup.failed": "La configuración no terminó. {0}",
+    "setup.unavailable": "MAGDA no puede ejecutar la configuración aquí: falta pkexec o el script de configuración. Siga en su lugar los pasos de \"Cómo solucionarlo\"."
+  },
+  "cpu_load": {
+    "title": "Carga de CPU",
+    "callback": "Hilo de tiempo real",
+    "ahead": "Prerenderizado",
+    "other": "Otros",
+    "last_30s": "Últimos 30 s",
+    "where_callback": "Tiempo real",
+    "where_ahead": "Prerenderizado",
+    "where_both": "Ambos",
+    "devices": "dispositivos",
+    "armed": "Armada",
+    "monitoring": "Monitorizando",
+    "in_editor": "En el editor",
+    "latency": "Latencia"
   }
 }
