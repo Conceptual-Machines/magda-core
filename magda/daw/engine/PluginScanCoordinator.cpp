@@ -245,6 +245,8 @@ std::vector<PluginScanCoordinator::PluginToScan> PluginScanCoordinator::discover
             searchPath.add(juce::File(p));
 
         auto files = format->searchPathsForPlugins(searchPath, true, false);
+        // LV2 returns a bundle's path once per plugin in it; a bundle is scanned once.
+        files.removeDuplicates(false);
         for (const auto& file : files) {
             if (!excludedPaths.contains(file))
                 result.push_back({formatName, file});
@@ -275,6 +277,8 @@ void PluginScanCoordinator::discoverPlugins() {
             searchPath.add(juce::File(p));
 
         auto files = format->searchPathsForPlugins(searchPath, true, false);
+        // LV2 returns a bundle's path once per plugin in it; a bundle is scanned once.
+        files.removeDuplicates(false);
 
         // Build excluded paths set for quick lookup
         juce::StringArray excludedPaths;
