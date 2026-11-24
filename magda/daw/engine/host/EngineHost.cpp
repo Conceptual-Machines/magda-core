@@ -42,6 +42,7 @@
 #include "../../core/ChainWalk.hpp"
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../../core/Config.hpp"
 #include "../../core/DrumGridPads.hpp"
 #include "../../core/MidiNoteCommands.hpp"
 #include "../../core/OpenProjectAddressing.hpp"
@@ -2721,7 +2722,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     void trackDevicesChanged(TrackId) override {
         wantPlan();
     }
-    void deviceAdded(const ChainNodePath&, const DeviceInfo&) override {
+    void deviceAdded(const ChainNodePath& devicePath, const DeviceInfo& device) override {
+        if (device.hasEditorWindow() && Config::getInstance().getOpenPluginWindowOnDrop())
+            if (const auto key = keyOfDeviceAt(devicePath))
+                editorsToOpen_.push_back(*key);
         wantPlan();
     }
 
@@ -3012,10 +3016,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (plan || values)
             syncMirroredParameters();
 
-        if (plan)
+        if (plan) {
             publishPlan();
-        else if (values)
+            openAddedEditors();
+        } else if (values) {
             publishValues();
+        }
 
         if (clips)
             publishClips();
@@ -3947,6 +3953,22 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         return showing;
     }
 
+    /// Opens each waiting plugin's window once a publish has bound its loaded instance.
+    void openAddedEditors() {
+        std::erase_if(editorsToOpen_, [this](engine::DeviceKey key) {
+            const auto* device = modelDevice(key);
+            if (device == nullptr || device->loadState == DeviceLoadState::Failed ||
+                device->loadState == DeviceLoadState::Unavailable)
+                return true;
+            if (externalDeviceFor(key) == nullptr)
+                return false;
+            const auto path = TrackManager::getInstance().findDevicePath(key.deviceId, key.segment);
+            if (path.isValid())
+                deviceEditor(path, adapter::EditorAction::Show);
+            return true;
+        });
+    }
+
     /**
      * @brief The plugin's own text for one parameter value (#2600).
      *
@@ -4479,6 +4501,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     std::atomic<bool> plan_{false};
     std::atomic<bool> values_{false};
+
+    /// Plugins added with "open plugin window" on, waiting for a publish to bind them (#3419).
+    std::vector<engine::DeviceKey> editorsToOpen_;
 
     /// An edit arrived that a values publish may not be able to carry.
     std::atomic<bool> shape_{false};

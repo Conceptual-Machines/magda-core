@@ -436,12 +436,12 @@ int PluginSettingsPage::layOut(int width, bool apply) {
         auto header = b.removeFromTop(headerH);
         place(excludedHeader_, header);
         if (apply)
-            excludedHeader_.setText(
-                tr("plugin_settings.section.excluded") +
-                    (excludedPlugins_.empty()
-                         ? juce::String()
-                         : " \xc2\xb7 " + juce::String(excludedPlugins_.size())),
-                juce::dontSendNotification);
+            excludedHeader_.setText(tr("plugin_settings.section.excluded") +
+                                        (excludedPlugins_.empty()
+                                             ? juce::String()
+                                             : juce::String(juce::CharPointer_UTF8(" \xc2\xb7 ")) +
+                                                   juce::String(excludedPlugins_.size())),
+                                    juce::dontSendNotification);
         place(resetAllButton_, header.removeFromRight(90).withTrimmedBottom(4));
     }
     if (excludedPlugins_.empty()) {
