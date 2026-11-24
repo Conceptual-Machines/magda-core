@@ -3110,6 +3110,12 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
     int numSlices = static_cast<int>(slices.size());
     numSlices = std::min(numSlices, kPadCount);
 
+    // Read before any edit: creating tracks and clips can move the clip's storage.
+    const double bpm = resolveTimelineBpm(tempo);
+    const double clipStart = clip.getTimelineStart(bpm);
+    const double clipEnd = clip.getTimelineEnd(bpm);
+    const double clipLength = clip.getTimelineLength(bpm);
+
     // Create Instrument track with DrumGridPlugin
     auto& trackManager = TrackManager::getInstance();
     juce::String clipName =
@@ -3125,10 +3131,6 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
     dgDevice.isInstrument = true;
     DeviceId drumGridDeviceId = trackManager.addDeviceToTrack(newTrackId, dgDevice);
     if (drumGridDeviceId == INVALID_DEVICE_ID)
-        return;
-
-    auto* drumGridDevice = trackManager.getDevice(newTrackId, drumGridDeviceId);
-    if (drumGridDevice == nullptr)
         return;
 
     const auto gridPath = ChainNodePath::topLevelDevice(newTrackId, drumGridDeviceId);
@@ -3155,16 +3157,16 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
                                              static_cast<float>(slice.sourceEnd));
     }
 
+    // Looked up after the pads: a pointer taken before them dangled by here.
+    auto* drumGridDevice = trackManager.getDevice(newTrackId, drumGridDeviceId);
+    if (drumGridDevice == nullptr)
+        return;
     linkAssignedDrumGridSamplerAdsrMacros(*drumGridDevice, newTrackId);
     trackManager.notifyTrackDevicesChanged(newTrackId);
 
     // Create MIDI clip with notes triggering each pad
     auto& clipManager = ClipManager::getInstance();
-    const double bpm = resolveTimelineBpm(tempo);
-    double clipStart = clip.getTimelineStart(bpm);
-    double clipEnd = clip.getTimelineEnd(bpm);
-    ClipId midiClipId =
-        clipManager.createMidiClip(newTrackId, clipStart, clip.getTimelineLength(bpm));
+    ClipId midiClipId = clipManager.createMidiClip(newTrackId, clipStart, clipLength);
     if (midiClipId == INVALID_CLIP_ID)
         return;
 
