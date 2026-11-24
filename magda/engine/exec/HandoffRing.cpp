@@ -95,11 +95,11 @@ void HandoffRing::prepare(const RenderPlan& plan, int depth, int numChannels, in
             const auto op = handoffOps[h];
             auto& handoff = entry->handoffs[h];
             if (plan.ops[op].outputs.front().kind == SignalKind::Audio) {
-                handoff.audio.setSize(numChannels, maxBlockSize, false, true, false);
+                handoff.audio.prepare(numChannels, maxBlockSize);
                 continue;
             }
             const auto bytes = op < midiBytes.size() ? midiBytes[op] : 0;
-            handoff.midi.ensureSize(static_cast<std::size_t>(bytes));
+            ensureSizeResident(handoff.midi, static_cast<std::size_t>(bytes));
             handoff.fractions.reserve(static_cast<std::size_t>(bytes / kMidiShortMessageBytes + 1));
         }
     }

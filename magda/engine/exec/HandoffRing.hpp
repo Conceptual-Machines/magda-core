@@ -17,6 +17,7 @@
 
 #include "exec/NoteFractions.hpp"
 #include "exec/RenderContext.hpp"
+#include "exec/ResidentBuffers.hpp"
 #include "plan/RenderPlan.hpp"
 
 /**
@@ -271,7 +272,7 @@ class HandoffRing {
 
   private:
     struct Handoff {
-        juce::AudioBuffer<float> audio;
+        LockedAudioBuffer audio;
         juce::MidiBuffer midi;
         NoteFractions fractions;
         bool panic = false;

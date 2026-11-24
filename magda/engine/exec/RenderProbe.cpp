@@ -16,6 +16,10 @@ void magda::engine::render_probe::report() {}
     #if JUCE_WINDOWS
         #include <intrin.h>
         #include <windows.h>
+    #elif JUCE_MAC
+        #include <mach/mach.h>
+    #else
+        #include <sys/resource.h>
     #endif
 
 namespace magda::engine::render_probe {
@@ -33,6 +37,39 @@ struct Counts {
     std::atomic<std::int64_t> worstNs{0};
 };
 
+/// The process's page faults so far, and of them the ones read from disk; -1 where unknown.
+/// Per process, as macOS counts them per task; a stall that takes every render thread at once
+/// is process-wide anyway (#3402).
+struct Faults {
+    std::int64_t faults = -1;
+    std::int64_t pageIns = -1;
+};
+
+Faults processFaults() {
+    #if JUCE_MAC
+    task_events_info info{};
+    mach_msg_type_number_t count = TASK_EVENTS_INFO_COUNT;
+    if (task_info(mach_task_self(), TASK_EVENTS_INFO, reinterpret_cast<task_info_t>(&info),
+                  &count) != KERN_SUCCESS)
+        return {};
+    return {info.faults, info.pageins};
+    #elif JUCE_WINDOWS
+    return {};
+    #else
+    rusage usage{};
+    if (getrusage(RUSAGE_SELF, &usage) != 0)
+        return {};
+    return {usage.ru_minflt + usage.ru_majflt, usage.ru_majflt};
+    #endif
+}
+
+juce::String faultsSince(const Faults& now, const Faults& before, const char* lead) {
+    if (now.faults < 0 || before.faults < 0)
+        return {};
+    return lead + juce::String("+") + juce::String(now.faults - before.faults) + " faults (+" +
+           juce::String(now.pageIns - before.pageIns) + " page-ins)";
+}
+
 struct Pause {
     std::atomic<std::uint64_t> seq{0};
     std::int64_t atMs = 0;  // epoch ms, the unit engine.health stamps xruns with
@@ -41,12 +78,14 @@ struct Pause {
     int track = 0;
     Role role = Role::other;
     bool aheadSide = false;
+    Faults faults;
 };
 
 std::array<Counts, kRoles> counts;
 std::array<Pause, 256> pauses;
 std::atomic<std::uint64_t> nextPause{0};
 std::uint64_t reportedPause = 0;
+Faults reportedFaults = processFaults();
 thread_local Role threadRole = Role::other;
 
     #if JUCE_WINDOWS
@@ -147,10 +186,13 @@ void record(int track, bool aheadSide, std::int64_t wallTicks, std::int64_t cpuT
     slot.track = track;
     slot.role = threadRole;
     slot.aheadSide = aheadSide;
+    slot.faults = processFaults();
     slot.seq.store(n + 1, std::memory_order_release);
 }
 
 void report() {
+    const auto faultsNow = processFaults();
+    auto pauseFaults = reportedFaults;
     juce::String line = "[render probe]";
     bool any = false;
     for (int r = 0; r < kRoles; ++r) {
@@ -167,7 +209,7 @@ void report() {
              << "%), worst " << juce::String(static_cast<double>(worst) / 1e6, 2) << " ms;";
     }
     if (any)
-        juce::Logger::writeToLog(line);
+        juce::Logger::writeToLog(line + faultsSince(faultsNow, reportedFaults, " process: "));
 
     const auto end = nextPause.load(std::memory_order_acquire);
     if (end - reportedPause > pauses.size())
@@ -181,7 +223,8 @@ void report() {
                          .wallNs = slot.wallNs,
                          .track = slot.track,
                          .role = slot.role,
-                         .aheadSide = slot.aheadSide};
+                         .aheadSide = slot.aheadSide,
+                         .faults = slot.faults};
         std::atomic_thread_fence(std::memory_order_acquire);
         if (slot.seq.load(std::memory_order_relaxed) != reportedPause + 1)
             continue;
@@ -189,8 +232,11 @@ void report() {
                                  nameOf(copy.role) + ", track " + juce::String(copy.track) +
                                  (copy.aheadSide ? " (ahead side)" : "") + ", paused " +
                                  juce::String(static_cast<double>(copy.pauseNs) / 1e6, 2) + " of " +
-                                 juce::String(static_cast<double>(copy.wallNs) / 1e6, 2) + " ms");
+                                 juce::String(static_cast<double>(copy.wallNs) / 1e6, 2) + " ms" +
+                                 faultsSince(copy.faults, pauseFaults, ", "));
+        pauseFaults = copy.faults;
     }
+    reportedFaults = faultsNow;
 }
 
 }  // namespace magda::engine::render_probe

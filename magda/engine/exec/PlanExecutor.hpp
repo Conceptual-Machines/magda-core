@@ -28,6 +28,7 @@
 #include "exec/PlanValues.hpp"
 #include "exec/RenderContext.hpp"
 #include "exec/RenderLoad.hpp"
+#include "exec/ResidentBuffers.hpp"
 #include "param/ParamResolve.hpp"
 #include "plan/PlanDiff.hpp"
 #include "plan/RenderPlan.hpp"
@@ -72,7 +73,7 @@ class AudioDelayLine {
     }
 
   private:
-    juce::AudioBuffer<float> ring_;
+    LockedAudioBuffer ring_;
     int delay_ = 0;
     int writePosition_ = 0;
 };
@@ -104,7 +105,7 @@ class FeedbackCarry {
     }
 
   private:
-    juce::AudioBuffer<float> audio_;
+    LockedAudioBuffer audio_;
 };
 
 /**
@@ -800,7 +801,7 @@ class PlanExecutor {
 
     /// The arena. Ports share these where no schedule can want both at
     /// once, worked out in assignBuffers rather than here.
-    std::vector<juce::AudioBuffer<float>> audioSlots_;
+    std::vector<LockedAudioBuffer> audioSlots_;
     std::vector<juce::MidiBuffer> midiSlots_;
     std::vector<NoteFractions> midiFractions_;
 
@@ -896,12 +897,12 @@ class PlanExecutor {
     /// A ClipAudio op's session source, added through its own scratch so that two tracks
     /// rendering on two threads never share one.
     std::vector<EngineAudioSource*> sessionSourceForOp_;
-    std::vector<juce::AudioBuffer<float>> sessionScratch_;
+    std::vector<LockedAudioBuffer> sessionScratch_;
     std::vector<EngineMidiSource*> midiSourceForOp_;
 
     /// Handed to ops whose input slot the plan left unconnected. Kept
     /// zeroed: nothing writes to it.
-    juce::AudioBuffer<float> silence_;
+    LockedAudioBuffer silence_;
     juce::MidiBuffer noMidi_;
     NoteFractions noFractions_;
 
@@ -971,7 +972,7 @@ class PlanExecutor {
     std::vector<TrackId> aheadTracks_;
 
     /// What the ahead side's block clears in place of the callback's buffer; nothing reads it.
-    juce::AudioBuffer<float> aheadOutput_;
+    LockedAudioBuffer aheadOutput_;
     int renderAheadDepth_ = 1;
     CallbackRenderer* callbackRenderer_ = nullptr;
     AheadState* aheadState_ = nullptr;

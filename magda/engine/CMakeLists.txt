@@ -58,6 +58,7 @@ add_library(magda_engine STATIC
     plan/TrackRouting.hpp
     exec/HandoffRing.cpp
     exec/RenderAhead.cpp
+    exec/ResidentBuffers.cpp
     exec/RenderLoad.cpp
     exec/RenderProbe.cpp
     exec/AheadLaunches.cpp

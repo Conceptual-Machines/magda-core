@@ -147,8 +147,7 @@ void applyGain(juce::dsp::AudioBlock<float> block, const OpValue& value, int num
 void AudioDelayLine::prepare(int numChannels, int delaySamples, int maxBlockSize) {
     delay_ = delaySamples;
     writePosition_ = 0;
-    ring_.setSize(numChannels, delaySamples + maxBlockSize, false, true, false);
-    ring_.clear();
+    ring_.prepare(numChannels, delaySamples + maxBlockSize);
 }
 
 void AudioDelayLine::process(juce::dsp::AudioBlock<float> block, int numSamples) {
@@ -185,8 +184,7 @@ void AudioDelayLine::process(juce::dsp::AudioBlock<float> block, int numSamples)
 }
 
 void FeedbackCarry::prepare(int numChannels, int maxBlockSize) {
-    audio_.setSize(numChannels, maxBlockSize, false, true, false);
-    audio_.clear();
+    audio_.prepare(numChannels, maxBlockSize);
 }
 
 void FeedbackCarry::read(juce::dsp::AudioBlock<float> block, int numSamples) const {
@@ -243,8 +241,8 @@ void MidiDelayLine::prepare(int delaySamples, int capacityBytes) {
     // Both, and to the same size: they are swapped every block, so the storage
     // travels with them and one of them being the small one would allocate on
     // the callback the first time it came round.
-    pending_.ensureSize(static_cast<std::size_t>(capacityBytes));
-    scratch_.ensureSize(static_cast<std::size_t>(capacityBytes));
+    ensureSizeResident(pending_, static_cast<std::size_t>(capacityBytes));
+    ensureSizeResident(scratch_, static_cast<std::size_t>(capacityBytes));
 
     const auto notes = static_cast<std::size_t>(capacityBytes / kMidiShortMessageBytes + 1);
     pendingFractions_ = NoteFractions(notes);
@@ -593,7 +591,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
             }
 
             if (release->source != nullptr) {
-                release->midi.ensureSize(static_cast<std::size_t>(2 * kMaxMidiBytesPerPort));
+                ensureSizeResident(release->midi,
+                                   static_cast<std::size_t>(2 * kMaxMidiBytesPerPort));
                 heldReleaseForOp_[i] = std::move(release);
             }
 
@@ -769,8 +768,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
                 sessionSourceForOp_[i] = findAudioSource(bindings.sessionAudio, trackId);
                 if (sessionSourceForOp_[i] != nullptr)
-                    sessionScratch_[i].setSize(context.numChannels, context.maxBlockSize, false,
-                                               true, false);
+                    sessionScratch_[i].prepare(context.numChannels, context.maxBlockSize);
                 else if (!bindings.sessionAudio.empty())
                     messages.push_back(describe(i) + "no session audio source bound for track " +
                                        std::to_string(trackId) + ", its session is silent");
@@ -931,7 +929,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
     audioSlots_.resize(static_cast<std::size_t>(layout.numAudioSlots));
     for (auto& buffer : audioSlots_)
-        buffer.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
+        buffer.prepare(context_.numChannels, context_.maxBlockSize);
 
     // Reserving a flat amount per MIDI port is not enough: a merge carries
     // everything that reaches it, so fan-in outgrows any fixed figure and the
@@ -1037,7 +1035,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     }
 
     for (std::size_t slot = 0; slot < midiSlots_.size(); ++slot)
-        midiSlots_[slot].ensureSize(static_cast<std::size_t>(midiByteBounds_[slot]));
+        ensureSizeResident(midiSlots_[slot], static_cast<std::size_t>(midiByteBounds_[slot]));
 
     midiFractions_.clear();
     for (const auto bound : midiByteBounds_)
@@ -1261,9 +1259,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         feedbackCarries_.push_back(std::move(carry));
     }
 
-    silence_.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
-    silence_.clear();
-    aheadOutput_.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
+    silence_.prepare(context_.numChannels, context_.maxBlockSize);
+    aheadOutput_.prepare(context_.numChannels, context_.maxBlockSize);
     noMidi_.clear();
 
     // The arena, as the render path sees it. Taken once, here, so that nothing
