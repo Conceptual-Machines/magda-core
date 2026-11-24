@@ -760,6 +760,85 @@ TEST_CASE("DawProjectXmlAdapter warps beat-locked (autoTempo) audio clips",
     REQUIRE(magda::audioEventRef(ic).sourceDurationSeconds() == 2.0);
 }
 
+TEST_CASE("DawProjectXmlAdapter imports nested clips, seconds timelines and track-level Clips",
+          "[project][serialization][dawproject][audio][import]") {
+    // Shapes the spec allows that other DAWs write (#3319): content in a clip nested under
+    // Clips or Lanes, a timeline in seconds, Clips carrying its own track, and an archive
+    // path with ./ and backslashes.
+    const juce::String xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<Project version="1.0">
+  <Transport><Tempo id="tempo" unit="bpm" value="120.0"/></Transport>
+  <Structure>
+    <Track contentType="audio" loaded="true" id="tAudio" name="Audio">
+      <Channel audioChannels="2" role="regular" id="cAudio"/>
+    </Track>
+    <Track contentType="notes" loaded="true" id="tKeys" name="Keys">
+      <Channel audioChannels="2" role="regular" id="cKeys"/>
+    </Track>
+  </Structure>
+  <Arrangement id="arrangement">
+    <Lanes timeUnit="seconds" id="laneRoot">
+      <Lanes track="tAudio" id="laneAudio">
+        <Clips id="clipsAudio">
+          <Clip time="2.0" duration="4.0" playStart="1.0" name="Nested">
+            <Clips>
+              <Clip time="0.0" duration="10.0" contentTimeUnit="seconds" playStart="0.5">
+                <Warps contentTimeUnit="seconds" timeUnit="seconds">
+                  <Audio sampleRate="48000" channels="2" duration="10.0">
+                    <File path="./audio\take.wav" external="false"/>
+                  </Audio>
+                  <Warp time="0.0" contentTime="0.0"/>
+                  <Warp time="10.0" contentTime="10.0"/>
+                </Warps>
+              </Clip>
+            </Clips>
+          </Clip>
+        </Clips>
+      </Lanes>
+      <Clips track="tKeys" timeUnit="beats" id="clipsKeys">
+        <Clip time="8.0" duration="4.0" name="Notes in Lanes">
+          <Lanes>
+            <Notes><Note time="1.0" duration="0.5" key="64" vel="1.0"/></Notes>
+          </Lanes>
+        </Clip>
+      </Clips>
+    </Lanes>
+  </Arrangement>
+</Project>)";
+
+    ProjectDocument doc;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, doc, error));
+    REQUIRE(doc.clips.size() == 2);
+
+    const ClipInfo* nested = nullptr;
+    const ClipInfo* notes = nullptr;
+    for (const auto& clip : doc.clips) {
+        if (clip.name == "Nested")
+            nested = &clip;
+        else if (clip.name == "Notes in Lanes")
+            notes = &clip;
+    }
+    REQUIRE(nested != nullptr);
+    REQUIRE(notes != nullptr);
+
+    // 2 s and 4 s at 120 bpm.
+    REQUIRE(nested->isAudio());
+    CHECK(nested->placement.startBeat == Catch::Approx(4.0));
+    CHECK(nested->placement.lengthBeats == Catch::Approx(8.0));
+    const auto& event = magda::audioEventRef(*nested);
+    CHECK(event.sourceFilePath() == "audio/take.wav");
+    // Inner playStart 0.5 s plus the outer playStart 1 s past the inner clip's start.
+    CHECK(event.anchorBeats() == Catch::Approx(3.0));
+    CHECK(event.interpBpm == Catch::Approx(120.0));
+
+    REQUIRE(notes->isMidi());
+    CHECK(notes->placement.startBeat == Catch::Approx(8.0));
+    REQUIRE(notes->midiNotes.size() == 1);
+    CHECK(notes->midiNotes[0].startBeat == Catch::Approx(1.0));
+    CHECK(notes->midiNotes[0].noteNumber == 64);
+}
+
 TEST_CASE("DawProjectArchive embeds and restores VST3 device state",
           "[project][serialization][dawproject][device]") {
     ProjectDocument document;
