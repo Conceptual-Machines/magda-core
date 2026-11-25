@@ -3586,9 +3586,6 @@ class ShortcutsPage {
                 DragRowSpec{GestureContext::PianoRoll,
                             {GestureInputKind::Drag, GestureArea::ZoomStrip, GestureAxis::Vertical,
                              GestureMod_None}},
-                DragRowSpec{GestureContext::PianoRoll,
-                            {GestureInputKind::Drag, GestureArea::Keyboard, GestureAxis::Horizontal,
-                             GestureMod_None}},
                 DragRowSpec{GestureContext::DrumGrid,
                             {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical,
                              GestureMod_None}},
@@ -3660,7 +3657,7 @@ class ShortcutsPage {
             }
 
             for (auto area : {GestureArea::Ruler, GestureArea::Body, GestureArea::Header,
-                              GestureArea::Keyboard, GestureArea::ZoomStrip}) {
+                              GestureArea::ZoomStrip}) {
                 for (auto mods : modifiers())
                     add({GestureInputKind::Drag, area, GestureAxis::Vertical, mods});
             }

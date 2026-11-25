@@ -138,6 +138,11 @@ set(TEST_SOURCES
     ../magda/daw/ui/components/common/PreviewStretchSource.cpp
     ui/test_momentary_param_button.cpp
     ui/test_clip_slot_button.cpp
+    ui/test_piano_roll_keyboard.cpp
+    # The piano roll builds into magda_daw_app, so magda_tests needs these directly.
+    ../magda/daw/ui/components/pianoroll/PianoRollKeyboard.cpp
+    ../magda/daw/ui/components/pianoroll/MidiEditorKey.cpp
+    ../magda/daw/ui/components/pianoroll/PitchFoldMap.cpp
     clips/test_waveform_editor_absolute_mode.cpp
     clips/test_clip_batch_edit.cpp
     clips/test_slice_to_drum_grid.cpp

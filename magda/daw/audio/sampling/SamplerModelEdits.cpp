@@ -153,10 +153,15 @@ bool loadSample(const ChainNodePath& devicePath, const juce::File& file) {
 
     const auto& path = file.getFullPathName();
     if (!authorState(devicePath, [&path, &choice](device_state::Doc& doc) {
+            // A swap keeps the Root already set, e.g. a pad's (#3431).
+            auto& props = doc.root.props;
+            const bool keepRoot =
+                props[IDs::source].toString().isNotEmpty() && props.contains(IDs::rootNote);
             std::erase_if(doc.root.children, isZoneNode);
-            doc.root.props.remove(IDs::instrument);
-            doc.root.props.set(Sampler::StateIDs::source, path);
-            doc.root.props.set(Sampler::StateIDs::rootNote, choice.rootNote);
+            props.remove(IDs::instrument);
+            props.set(IDs::source, path);
+            if (!keepRoot)
+                props.set(IDs::rootNote, choice.rootNote);
         }))
         return false;
 

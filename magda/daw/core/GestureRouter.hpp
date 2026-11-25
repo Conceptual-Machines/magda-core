@@ -79,7 +79,7 @@ enum class GestureArea {
     Ruler,
     Body,
     Header,
-    Keyboard,
+    Keyboard,  ///< No drag binds here (#3429); kept so saved areas keep their numbers.
     ZoomStrip,
 };
 

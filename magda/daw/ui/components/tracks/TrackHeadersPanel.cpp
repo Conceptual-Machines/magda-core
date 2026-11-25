@@ -2174,7 +2174,9 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(bgArea, 1);
 
-    const int nameBandHeight = TH_NAME_STRIP_H;
+    // A compact track is its name row alone, centred, so its band fills it (#3428).
+    const bool compact = area.getHeight() < COMPACT_TRACK_HEIGHT;
+    const int nameBandHeight = compact ? bgArea.getHeight() : TH_NAME_STRIP_H;
     if (!header.isMaster) {
         const auto nameBandArea = bgArea.withHeight(nameBandHeight);
         if (fullBar && coloured) {
