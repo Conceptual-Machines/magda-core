@@ -675,6 +675,8 @@ void TrackInspector::midiDeviceListChanged() {
 
 void TrackInspector::hardwareChannelsChanged() {
     updateRoutingSelectorsFromTrack();
+    if (masterView_.isVisible())
+        masterView_.refresh();
 }
 
 TrackInspector::~TrackInspector() {

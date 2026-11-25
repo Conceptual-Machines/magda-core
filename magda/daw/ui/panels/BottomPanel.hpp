@@ -135,6 +135,11 @@ class BottomPanel : public daw::ui::TabbedPanel,
     // Fullscreen toggle for MIDI editor views (issue #1282).
     // Visible whenever the active content is PianoRoll or DrumGridClipView.
     std::unique_ptr<SvgButton> fullscreenToggle_;
+    std::unique_ptr<magda::SvgButton> hideButton_;  // Collapses and reopens the panel
+    bool hideButtonShowsOpen_ = false;
+    static constexpr int kHideButtonSize = 20;
+    /// Centres the hide button in @p slot, its icon following the collapse state.
+    void placeHideButton(juce::Rectangle<int> slot);
 
     // Multi-track overlay selector (ghost notes from other tracks, #1281).
     // Visible alongside the editor tabs; lit while any overlay track is on.

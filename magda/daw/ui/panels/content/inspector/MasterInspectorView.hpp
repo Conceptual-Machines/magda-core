@@ -6,6 +6,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -14,6 +15,8 @@
 #include "../../../components/common/SvgButton.hpp"
 #include "../../../components/mixer/LevelMeter.hpp"
 #include "../../../components/mixer/MiniChainList.hpp"
+#include "../../../components/mixer/RoutingSelector.hpp"
+#include "../../../components/tracks/TrackControlsLayout.hpp"
 #include "ModulationSection.hpp"
 
 namespace magda {
@@ -24,7 +27,8 @@ namespace magda::daw::ui {
 
 /**
  * @brief The inspector for the master track: header, Output (volume and live peak meter),
- *        FX (the compact master chain), Latency (the chain's total and its largest
+ *        Routing (the device pair it plays to), FX (the compact master chain), Latency (the
+ *        chain's total and its largest
  *        contributors) and the master's own mods and macros.
  *
  * Shown by TrackInspector over its own controls while the master is selected.
@@ -87,6 +91,13 @@ class MasterInspectorView : public juce::Component, private juce::Timer {
     std::unique_ptr<magda::DraggableValueLabel> volume_;
     magda::LevelMeter meter_;
     juce::Label peakLabel_;
+
+    CollapsibleSectionHeader routingHeader_{"Routing", "master.routing"};
+    magda::track_controls::IOColumnLabel audioColumnLabel_{false};
+    std::unique_ptr<magda::RoutingSelector> deviceOutput_;
+    std::map<int, magda::TrackId> outputTrackMapping_;
+    std::map<int, magda::TrackId> midiOutputTrackMapping_;
+    std::map<int, juce::String> outputChannelMapping_;
 
     CollapsibleSectionHeader fxHeader_{"FX", "master.fx", /*startCollapsed=*/true};
     juce::Label noFxLabel_;

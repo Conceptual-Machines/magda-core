@@ -673,3 +673,31 @@ TEST_CASE("flattenMidiClip - unrolled loops stop looping", "[midi][clip][flatten
         }
     }
 }
+
+TEST_CASE("A loop shorter than the clip keeps every note in the editor", "[midi][clip][loop]") {
+    using namespace magda;
+
+    ClipInfo clip;
+    clip.setMidiContent();
+    clip.setPlacementBeats(0.0, 16.0);
+    clip.loopEnabled = true;
+    clip.loopStartBeats = 4.0;
+    clip.loopLengthBeats = 8.0;
+
+    for (double start : {0.0, 6.0, 13.0, 15.5}) {
+        MidiNote note;
+        note.noteNumber = 60;
+        note.startBeat = start;
+        note.lengthBeats = 0.5;
+        note.velocity = 100;
+        CHECK(ClipOperations::clipMidiNoteToVisibleRange(clip, note));
+        CHECK(note.startBeat == Catch::Approx(start));
+    }
+
+    SECTION("a loop past the clip end widens the window to the loop end") {
+        clip.setPlacementBeats(0.0, 4.0);
+        const auto range = ClipOperations::getMidiVisibleRange(clip);
+        CHECK(range.startBeat == Catch::Approx(0.0));
+        CHECK(range.endBeat() == Catch::Approx(12.0));
+    }
+}

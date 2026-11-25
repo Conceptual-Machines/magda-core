@@ -8,6 +8,7 @@
 
 #include "../../../components/common/MasterSpeakerButton.hpp"
 #include "../../../components/mixer/LevelMeterScale.hpp"
+#include "../../../components/mixer/RoutingSyncHelper.hpp"
 #include "../../../themes/ActiveTheme.hpp"
 #include "../../../themes/FontManager.hpp"
 #include "audio/TrackMeters.hpp"
@@ -67,10 +68,25 @@ MasterInspectorView::MasterInspectorView() {
     };
     addAndMakeVisible(*muteButton_);
 
-    for (auto* header : {&outputHeader_, &fxHeader_, &latencyHeader_}) {
+    for (auto* header : {&outputHeader_, &routingHeader_, &fxHeader_, &latencyHeader_}) {
         header->onCollapsedChanged = [this]() { resized(); };
         addAndMakeVisible(*header);
     }
+
+    // The device pair the master plays to (#3424).
+    routingHeader_.setText(tr("inspector.routing"));
+    addAndMakeVisible(audioColumnLabel_);
+    deviceOutput_ =
+        std::make_unique<magda::RoutingSelector>(magda::RoutingSelector::Type::AudioOut);
+    deviceOutput_->setFieldStyle(true);
+    deviceOutput_->onSelectionChanged = [this](int selectedId) {
+        // Copied: the change notification repopulates the map.
+        const auto it = outputChannelMapping_.find(selectedId);
+        if (it != outputChannelMapping_.end())
+            magda::TrackManager::getInstance().setTrackAudioOutput(magda::MASTER_TRACK_ID,
+                                                                   juce::String(it->second));
+    };
+    addAndMakeVisible(*deviceOutput_);
 
     caption(volumeCaption_, "Volume");
     addAndMakeVisible(volumeCaption_);
@@ -152,6 +168,11 @@ void MasterInspectorView::refresh() {
     if (const auto* track = tm.getTrack(magda::MASTER_TRACK_ID)) {
         devices = static_cast<int>(track->chain.fxChainElements.size());
         fxList_.sync(*track, audioEngine_);
+        magda::RoutingSyncHelper::syncSelectorsFromTrack(
+            *track, nullptr, nullptr, deviceOutput_.get(), nullptr,
+            audioEngine_ != nullptr ? audioEngine_->getAudioIO() : nullptr, magda::MASTER_TRACK_ID,
+            outputTrackMapping_, midiOutputTrackMapping_, nullptr, nullptr, nullptr,
+            &outputChannelMapping_);
     }
     const auto dot = juce::String::fromUTF8(" \xc2\xb7 ");
     summaryLabel_.setText("Master" + dot + "stereo" + dot + juce::String(devices) +
@@ -374,6 +395,23 @@ int MasterInspectorView::layoutSections(int areaHeight, bool fxAtLeast) {
         peakLabel_.setBounds(
             scale.withSizeKeepingCentre(juce::jmin(160, scale.getWidth() / 2), scale.getHeight()));
         output.removeFromTop(kRowGap + 4);
+    } else {
+        output.removeFromTop(6);
+    }
+    separatorYs_.push_back(output.getY());
+
+    // Routing: the audio column and its output row, as on the track inspector.
+    output.removeFromTop(6);
+    routingHeader_.setBounds(output.removeFromTop(CollapsibleSectionHeader::kHeight));
+    const bool routingOpen = !routingHeader_.isCollapsed();
+    audioColumnLabel_.setVisible(routingOpen);
+    deviceOutput_->setVisible(routingOpen);
+    if (routingOpen) {
+        output.removeFromTop(4);
+        audioColumnLabel_.setBounds(output.removeFromTop(14));
+        output.removeFromTop(2);
+        deviceOutput_->setBounds(output.removeFromTop(22));
+        output.removeFromTop(kRowGap);
     } else {
         output.removeFromTop(6);
     }

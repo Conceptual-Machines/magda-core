@@ -2672,6 +2672,7 @@ MainView::MasterHeaderPanel::MasterHeaderPanel() {
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
     AutomationManager::getInstance().addListener(this);
+    SelectionManager::getInstance().addListener(this);
     Config::getInstance().addListener(this);
 
     setupControls();
@@ -2684,6 +2685,7 @@ MainView::MasterHeaderPanel::MasterHeaderPanel() {
 
 MainView::MasterHeaderPanel::~MasterHeaderPanel() {
     Config::getInstance().removeListener(this);
+    SelectionManager::getInstance().removeListener(this);
     AutomationManager::getInstance().removeListener(this);
     TrackManager::getInstance().removeListener(this);
 }
@@ -2755,12 +2757,26 @@ void MainView::MasterHeaderPanel::setupControls() {
 
     peakMeter = std::make_unique<LevelMeter>();
     peakMeter->setOrientation(LevelMeter::Orientation::Horizontal);
+    // A click on the meter selects the master, which has no name label to click.
+    peakMeter->setInterceptsMouseClicks(false, false);
     addAndMakeVisible(*peakMeter);
 }
 
 void MainView::MasterHeaderPanel::paint(juce::Graphics& g) {
-    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
+    // The track headers' selected body.
+    const bool selected = SelectionManager::getInstance().isTrackSelected(MASTER_TRACK_ID);
+    g.fillAll(ActiveTheme::getColour(selected ? ActiveTheme::DEVICE_ICON_HOVER_BG
+                                              : ActiveTheme::PANEL_BACKGROUND));
     g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
+    g.drawRect(getLocalBounds(), 1);
+}
+
+// The track headers' full-bar selection rim, in the accent: the master has no track colour.
+void MainView::MasterHeaderPanel::paintOverChildren(juce::Graphics& g) {
+    if (Config::getInstance().getTrackColourStyle() != "full" ||
+        !SelectionManager::getInstance().isTrackSelected(MASTER_TRACK_ID))
+        return;
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     g.drawRect(getLocalBounds(), 1);
 }
 
@@ -2896,19 +2912,26 @@ MainView::MasterOutputPanel::MasterOutputPanel(AudioEngine* audioEngine)
     addAndMakeVisible(*icon_);
 
     TrackManager::getInstance().addListener(this);
+    SelectionManager::getInstance().addListener(this);
     if (hardware_ != nullptr)
         hardware_->addListener(this);
     refresh();
 }
 
 MainView::MasterOutputPanel::~MasterOutputPanel() {
+    SelectionManager::getInstance().removeListener(this);
     if (hardware_ != nullptr)
         hardware_->removeListener(this);
     TrackManager::getInstance().removeListener(this);
 }
 
 void MainView::MasterOutputPanel::paint(juce::Graphics& g) {
-    g.fillAll(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
+    // The track headers' selected I/O column (paintIOColumn).
+    const auto base = ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND);
+    g.fillAll(
+        SelectionManager::getInstance().isTrackSelected(MASTER_TRACK_ID)
+            ? base.interpolatedWith(ActiveTheme::getColour(ActiveTheme::DEVICE_ICON_HOVER_BG), 0.3f)
+            : base);
     g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 }
@@ -3062,11 +3085,18 @@ MainView::AuxHeadersPanel::AuxHeadersPanel() {
     // the aux return just like clicking an ordinary track header.
     addMouseListener(this, true);
     TrackManager::getInstance().addListener(this);
+    SelectionManager::getInstance().addListener(this);
     rebuildAuxRows();
 }
 
 MainView::AuxHeadersPanel::~AuxHeadersPanel() {
+    SelectionManager::getInstance().removeListener(this);
     TrackManager::getInstance().removeListener(this);
+}
+
+juce::Rectangle<int> MainView::AuxHeadersPanel::rowBounds(size_t index) const {
+    const int rowHeight = getHeight() / juce::jmax(1, static_cast<int>(auxRows_.size()));
+    return {0, static_cast<int>(index) * rowHeight, getWidth(), rowHeight};
 }
 
 void MainView::AuxHeadersPanel::tracksChanged() {
@@ -3187,6 +3217,13 @@ void MainView::AuxHeadersPanel::paint(juce::Graphics& g) {
     // Slightly different background to distinguish from regular tracks
     g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE).darker(0.1f));
 
+    // The track headers' selected body.
+    auto& selection = SelectionManager::getInstance();
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_ICON_HOVER_BG));
+    for (size_t i = 0; i < auxRows_.size(); ++i)
+        if (selection.isTrackSelected(auxRows_[i]->trackId))
+            g.fillRect(rowBounds(i));
+
     // Draw borders between rows
     int rowHeight = getHeight() / juce::jmax(1, static_cast<int>(auxRows_.size()));
     g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
@@ -3198,9 +3235,21 @@ void MainView::AuxHeadersPanel::paint(juce::Graphics& g) {
     }
 }
 
-void MainView::AuxHeadersPanel::mouseDown(const juce::MouseEvent& event) {
-    if (auxRows_.empty())
+// The track headers' full-bar selection rim, in the accent the master's takes.
+void MainView::AuxHeadersPanel::paintOverChildren(juce::Graphics& g) {
+    if (Config::getInstance().getTrackColourStyle() != "full")
         return;
+    auto& selection = SelectionManager::getInstance();
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    for (size_t i = 0; i < auxRows_.size(); ++i)
+        if (selection.isTrackSelected(auxRows_[i]->trackId))
+            g.drawRect(rowBounds(i), 1);
+}
+
+void MainView::AuxHeadersPanel::mouseDown(const juce::MouseEvent& event) {
+    if (auxRows_.empty() || event.eventTime == lastMouseDownEventTime_)
+        return;
+    lastMouseDownEventTime_ = event.eventTime;
 
     int rowHeight = getHeight() / static_cast<int>(auxRows_.size());
     const auto localEvent = event.getEventRelativeTo(this);

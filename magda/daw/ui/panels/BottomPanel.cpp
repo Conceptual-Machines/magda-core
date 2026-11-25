@@ -336,6 +336,15 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     };
     headerBar_->addChildComponent(fullscreenToggle_.get());
 
+    // The panel's own, so it shows with the header hidden or the panel collapsed.
+    hideButton_ = std::make_unique<SvgButton>("HideBottomPanel", BinaryData::bottom_close_svg,
+                                              BinaryData::bottom_close_svgSize);
+    hideButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    hideButton_->setNormalColor(ActiveTheme::DEVICE_ICON);
+    hideButton_->setHoverColor(ActiveTheme::DEVICE_ICON_HOVER);
+    hideButton_->onClick = [this] { setCollapsed(!isCollapsed()); };
+    addAndMakeVisible(*hideButton_);
+
     toolButtons_ = std::make_unique<EditToolButtons>(
         EditToolState::midiEditor(), std::array<const char*, 5>{
                                          "Pointer (1)",
@@ -443,6 +452,7 @@ BottomPanel::~BottomPanel() {
     drumGridTab_.reset();
     overlayTracksButton_.reset();
     fullscreenToggle_.reset();
+    hideButton_.reset();
     toolButtons_.reset();
     envelopeToolButtons_.reset();
     sampleToolButtons_.reset();
@@ -820,6 +830,7 @@ void BottomPanel::resized() {
 
     // Hide everything when collapsed
     if (isCollapsed()) {
+        placeHideButton(getLocalBounds().removeFromRight(kHideButtonSize + 16));
         audioPropsPanel_->setVisible(false);
         propsResizer_->setVisible(false);
         if (chordPanel_)
@@ -841,6 +852,9 @@ void BottomPanel::resized() {
     }
 
     const bool hasHeader = shouldShowHeaderFor(getActiveContent());
+    if (!hasHeader)
+        placeHideButton(
+            {getWidth() - kHideButtonSize - 16, 0, kHideButtonSize + 16, kHideButtonSize + 8});
 
     // Position header bar at the top
     if (hasHeader) {
@@ -858,16 +872,21 @@ void BottomPanel::resized() {
              content->getContentType() == daw::ui::PanelContentType::AutomationClipEditor);
         headerBar_->v1 = usesV1Toolbar();
         headerBar_->decor.clear();
+
+        // The hide button keeps the header's far right; the rest lays out beside it.
+        auto headerBounds = headerBar_->getLocalBounds();
+        placeHideButton(headerBounds.removeFromRight(kHideButtonSize + 16));
+
         if (hasMidiControls && headerBar_->v1 && showPropsPanel_)
-            layoutV1AudioToolbar(headerBar_->getLocalBounds());
+            layoutV1AudioToolbar(headerBounds);
         else if (hasMidiControls && headerBar_->v1)
-            layoutV1Toolbar(headerBar_->getLocalBounds());
+            layoutV1Toolbar(headerBounds);
         else if (hasMidiControls)
-            layoutMidiHeaderControls(headerBar_->getLocalBounds());
+            layoutMidiHeaderControls(headerBounds);
 
         // Let content type layout its own header controls
         if (content)
-            content->layoutHeader(headerBar_->getLocalBounds());
+            content->layoutHeader(headerBounds);
 
         // Collapse can occur while shared header controls are parented into a
         // hidden HeaderBar. Restore the expected per-content visibility when
@@ -1427,11 +1446,6 @@ void BottomPanel::onContentWillSwitch(daw::ui::PanelContent* outgoing,
     // Populate incoming content's header controls
     if (incoming)
         incoming->populateHeader(*headerBar_);
-    if (auto* chain = dynamic_cast<daw::ui::TrackChainContent*>(incoming))
-        chain->onHeaderFoldChanged = [this]() {
-            resized();
-            repaint();
-        };
 
     // Add MIDI controls if incoming is a MIDI editor
     const bool isMidiEditor =
@@ -1708,6 +1722,20 @@ void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
         loopButton_->setBounds(headerBounds.getX() + (SIDEBAR_WIDTH - sz) / 2, y + (h - sz) / 2, sz,
                                sz);
     }
+}
+
+void BottomPanel::placeHideButton(juce::Rectangle<int> slot) {
+    const bool collapsed = isCollapsed();
+    if (collapsed != hideButtonShowsOpen_) {
+        hideButtonShowsOpen_ = collapsed;
+        hideButton_->updateSvgData(
+            collapsed ? BinaryData::bottom_open_svg : BinaryData::bottom_close_svg,
+            collapsed ? BinaryData::bottom_open_svgSize : BinaryData::bottom_close_svgSize);
+    }
+    hideButton_->setTooltip(collapsed ? "Show the bottom panel" : "Hide the bottom panel");
+    hideButton_->setBounds(slot.withSizeKeepingCentre(kHideButtonSize, kHideButtonSize));
+    hideButton_->setVisible(true);
+    hideButton_->toFront(false);
 }
 
 bool BottomPanel::usesV1Toolbar() const {

@@ -473,12 +473,14 @@ class MainView::SelectionOverlayComponent : public juce::Component {
 class MainView::MasterHeaderPanel : public juce::Component,
                                     public TrackManagerListener,
                                     public AutomationManagerListener,
+                                    private SelectionManagerListener,
                                     private ConfigListener {
   public:
     MasterHeaderPanel();
     ~MasterHeaderPanel() override;
 
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& event) override;
 
@@ -489,6 +491,17 @@ class MainView::MasterHeaderPanel : public juce::Component,
     // AutomationManagerListener
     void automationLanesChanged() override;
     void automationLanePropertyChanged(AutomationLaneId laneId) override;
+
+    // Selected like a track header (SelectionManagerListener).
+    void selectionTypeChanged(SelectionType) override {
+        repaint();
+    }
+    void trackSelectionChanged(TrackId) override {
+        repaint();
+    }
+    void multiTrackSelectionChanged(const std::unordered_set<TrackId>&) override {
+        repaint();
+    }
 
     // Meter level updates (for audio engine integration)
     void setPeakLevels(float leftPeak, float rightPeak);
@@ -519,6 +532,7 @@ class MainView::MasterHeaderPanel : public juce::Component,
 /// The master's output pair in the I/O column, beside its header (#3424).
 class MainView::MasterOutputPanel : public juce::Component,
                                     public TrackManagerListener,
+                                    private SelectionManagerListener,
                                     private HardwareChannels::Listener {
   public:
     explicit MasterOutputPanel(AudioEngine* audioEngine);
@@ -530,6 +544,17 @@ class MainView::MasterOutputPanel : public juce::Component,
 
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
+
+    // Selected like a track header (SelectionManagerListener).
+    void selectionTypeChanged(SelectionType) override {
+        repaint();
+    }
+    void trackSelectionChanged(TrackId) override {
+        repaint();
+    }
+    void multiTrackSelectionChanged(const std::unordered_set<TrackId>&) override {
+        repaint();
+    }
 
   private:
     void hardwareChannelsChanged() override;
@@ -558,18 +583,32 @@ class MainView::MasterContentPanel : public juce::Component {
 };
 
 // Aux headers panel - one row per aux track with name, volume, pan, mute/solo
-class MainView::AuxHeadersPanel : public juce::Component, public TrackManagerListener {
+class MainView::AuxHeadersPanel : public juce::Component,
+                                  public TrackManagerListener,
+                                  private SelectionManagerListener {
   public:
     AuxHeadersPanel();
     ~AuxHeadersPanel() override;
 
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& event) override;
 
     // TrackManagerListener
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
+
+    // Selected like a track header (SelectionManagerListener).
+    void selectionTypeChanged(SelectionType) override {
+        repaint();
+    }
+    void trackSelectionChanged(TrackId) override {
+        repaint();
+    }
+    void multiTrackSelectionChanged(const std::unordered_set<TrackId>&) override {
+        repaint();
+    }
 
     // Metering
     void updateMetering(AudioEngine* engine);
@@ -592,6 +631,9 @@ class MainView::AuxHeadersPanel : public juce::Component, public TrackManagerLis
 
     std::vector<std::unique_ptr<AuxRow>> auxRows_;
     void rebuildAuxRows();
+    juce::Rectangle<int> rowBounds(size_t index) const;
+    // The self-listener delivers a click on the panel itself twice.
+    juce::Time lastMouseDownEventTime_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AuxHeadersPanel)
 };

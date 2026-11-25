@@ -771,8 +771,6 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     bottomPanel->setAudioEngine(externalEngine);
     bottomPanel->onCollapseChanged = [this](bool collapsed) {
         bottomPanelCollapsed = collapsed;
-        if (footerBar)
-            footerBar->setBottomPanelCollapsed(collapsed);
         resized();
     };
     bottomPanel->onFullscreenToggleRequested = [this]() { toggleEditorFullscreen(); };
@@ -801,10 +799,6 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
     juce::Logger::writeToLog("[MainComponent] Creating FooterBar...");
     footerBar = std::make_unique<FooterBar>(&commandManager);
-    footerBar->onBottomPanelCollapseToggle = [this]() {
-        setBottomPanelCollapsed(!bottomPanelCollapsed);
-        resized();
-    };
     footerBar->onControllersClicked = [] { SettingsWindow::show(SettingsSectionId::Controllers); };
     footerBar->onLocalModelsClicked = [] { SettingsWindow::show(SettingsSectionId::AI, "Local"); };
     footerBar->onAbletonLinkClicked = [] {
@@ -1086,7 +1080,6 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Left, true);
     if (bottomPanelCollapsed) {
         daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Bottom, true);
-        footerBar->setBottomPanelCollapsed(true);
     }
 
 // Enable profiling if environment variable is set
@@ -1757,8 +1750,6 @@ void MainWindow::MainComponent::setBottomPanelCollapsed(bool collapsed) {
         return;
     bottomPanelCollapsed = collapsed;
     bottomPanel->setCollapsed(collapsed);
-    if (footerBar)
-        footerBar->setBottomPanelCollapsed(collapsed);
 }
 
 void MainWindow::MainComponent::toggleEditorFullscreen() {
@@ -1783,8 +1774,6 @@ void MainWindow::MainComponent::toggleEditorFullscreen() {
         editorFullscreen_ = false;
     }
 
-    if (footerBar)
-        footerBar->setBottomPanelCollapsed(bottomPanelCollapsed);
     if (bottomPanel)
         bottomPanel->setPianoRollFullscreenActive(editorFullscreen_);
     resized();

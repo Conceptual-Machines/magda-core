@@ -645,6 +645,8 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
         list.push_back(PluginBrowserInfo::createInternal(
             "External Instrument", insertSpec->pluginId, /*isInstrument*/ true, "External"));
     }
+    // The + menus list it as is, so it comes in the browser's own order.
+    std::ranges::stable_sort(list, browserEntryBefore);
     return list;
 }
 

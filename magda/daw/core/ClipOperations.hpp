@@ -64,11 +64,13 @@ class ClipOperations {
     static inline MidiNoteRange getMidiVisibleRange(const ClipInfo& clip) {
         if (!clip.isMidi())
             return {};
+        const double placed =
+            clip.placement.lengthBeats > 0.0 ? clip.placement.lengthBeats : clip.lengthBeats;
+        // A looped clip keeps its notes outside the loop region, so the editor shows them too.
         const double lengthBeats =
             (clip.loopEnabled && clip.loopLengthBeats > 0.0)
-                ? clip.loopLengthBeats
-                : (clip.placement.lengthBeats > 0.0 ? clip.placement.lengthBeats
-                                                    : clip.lengthBeats);
+                ? juce::jmax(placed, clip.loopStartBeats + clip.loopLengthBeats)
+                : placed;
         const double startBeat = clip.loopEnabled ? 0.0 : juce::jmax(0.0, clip.midiTrimOffset);
         return {startBeat, juce::jmax(0.0, lengthBeats)};
     }
