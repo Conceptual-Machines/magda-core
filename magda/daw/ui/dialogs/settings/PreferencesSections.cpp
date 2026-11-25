@@ -3918,8 +3918,7 @@ class ShortcutsPage {
         }
 
         void loadFromRouter(const GestureRouter& router) {
-            // Each bound input shows on one row: its own, else the first row whose action moved
-            // there.
+            // A bound input shows on one row: its own, else the first row moved onto it.
             std::unordered_set<uint64_t> claimed;
             for (auto& row : rows_) {
                 if (const auto* current = router.findBinding(row->context, row->input);
@@ -3983,8 +3982,7 @@ class ShortcutsPage {
             layoutRows(viewport_.getMaximumVisibleWidth());
         }
 
-        // The router holds one action per input, so a row already on it swaps to the learner's old
-        // one.
+        // One action per input: a row already on it swaps to the learner's old input.
         void learnInput(GestureRow& row, GestureInput input) {
             const auto key = GestureRouter::makeKey(row.context, input);
             GestureRow* holder = nullptr;
