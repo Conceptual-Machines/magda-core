@@ -5,11 +5,13 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <map>
 #include <memory>
 
 #include "../components/common/DraggableValueLabel.hpp"
 #include "../components/common/GridOverlayComponent.hpp"
 #include "../components/common/SvgButton.hpp"
+#include "../components/mixer/RoutingSelector.hpp"
 #include "../components/navigation/MainViewScrollContainer.hpp"
 #include "../components/timeline/MarkerLaneComponent.hpp"
 #include "../components/timeline/TimelineComponent.hpp"
@@ -19,6 +21,7 @@
 #include "../state/ModeContent.hpp"
 #include "../state/TimelineController.hpp"
 #include "ExpandedFaceplateHost.hpp"
+#include "audio/io/HardwareChannels.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/TrackManager.hpp"
@@ -186,8 +189,10 @@ class MainView : public juce::Component,
 
     // Fixed master track row at bottom (matching track panel style)
     class MasterHeaderPanel;
+    class MasterOutputPanel;
     class MasterContentPanel;  // legacy "Master Output" placeholder (kept for easy revert)
     std::unique_ptr<MasterHeaderPanel> masterHeaderPanel;
+    std::unique_ptr<MasterOutputPanel> masterOutputPanel;
     // Song navigator / minimap occupying the master content strip (issue #1474).
     std::unique_ptr<SongNavigatorPanel> masterContentPanel;
 
@@ -294,6 +299,7 @@ class MainView : public juce::Component,
         juce::Rectangle<int> verticalScrollBarArea;
         juce::Rectangle<int> horizontalScrollBarRowArea;
         juce::Rectangle<int> masterHeaderArea;
+        juce::Rectangle<int> masterOutputArea;  ///< the master row's part of the I/O column
         juce::Rectangle<int> masterContentArea;
         juce::Rectangle<int> masterHeightButtonsArea;
         juce::Rectangle<int> masterAutomationHeaderArea;
@@ -508,6 +514,35 @@ class MainView::MasterHeaderPanel : public juce::Component,
     void configChanged() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MasterHeaderPanel)
+};
+
+/// The master's output pair in the I/O column, beside its header (#3424).
+class MainView::MasterOutputPanel : public juce::Component,
+                                    public TrackManagerListener,
+                                    private HardwareChannels::Listener {
+  public:
+    explicit MasterOutputPanel(AudioEngine* audioEngine);
+    ~MasterOutputPanel() override;
+
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+    void lookAndFeelChanged() override;
+
+    void tracksChanged() override;
+    void trackPropertyChanged(int trackId) override;
+
+  private:
+    void hardwareChannelsChanged() override;
+    void refresh();
+
+    AudioIOControl* hardware_ = nullptr;
+    std::unique_ptr<RoutingSelector> selector_;
+    std::unique_ptr<juce::DrawableButton> icon_;
+    std::map<int, TrackId> outputTrackMapping_;
+    std::map<int, TrackId> midiOutputTrackMapping_;
+    std::map<int, juce::String> outputChannelMapping_;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MasterOutputPanel)
 };
 
 // Master content panel - empty for now, will show waveform later

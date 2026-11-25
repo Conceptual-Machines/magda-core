@@ -2879,6 +2879,15 @@ void PlanExecutor::renderOpUntimed(OpId id, const OpValue& published, const Bloc
                 output.addFrom(op.hardwareOutput.rightChannel, 0, in.getChannelPointer(1),
                                numSamples);
             }
+            if (masterTap_ != nullptr && isMasterOutput(op) && in.getNumChannels() > 0) {
+                const auto last = in.getNumChannels() - 1;
+                const auto samples = std::min(numSamples, masterTap_->getNumSamples());
+                for (auto channel = 0; channel < masterTap_->getNumChannels(); ++channel)
+                    masterTap_->addFrom(channel, 0,
+                                        in.getChannelPointer(std::min<std::size_t>(
+                                            static_cast<std::size_t>(channel), last)),
+                                        samples);
+            }
             break;
         }
     }

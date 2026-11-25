@@ -107,6 +107,11 @@ class ParallelPlanExecutor final : private PlanExecutor::CallbackRenderer {
         core_.setRenderAheadDepth(blocks);
     }
 
+    /// @copydoc PlanExecutor::setMasterTap
+    void setMasterTap(juce::AudioBuffer<float>* tap) {
+        core_.setMasterTap(tap);
+    }
+
     /// @copydoc PlanExecutor::setRenderLoad
     void setRenderLoad(RenderLoad* load) {
         core_.setRenderLoad(load);

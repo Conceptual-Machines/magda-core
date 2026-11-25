@@ -179,12 +179,17 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
     if (outChannelMapping)
         outChannelMapping->clear();
 
+    // The master plays to the device alone (#3424).
+    const bool master = currentTrackId == MASTER_TRACK_ID;
     std::vector<RoutingSelector::RoutingOption> options;
-    options.push_back({1, technicalText(TechnicalTextToken::Master)});
-    options.push_back({2, "None"});
+    if (!master) {
+        options.push_back({1, technicalText(TechnicalTextToken::Master)});
+        options.push_back({2, "None"});
+    }
 
     auto& trackManager = TrackManager::getInstance();
-    const auto& allTracks = trackManager.getTracks();
+    static const std::vector<TrackInfo> kNoTracks;
+    const auto& allTracks = master ? kNoTracks : trackManager.getTracks();
 
     // Collect descendants to prevent routing cycles
     std::vector<TrackId> descendants;
@@ -302,7 +307,8 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
                 }
             }
 
-            options.push_back({0, "", true});
+            if (!options.empty())
+                options.push_back({0, "", true});
 
             int stereoCount = 0, monoCount = 0;
             for (const auto& g : groups)
@@ -583,7 +589,12 @@ inline void syncSelectorsFromTrack(const TrackInfo& track, RoutingSelector* audi
         populateAudioOutputOptions(audioOutSelector, currentTrackId, outputs, outputTrackMapping,
                                    outputChannelMapping);
         juce::String currentAudioOutput = track.audioOutputDevice;
-        if (currentAudioOutput.isEmpty()) {
+        if (currentTrackId == MASTER_TRACK_ID &&
+            (currentAudioOutput.isEmpty() || currentAudioOutput == "master")) {
+            // Unset, the master plays to the first open outputs: the menu's first entry.
+            audioOutSelector->setSelectedId(audioOutSelector->getFirstChannelOptionId());
+            audioOutSelector->setEnabled(true);
+        } else if (currentAudioOutput.isEmpty()) {
             audioOutSelector->setSelectedId(2);  // "None"
             audioOutSelector->setEnabled(false);
         } else if (currentAudioOutput == "master") {

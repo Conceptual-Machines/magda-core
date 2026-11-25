@@ -106,7 +106,8 @@ struct TrackControlsPolicy {
                 p.pan = p.mute = p.solo = p.automation = true;
                 break;
             case TrackType::Master:
-                p.mute = true;
+                // Its output is a device pair (#3424).
+                p.mute = p.audioOut = true;
                 p.muteStyle = MuteStyle::MasterSpeaker;
                 break;
             case TrackType::Separator:

@@ -13,6 +13,7 @@
 #include "../common/MasterSpeakerButton.hpp"
 #include "BinaryData.h"
 #include "LevelMeterScale.hpp"
+#include "RoutingSyncHelper.hpp"
 #include "components/chain/custom_ui/DeviceTelemetrySources.hpp"
 #include "core/ChainNodePath.hpp"
 #include "core/Config.hpp"
@@ -479,6 +480,39 @@ void MasterChannelStrip::setupControls() {
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
     };
     addAndMakeVisible(*speakerButton);
+
+    outputSelector_ = std::make_unique<RoutingSelector>(RoutingSelector::Type::AudioOut);
+    outputSelector_->setFieldStyle(true);
+    outputSelector_->onSelectionChanged = [this](int selectedId) {
+        // Copied: the change notification repopulates the map.
+        const auto it = outputChannelMapping_.find(selectedId);
+        if (it != outputChannelMapping_.end())
+            TrackManager::getInstance().setTrackAudioOutput(MASTER_TRACK_ID,
+                                                            juce::String(it->second));
+    };
+    addChildComponent(*outputSelector_);
+}
+
+void MasterChannelStrip::setHardware(const HardwareChannels* hardware) {
+    hardware_ = hardware;
+    refreshOutputSelector();
+}
+
+void MasterChannelStrip::refreshOutputSelector() {
+    if (const auto* master = TrackManager::getInstance().getTrack(MASTER_TRACK_ID))
+        RoutingSyncHelper::syncSelectorsFromTrack(
+            *master, nullptr, nullptr, outputSelector_.get(), nullptr, hardware_, MASTER_TRACK_ID,
+            outputTrackMapping_, midiOutputTrackMapping_, nullptr, nullptr, nullptr,
+            &outputChannelMapping_);
+}
+
+void MasterChannelStrip::tracksChanged() {
+    refreshOutputSelector();
+}
+
+void MasterChannelStrip::trackPropertyChanged(int trackId) {
+    if (trackId == MASTER_TRACK_ID)
+        refreshOutputSelector();
 }
 
 void MasterChannelStrip::paint(juce::Graphics& g) {
@@ -598,6 +632,14 @@ void MasterChannelStrip::resized() {
         bounds.removeFromBottom(2);
         speakerButton->setBounds(bounds.removeFromBottom(20));
         bounds.removeFromBottom(2);  // Gap between mute row and readout
+
+        // The output above it, the track strips' field (#3424).
+        const bool showsOutput = Config::getInstance().getMixerShowRouting();
+        outputSelector_->setVisible(showsOutput);
+        if (showsOutput) {
+            outputSelector_->setBounds(bounds.removeFromBottom(22));
+            bounds.removeFromBottom(4);
+        }
 
         // Readout sits just below the fader, with a small breathing strip
         // beneath it so the number doesn't kiss the mute row.

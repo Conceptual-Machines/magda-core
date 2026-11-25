@@ -19,7 +19,9 @@
 #include "../components/common/SideColumn.hpp"
 #include "../components/mixer/LevelMeter.hpp"
 #include "../components/mixer/LevelMeterScale.hpp"
+#include "../components/mixer/RoutingSyncHelper.hpp"
 #include "../components/navigation/SongNavigatorPanel.hpp"
+#include "../components/tracks/TrackControlsLayout.hpp"
 #include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "ArrangementViewportPolicy.hpp"
@@ -272,6 +274,8 @@ void MainView::setupComponents() {
     // Create fixed master track row at bottom (matching track panel style)
     masterHeaderPanel = std::make_unique<MasterHeaderPanel>();
     addAndMakeVisible(*masterHeaderPanel);
+    masterOutputPanel = std::make_unique<MasterOutputPanel>(audioEngine_);
+    addChildComponent(*masterOutputPanel);
     masterContentPanel = std::make_unique<SongNavigatorPanel>();
     masterContentPanel->setController(timelineController.get());
     addAndMakeVisible(*masterContentPanel);
@@ -941,6 +945,7 @@ void MainView::masterChannelChanged() {
     if (newVisible != masterVisible_) {
         masterVisible_ = newVisible;
         masterHeaderPanel->setVisible(masterVisible_ && !trackAreaReplaced());
+        masterOutputPanel->setVisible(masterVisible_ && !trackAreaReplaced());
         masterContentPanel->setVisible(masterVisible_ && !trackAreaReplaced());
         resized();
         repaint();  // clear the vacated master-strip area (stale-paint fix)
@@ -962,6 +967,7 @@ void MainView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profil
     if (newVisible != masterVisible_) {
         masterVisible_ = newVisible;
         masterHeaderPanel->setVisible(masterVisible_);
+        masterOutputPanel->setVisible(masterVisible_);
         masterContentPanel->setVisible(masterVisible_);
     }
 
@@ -1003,6 +1009,7 @@ void MainView::updateModeContent() {
     trackContentViewport->setVisible(!replaced);
     selectionOverlay->setVisible(!replaced);
     masterHeaderPanel->setVisible(!replaced && masterVisible_);
+    masterOutputPanel->setVisible(!replaced && masterVisible_);
     masterContentPanel->setVisible(!replaced && masterVisible_);
     if (replaced) {
         auxHeadersPanel->setVisible(false);
@@ -1110,8 +1117,12 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
 
     if (masterVisible_) {
         auto masterRowArea = bounds.removeFromBottom(masterStripHeight);
-        result.masterHeaderArea =
-            mainHeaderPart(headerColumn.removeFrom(masterRowArea, headerColumnWidth()));
+        auto masterColumn = headerColumn.removeFrom(masterRowArea, headerColumnWidth());
+        result.masterHeaderArea = mainHeaderPart(masterColumn);
+        // What the header leaves is the I/O column's, empty while it is hidden.
+        SideColumn(!Config::getInstance().getScrollbarOnLeft())
+            .removeFrom(masterColumn, trackHeaderWidth);
+        result.masterOutputArea = masterColumn;
         headerColumn.removeSpacing(masterRowArea, layout.componentSpacing);
         result.masterContentArea = masterRowArea;
     }
@@ -1199,6 +1210,9 @@ void MainView::resized() {
         masterHeaderPanel->setCompact(masterCompact());
         masterContentPanel->setCompact(masterCompact());
         masterHeaderPanel->setBounds(arrangementLayout.masterHeaderArea);
+        masterOutputPanel->setBounds(arrangementLayout.masterOutputArea);
+        masterOutputPanel->setVisible(masterHeaderPanel->isVisible() &&
+                                      !arrangementLayout.masterOutputArea.isEmpty());
         masterContentPanel->setBounds(arrangementLayout.masterContentArea);
         // Compact has room for one button: its own three dots, which lead back to medium.
         const auto area = arrangementLayout.masterHeightButtonsArea;
@@ -1217,6 +1231,8 @@ void MainView::resized() {
         // map / master header keep their previous-view bounds and can leave a
         // fragment behind when the view switches.
         masterHeaderPanel->setBounds({});
+        masterOutputPanel->setBounds({});
+        masterOutputPanel->setVisible(false);
         masterContentPanel->setBounds({});
     }
     // Always-present footer toggle: hide icon when the master is visible, show
@@ -2857,6 +2873,79 @@ void MainView::MasterHeaderPanel::updateAutomationButtonState() {
 void MainView::MasterHeaderPanel::setPeakLevels(float leftPeak, float rightPeak) {
     if (peakMeter)
         peakMeter->setLevels(leftPeak, rightPeak);
+}
+
+// ===== MasterOutputPanel Implementation =====
+
+MainView::MasterOutputPanel::MasterOutputPanel(AudioEngine* audioEngine)
+    : hardware_(audioEngine != nullptr ? audioEngine->getAudioIO() : nullptr) {
+    selector_ = std::make_unique<RoutingSelector>(RoutingSelector::Type::AudioOut);
+    selector_->setFieldStyle(true);
+    selector_->onSelectionChanged = [this](int selectedId) {
+        // Copied: the change notification repopulates the map.
+        const auto it = outputChannelMapping_.find(selectedId);
+        if (it != outputChannelMapping_.end())
+            TrackManager::getInstance().setTrackAudioOutput(MASTER_TRACK_ID,
+                                                            juce::String(it->second));
+    };
+    addAndMakeVisible(*selector_);
+
+    icon_ = std::make_unique<juce::DrawableButton>("outputIcon", juce::DrawableButton::ImageFitted);
+    lookAndFeelChanged();
+    icon_->setInterceptsMouseClicks(false, false);
+    addAndMakeVisible(*icon_);
+
+    TrackManager::getInstance().addListener(this);
+    if (hardware_ != nullptr)
+        hardware_->addListener(this);
+    refresh();
+}
+
+MainView::MasterOutputPanel::~MasterOutputPanel() {
+    if (hardware_ != nullptr)
+        hardware_->removeListener(this);
+    TrackManager::getInstance().removeListener(this);
+}
+
+void MainView::MasterOutputPanel::paint(juce::Graphics& g) {
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
+    g.drawRect(getLocalBounds(), 1);
+}
+
+void MainView::MasterOutputPanel::lookAndFeelChanged() {
+    track_controls::applyRoutingIconImage(icon_.get(), BinaryData::Output_svg,
+                                          BinaryData::Output_svgSize);
+}
+
+// The track headers' I/O row: the audio field in the left half, the icon at the right.
+void MainView::MasterOutputPanel::resized() {
+    auto row = getLocalBounds().reduced(10, 0).withTrimmedLeft(1).withTrimmedBottom(1);
+    row = row.withSizeKeepingCentre(row.getWidth(), juce::jmin(row.getHeight(), 24));
+    icon_->setBounds(row.removeFromRight(18).withSizeKeepingCentre(15, 15));
+    row.removeFromRight(4);
+    selector_->setBounds(row.removeFromLeft((row.getWidth() - 6) / 2));
+}
+
+void MainView::MasterOutputPanel::tracksChanged() {
+    refresh();
+}
+
+void MainView::MasterOutputPanel::trackPropertyChanged(int trackId) {
+    if (trackId == MASTER_TRACK_ID)
+        refresh();
+}
+
+void MainView::MasterOutputPanel::hardwareChannelsChanged() {
+    refresh();
+}
+
+void MainView::MasterOutputPanel::refresh() {
+    if (const auto* master = TrackManager::getInstance().getTrack(MASTER_TRACK_ID))
+        RoutingSyncHelper::syncSelectorsFromTrack(
+            *master, nullptr, nullptr, selector_.get(), nullptr, hardware_, MASTER_TRACK_ID,
+            outputTrackMapping_, midiOutputTrackMapping_, nullptr, nullptr, nullptr,
+            &outputChannelMapping_);
 }
 
 // ===== MasterContentPanel Implementation =====

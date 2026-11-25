@@ -3264,6 +3264,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         context_ = context;
         scratch_.setSize(hardwareOutputChannels_, context.maxBlockSize);
+        masterScratch_.setSize(kChannels, context.maxBlockSize);
 
         // What a plugin is created at. Everything the store held has gone with
         // the session, so the publish below asks for each of them again.
@@ -3703,7 +3704,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             session_->process(piece, scratch_,
                               done == 0 ? engine::LiveInputBlock{pieceIn, streams}
                                         : engine::LiveInputBlock{pieceIn, {}},
-                              phase ? &*phase : nullptr);
+                              phase ? &*phase : nullptr, &masterScratch_);
 
             if (session_->takeCompletionPending())
                 triggerAsyncUpdate();
@@ -3721,7 +3722,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                                       scratch_.getReadPointer(channel), piece);
             if (const auto capture =
                     std::atomic_load_explicit(&masterCapture_, std::memory_order_acquire))
-                capture->write(scratch_, 0, piece);
+                capture->write(masterScratch_, 0, piece);
             done += piece;
         }
         rendered = true;
@@ -4356,6 +4357,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     engine::RenderContext context_{};
     juce::AudioBuffer<float> scratch_;
+    /// The master's own signal for each piece, wherever it plays (#3424).
+    juce::AudioBuffer<float> masterScratch_;
     EngineHost::HardwareChannelProvider hardwareOutputProvider_;
     std::map<std::string, engine::HardwareOutputRoute> hardwareOutputs_;
     std::map<std::string, engine::HardwareOutputRoute> publishedHardwareOutputs_;
