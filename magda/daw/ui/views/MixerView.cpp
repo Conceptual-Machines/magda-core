@@ -1929,6 +1929,7 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // Create master strip (uses shared MasterChannelStrip component)
     masterStrip = std::make_unique<MasterChannelStrip>(MasterChannelStrip::Orientation::Vertical);
     masterStrip->onSendAreaResized = [this]() { relayoutAllStrips(); };
+    masterStrip->setHardware(audioEngine_ != nullptr ? audioEngine_->getAudioIO() : nullptr);
     masterStrip->allVisibleLayoutTargetsProvider = [this]() {
         return getLayoutEditTargets(MASTER_TRACK_ID, true);
     };
@@ -1981,6 +1982,7 @@ void MixerView::midiDeviceListChanged() {
 
 void MixerView::hardwareChannelsChanged() {
     tracksChanged();
+    masterStrip->refreshOutputSelector();
 }
 
 MixerView::~MixerView() {

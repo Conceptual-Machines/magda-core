@@ -916,6 +916,8 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/mixer/HardwareInputLevels.cpp
     # A track's MIDI Out selector shows its own route only (#2209)
     ui/test_midi_out_selector_juce.cpp
+    # The master's output selector lists device pairs only (#3424)
+    ui/test_master_output_selector_juce.cpp
     # OSC control surfaces (issue #1757): a live receive thread and real packets
     controllers/test_osc_service_juce.cpp
     # pluginState v1 -> v2 over the legacy corpus (#2079). Here rather than in

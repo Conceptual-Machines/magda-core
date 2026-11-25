@@ -1674,6 +1674,24 @@ TEST_CASE("A separator roundtrips with its name, or without one",
     CHECK(list[2].type == TrackType::Media);
 }
 
+TEST_CASE("The master's output pair roundtrips, and clearing the project resets it",
+          "[project][serialization][3424]") {
+    ProjectTestFixture fixture;
+    auto& tracks = TrackManager::getInstance();
+    tracks.setTrackAudioOutput(MASTER_TRACK_ID, "stereo:Out 63");
+
+    ProjectInfo info;
+    info.name = "Master output";
+    const auto json = ProjectSerializer::serializeProject(info);
+    tracks.clearAllTracks();
+    CHECK(tracks.getTrack(MASTER_TRACK_ID)->audioOutputDevice.isEmpty());
+
+    ProjectInfo restored;
+    REQUIRE(ProjectSerializer::deserializeProject(json, restored));
+    CHECK(tracks.getTrack(MASTER_TRACK_ID)->audioOutputDevice == "stereo:Out 63");
+    tracks.clearAllTracks();
+}
+
 TEST_CASE("Send identity and enabled state roundtrip with legacy defaults",
           "[project][serialization][sends][2837]") {
     ProjectTestFixture fixture;

@@ -1315,6 +1315,7 @@ void TrackInspector::updateFromSelectedTrack() {
 
         clipCountLabel_.setText(tr("inspector.clip_count.other").replace("{0}", "0"),
                                 juce::dontSendNotification);
+        updateRoutingSelectorsFromTrack();
 
         showTrackControls(true);
         updateAutomatedParametersSummary();

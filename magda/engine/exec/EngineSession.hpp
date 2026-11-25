@@ -101,7 +101,7 @@ class EngineSession {
      */
     void setRenderAhead(int depth, bool inBackground = true);
 
-    /// Where each block's output goes after the plan, before the click (#2311). The
+    /// Where the master's signal goes after each block, without the click (#2311). The
     /// host's, set while no callback runs; null keeps none.
     void setCaptureRing(CaptureRing* ring) {
         captureRing_ = ring;
@@ -325,9 +325,11 @@ class EngineSession {
      * named by the published plan; a narrower buffer is cleared and refused.
      *
      * @p phase is an external session's beat for this block, which the clock follows (#3188).
+     *
+     * @p master, if given, gets the master's own stereo signal, whichever channels it plays to.
      */
     void process(int numSamples, juce::AudioBuffer<float>& output, const LiveInputBlock& input = {},
-                 const PhaseReference* phase = nullptr);
+                 const PhaseReference* phase = nullptr, juce::AudioBuffer<float>* master = nullptr);
 
     /**
      * @brief The feed a live source reads its block from.
@@ -625,6 +627,12 @@ class EngineSession {
         /// Preallocated channel-pointer storage for a callback's timeline segments.
         juce::AudioBuffer<float> segmentOutput;
         int outputChannels = 0;
+
+        /// The master's own signal for a callback, and the view each segment's tap writes (#3424).
+        LockedAudioBuffer master;
+        juce::AudioBuffer<float> segmentMaster;
+        /// Where the master plays, which the click follows.
+        HardwareOutputRoute masterRoute;
 
         /// The takes the model named when this plan was published, sorted
         /// (#2465). Here rather than beside the recording feed so that one

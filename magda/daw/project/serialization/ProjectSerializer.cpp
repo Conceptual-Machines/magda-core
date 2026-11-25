@@ -698,6 +698,7 @@ void ProjectSerializer::commitStaged(StagedProjectData& data) {
         auto& tm = TrackManager::getInstance();
         auto* masterTrack = tm.getTrack(MASTER_TRACK_ID);
         if (masterTrack) {
+            tm.setTrackAudioOutput(MASTER_TRACK_ID, data.masterTrack->audioOutputDevice);
             masterTrack->chain.fxChainElements = std::move(data.masterTrack->chain.fxChainElements);
             masterTrack->chain.postFxChainElements =
                 std::move(data.masterTrack->chain.postFxChainElements);
@@ -857,11 +858,13 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info,
     obj->setProperty("clips", clips);
     obj->setProperty("automation", serializeAutomation());
 
-    // Serialize master track separately (its chain elements hold master bus plugins)
+    // Serialize master track separately: its chain holds the master bus plugins, and it names
+    // the device pair the master plays to (#3424).
     auto* masterTrack = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
     if (masterTrack && (!masterTrack->chain.fxChainElements.empty() ||
                         !masterTrack->chain.postFxChainElements.empty() ||
-                        !masterTrack->chain.mixerAnalysisElements.empty())) {
+                        !masterTrack->chain.mixerAnalysisElements.empty() ||
+                        masterTrack->audioOutputDevice.isNotEmpty())) {
         auto saved = *masterTrack;
         dropUnaddressedHostedParameters(saved, addressed);
         auto master = serializeTrackInfo(saved);
@@ -1078,6 +1081,7 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     if (hasMasterTrack) {
         auto& tm = TrackManager::getInstance();
         if (auto* masterTrack = tm.getTrack(MASTER_TRACK_ID)) {
+            tm.setTrackAudioOutput(MASTER_TRACK_ID, stagedMasterTrack.audioOutputDevice);
             masterTrack->chain.fxChainElements = std::move(stagedMasterTrack.chain.fxChainElements);
             masterTrack->chain.postFxChainElements =
                 std::move(stagedMasterTrack.chain.postFxChainElements);

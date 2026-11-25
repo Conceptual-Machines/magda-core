@@ -3566,6 +3566,7 @@ void TrackManager::clearAllTracks() {
     masterTrack_.chain.fxChainElements.clear();
     masterTrack_.chain.postFxChainElements.clear();
     masterTrack_.chain.mixerAnalysisElements.clear();
+    masterTrack_.audioOutputDevice = {};
     nextTrackId_ = 1;
     nextFxDeviceId_ = 1;
     nextPostFxDeviceId_ = 1;
