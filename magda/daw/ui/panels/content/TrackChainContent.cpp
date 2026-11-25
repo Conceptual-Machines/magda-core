@@ -616,16 +616,9 @@ class TrackChainContent::ChainContainer : public juce::Component,
     }
 
     // Chain, rack and device presets; a plugin's own preset files go to its device slot.
-    static bool isDroppablePreset(const juce::String& path) {
-        using Kind = magda::PresetManager::PresetRef::Kind;
-        const auto ref = magda::PresetManager::getInstance().classifyPresetFile(juce::File(path));
-        return ref.has_value() &&
-               (ref->kind == Kind::Chain || ref->kind == Kind::Rack || ref->kind == Kind::Device);
-    }
-
     static bool anyDroppablePreset(const juce::StringArray& files) {
-        const auto isPreset = [](const auto& f) { return isDroppablePreset(f); };
-        return std::ranges::any_of(files, isPreset);
+        return std::ranges::any_of(
+            files, [](const auto& f) { return magda::chainDropPreset(juce::File(f)).has_value(); });
     }
 
     // Load each dropped preset onto the selected track: chain presets replace
@@ -637,50 +630,26 @@ class TrackChainContent::ChainContainer : public juce::Component,
         if (trackId == magda::INVALID_TRACK_ID) {
             return;
         }
-        auto& presets = magda::PresetManager::getInstance();
-        auto& tracks = magda::TrackManager::getInstance();
         for (const auto& path : files) {
-            const auto ref = presets.classifyPresetFile(juce::File(path));
+            const auto ref = magda::chainDropPreset(juce::File(path));
             if (!ref.has_value()) {
                 continue;
             }
-            if (ref->kind == magda::PresetManager::PresetRef::Kind::Chain) {
-                std::vector<magda::ChainElement> elements;
-                if (!presets.loadChainPreset(ref->name, elements)) {
-                    showChainPresetErrorAsync("Load Chain Preset Failed", presets.getLastError());
-                    continue;
-                }
-                if (!tracks.applyChainPreset(trackId, std::move(elements))) {
-                    showChainPresetErrorAsync("Load Chain Preset Failed",
-                                              "Failed to apply preset to track.");
-                    continue;
-                }
-                owner_.setTrackPresetName(trackId, ref->name);
-            } else if (ref->kind == magda::PresetManager::PresetRef::Kind::Rack) {
-                magda::RackInfo rack;
-                if (!presets.loadRackPreset(ref->name, rack)) {
-                    showChainPresetErrorAsync("Load Rack Preset Failed", presets.getLastError());
-                    continue;
-                }
+            const bool insertsElements = ref->kind != magda::PresetManager::PresetRef::Kind::Chain;
+            if (insertsElements) {
                 owner_.scrollToEndAfterNextDeviceChange_ = shouldScrollToEnd;
                 owner_.suppressNextImplicitScrollToEnd_ = !shouldScrollToEnd;
-                if (!magda::insertRackPreset(trackId, std::move(rack), insertIndex)) {
-                    showChainPresetErrorAsync("Load Rack Preset Failed",
-                                              "Failed to add the rack to the track.");
-                    continue;
-                }
-                ++insertIndex;
-            } else if (ref->kind == magda::PresetManager::PresetRef::Kind::Device) {
-                magda::DeviceInfo device;
-                if (!presets.loadDevicePreset(ref->pluginFolder, ref->name, device)) {
-                    showChainPresetErrorAsync("Load Device Preset Failed", presets.getLastError());
-                    continue;
-                }
-                owner_.scrollToEndAfterNextDeviceChange_ = shouldScrollToEnd;
-                owner_.suppressNextImplicitScrollToEnd_ = !shouldScrollToEnd;
-                tracks.addDeviceToTrack(trackId, device, insertIndex);
-                ++insertIndex;
             }
+            const auto result = magda::dropPresetIntoChain(
+                *ref, magda::ChainNodePath::trackLevel(trackId), insertIndex);
+            if (!result.applied) {
+                if (result.errorTitle.isNotEmpty())
+                    showChainPresetErrorAsync(result.errorTitle, result.error);
+                continue;
+            }
+            if (!insertsElements)
+                owner_.setTrackPresetName(trackId, ref->name);
+            insertIndex += result.elementsInserted;
         }
     }
 

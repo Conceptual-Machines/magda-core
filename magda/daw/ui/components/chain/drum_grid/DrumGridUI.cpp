@@ -10,6 +10,7 @@
 #include <set>
 
 #include "core/DrumGridPads.hpp"
+#include "core/PresetDrops.hpp"
 #include "core/TrackManager.hpp"
 #include "drum_grid/PadNameEditor.hpp"
 #include "layout/DeviceShellPainter.hpp"
@@ -464,18 +465,24 @@ void DrumGridUI::setSelectedPad(int padIndex) {
 // FileDragAndDropTarget
 // =============================================================================
 
-bool DrumGridUI::isInterestedInFileDrag(const juce::StringArray& files) {
-    return std::ranges::any_of(files, isAudioFile);
+namespace {
+bool isChainPresetFile(const juce::String& path) {
+    return magda::chainDropPreset(juce::File(path)).has_value();
 }
 
-namespace {
-int countAudioFilesDG(const juce::StringArray& files) {
-    return static_cast<int>(std::ranges::count_if(files, isAudioFile));
+// Samples fill consecutive pads; presets all go to the one pad they land on.
+int countPadsFilledDG(const juce::StringArray& files) {
+    const auto samples = static_cast<int>(std::ranges::count_if(files, isAudioFile));
+    return std::max(samples, std::ranges::any_of(files, isChainPresetFile) ? 1 : 0);
 }
 }  // namespace
 
+bool DrumGridUI::isInterestedInFileDrag(const juce::StringArray& files) {
+    return std::ranges::any_of(files, isAudioFile) || std::ranges::any_of(files, isChainPresetFile);
+}
+
 void DrumGridUI::fileDragEnter(const juce::StringArray& files, int x, int y) {
-    fileDropCount_ = countAudioFilesDG(files);
+    fileDropCount_ = countPadsFilledDG(files);
     int btnIdx = padButtonIndexAtPoint({x, y});
     fileDropStartPad_ = (btnIdx >= 0) ? currentPage_ * kPadsPerPage + btnIdx : -1;
     repaint();
@@ -496,10 +503,29 @@ void DrumGridUI::fileDragExit(const juce::StringArray& /*files*/) {
     repaint();
 }
 
-void DrumGridUI::filesDropped(const juce::StringArray& files, int x, int y) {
+void DrumGridUI::filesDropped(const juce::StringArray& droppedFiles, int x, int y) {
     fileDropStartPad_ = -1;
     fileDropCount_ = 0;
     repaint();
+
+    // A preset loads into the pad it lands on, or into the selected pad from its chain (#3416).
+    juce::StringArray presets;
+    juce::StringArray files;
+    for (const auto& f : droppedFiles)
+        (isChainPresetFile(f) ? presets : files).add(f);
+    if (!presets.isEmpty() && onPresetDropped) {
+        const int presetBtn = padButtonIndexAtPoint({x, y});
+        const int presetPad = presetBtn >= 0              ? currentPage_ * kPadsPerPage + presetBtn
+                              : chainArea_.contains(x, y) ? selectedPad_
+                                                          : -1;
+        if (presetPad >= 0) {
+            for (const auto& preset : presets)
+                onPresetDropped(presetPad, juce::File(preset));
+            setSelectedPad(presetPad);
+        }
+    }
+    if (files.isEmpty())
+        return;
 
     if (dropOnChainArea({x, y}, {}, files))
         return;

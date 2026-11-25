@@ -41,6 +41,8 @@
 #include "core/DrumGridPads.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/PadCommands.hpp"
+#include "core/PresetDrops.hpp"
+#include "core/RackDevices.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StepPatternCommands.hpp"
 #include "core/TrackManager.hpp"
@@ -1367,6 +1369,37 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         loadSampleToPad(padIndex, file);
     };
 
+    // A chain, rack or device preset joins the end of the pad's chain, made if the pad is empty.
+    drumGridUI_->onPresetDropped = [this, postPadEdit, updatePadFromModel](int padIndex,
+                                                                           const juce::File& file) {
+        const auto ref = magda::chainDropPreset(file);
+        if (!ref.has_value())
+            return;
+        postPadEdit(
+            "Load Pad Preset",
+            [padIndex, ref = *ref](const magda::ChainNodePath& grid) {
+                auto& tm = magda::TrackManager::getInstance();
+                const auto padChainId = tm.ensurePad(grid, padIndex);
+                if (padChainId == magda::INVALID_CHAIN_ID)
+                    return;
+                const auto result = magda::loadPresetIntoChain(
+                    ref, magda::TrackManager::padChainPath(grid, padChainId),
+                    std::numeric_limits<int>::max());
+                if (result.errorTitle.isNotEmpty())
+                    juce::AlertWindow::showAsync(
+                        juce::MessageBoxOptions()
+                            .withIconType(juce::MessageBoxIconType::WarningIcon)
+                            .withTitle(result.errorTitle)
+                            .withMessage(result.error)
+                            .withButton("OK", 0),
+                        nullptr);
+            },
+            [this, padIndex, updatePadFromModel]() {
+                updatePadFromModel(padIndex);
+                drumGridUI_->refreshPadChain();
+            });
+    };
+
     // Clear callback
     drumGridUI_->onClearRequested = [this, postPadEdit](int padIndex) {
         postPadEdit(
@@ -1398,6 +1431,18 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         juce::String uniqueId = obj.getProperty("uniqueId").toString();
 
         const auto refreshPad = [padIndex, updatePadFromModel]() { updatePadFromModel(padIndex); };
+
+        // A rack replaces the pad, as an instrument does.
+        if (auto rackDevice = magda::TrackManager::deviceInfoFromPluginObject(obj);
+            magda::isRackDevice(rackDevice)) {
+            postPadEdit(
+                "Set Pad Rack",
+                [padIndex, rackDevice](const magda::ChainNodePath& grid) {
+                    magda::TrackManager::getInstance().setPadDevice(grid, padIndex, rackDevice);
+                },
+                refreshPad);
+            return;
+        }
 
         // Handle internal plugins (MagdaSampler, etc.)
         if (!isExternal) {

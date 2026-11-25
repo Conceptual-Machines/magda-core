@@ -261,6 +261,8 @@ class AddDeviceToTrackCommand : public UndoableCommand {
     TrackId trackId_;
     DeviceInfo device_;
     DeviceId createdDeviceId_ = INVALID_DEVICE_ID;
+    /// Set instead of createdDeviceId_ when device_ is a rack device.
+    RackId createdRackId_ = INVALID_RACK_ID;
     bool executed_ = false;
 };
 

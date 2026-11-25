@@ -12,6 +12,7 @@
 #include "PanelContent.hpp"
 #include "SearchTextEditor.hpp"
 #include "core/PluginPreferences.hpp"
+#include "core/PresetManager.hpp"
 
 namespace magda {}  // namespace magda
 
@@ -32,6 +33,7 @@ struct PluginBrowserInfo {
     juce::String searchKeywords;    // hidden aliases / ids used only for browser search
     bool isFavorite = false;
     bool isExternal = false;  // true for VST3/AU, false for internal
+    juce::String parentId;    // uniqueId of the rack entry a rack preset is listed under
 
     // For external plugins - used for loading
     juce::String uniqueId;          // PluginDescription::createIdentifierString()
@@ -58,7 +60,8 @@ struct PluginBrowserInfo {
 class PluginBrowserContent : public PanelContent,
                              public juce::TreeViewItem,
                              public juce::ChangeListener,
-                             public magda::PluginPreferences::Listener {
+                             public magda::PluginPreferences::Listener,
+                             public magda::PresetManager::Listener {
   public:
     PluginBrowserContent();
     ~PluginBrowserContent() override;
@@ -66,6 +69,7 @@ class PluginBrowserContent : public PanelContent,
     // ChangeListener — auto-refresh when KnownPluginList changes (e.g. after scan)
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
     void externalPluginFormatPreferenceChanged(magda::PluginFormat preference) override;
+    void rackPresetsChanged() override;
 
     PanelContentType getContentType() const override {
         return PanelContentType::PluginBrowser;
@@ -180,6 +184,8 @@ class PluginBrowserContent : public PanelContent,
     std::unique_ptr<juce::Drawable> instrumentIcon_;
     std::unique_ptr<juce::Drawable> effectIcon_;
     std::unique_ptr<juce::Drawable> midiIcon_;
+    std::unique_ptr<juce::Drawable> rackIcon_;
+    std::unique_ptr<juce::Drawable> multibandRackIcon_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginBrowserContent)
 };

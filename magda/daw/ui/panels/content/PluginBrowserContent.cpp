@@ -17,6 +17,7 @@
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
 #include "PluginBrowserMetadataMerge.hpp"
+#include "PluginBrowserOrder.hpp"
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
@@ -33,6 +34,8 @@
 #include "core/PluginAlias.hpp"
 #include "core/PluginParameterConfigStore.hpp"
 #include "core/PluginPreferences.hpp"
+#include "core/PresetManager.hpp"
+#include "core/RackDevices.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/PluginMetadataStore.hpp"
 #include "engine/PluginService.hpp"
@@ -44,26 +47,6 @@ namespace {
 
 juce::String preferenceIdentifierForPlugin(const PluginBrowserInfo& plugin) {
     return plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
-}
-
-juce::String effectiveCategoryForPlugin(const PluginBrowserInfo& plugin) {
-    if (plugin.categoryOverride == "Instrument")
-        return "Instrument";
-    if (plugin.categoryOverride == "MIDI FX" || plugin.categoryOverride == "Audio FX")
-        return "Effect";
-    if (plugin.categoryOverride == "Analyzer")
-        return "Analysis";
-    return plugin.category;
-}
-
-juce::String effectiveSubcategoryForPlugin(const PluginBrowserInfo& plugin) {
-    if (plugin.categoryOverride == "MIDI FX")
-        return "MIDI";
-    if (plugin.categoryOverride == "Audio FX")
-        return "Audio FX";
-    if (plugin.categoryOverride == "Analyzer")
-        return "Analyzer";
-    return plugin.subcategory;
 }
 
 void addSearchKeyword(juce::StringArray& keywords, const char* keyword) {
@@ -106,14 +89,6 @@ juce::String searchKeywordsForCompiledSpec(const audio::compiled::CompiledPlugin
     return joinSearchKeywords(keywords);
 }
 
-bool effectiveIsInstrument(const PluginBrowserInfo& plugin) {
-    if (plugin.categoryOverride == "Instrument")
-        return true;
-    if (plugin.categoryOverride.isNotEmpty())
-        return false;
-    return plugin.category == "Instrument";
-}
-
 void applyRawPluginFieldsToDevice(const PluginBrowserInfo& plugin, magda::DeviceInfo& device) {
     device.name = plugin.name;
     device.manufacturer = plugin.manufacturer;
@@ -145,6 +120,39 @@ magda::DeviceInfo deviceForPlugin(const PluginBrowserInfo& plugin) {
         device.format = magda::PluginFormat::Internal;
     }
     return device;
+}
+
+bool isRackEntry(const PluginBrowserInfo& plugin) {
+    return plugin.category == kRackBrowserCategory;
+}
+
+bool isMultibandRackEntry(const PluginBrowserInfo& plugin) {
+    return plugin.uniqueId == magda::kMultibandRackDeviceId ||
+           plugin.parentId == magda::kMultibandRackDeviceId;
+}
+
+PluginBrowserInfo rackEntry(const juce::String& name, const juce::String& deviceId,
+                            const juce::String& searchKeywords) {
+    auto entry = PluginBrowserInfo::createInternal(name, deviceId, false, kRackBrowserCategory,
+                                                   searchKeywords);
+    entry.category = kRackBrowserCategory;
+    entry.alias.clear();  // a rack is not a device the DSL can load by alias
+    return entry;
+}
+
+/// Rack and Multiband Rack, then each saved rack preset under the one it holds.
+std::vector<PluginBrowserInfo> rackEntries() {
+    std::vector<PluginBrowserInfo> entries{
+        rackEntry("Rack", magda::kRackDeviceId, "chains"),
+        rackEntry("Multiband Rack", magda::kMultibandRackDeviceId, "bands crossover split")};
+    auto& presets = magda::PresetManager::getInstance();
+    for (const auto& presetName : presets.getRackPresets()) {
+        auto entry = rackEntry(presetName, magda::rackPresetDeviceId(presetName), "rack preset");
+        entry.parentId = presets.isMultibandRackPreset(presetName) ? magda::kMultibandRackDeviceId
+                                                                   : magda::kRackDeviceId;
+        entries.push_back(std::move(entry));
+    }
+    return entries;
 }
 
 }  // namespace
@@ -200,8 +208,9 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
     PluginTreeItem(PluginBrowserInfo plugin, PluginBrowserContent& owner)
         : plugin_(std::move(plugin)), owner_(owner) {}
 
+    // A rack entry holds its saved presets.
     bool mightContainSubItems() override {
-        return false;
+        return getNumSubItems() > 0;
     }
 
     void paintItem(juce::Graphics& g, int width, int height) override {
@@ -213,8 +222,13 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
             g.fillRect(bounds);
         }
 
-        // Favorite star
-        if (plugin_.isFavorite) {
+        // Disclosure arrow for an entry with presets under it, else the favorite star
+        if (getNumSubItems() > 0) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+            g.setFont(FontManager::getInstance().getUIFont(10.0f));
+            g.drawText(isOpen() ? juce::String::fromUTF8("▼") : juce::String::fromUTF8("▶"),
+                       bounds.removeFromLeft(16), juce::Justification::centred);
+        } else if (plugin_.isFavorite) {
             g.setColour(juce::Colours::gold);
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText(juce::String::fromUTF8("★"), bounds.removeFromLeft(16),
@@ -228,7 +242,11 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
         auto iconArea = bounds.removeFromLeft(18);
         auto iconBounds = iconArea.toFloat().withSizeKeepingCentre(12.0f, 12.0f);
         const auto effectiveSubcategory = effectiveSubcategoryForPlugin(plugin_);
-        if (effectiveSubcategory == "MIDI" && owner_.midiIcon_) {
+        if (isRackEntry(plugin_)) {
+            if (const auto& icon =
+                    isMultibandRackEntry(plugin_) ? owner_.multibandRackIcon_ : owner_.rackIcon_)
+                icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
+        } else if (effectiveSubcategory == "MIDI" && owner_.midiIcon_) {
             owner_.midiIcon_->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         } else if (effectiveIsInstrument(plugin_) && owner_.instrumentIcon_) {
             owner_.instrumentIcon_->drawWithin(g, iconBounds, juce::RectanglePlacement::centred,
@@ -260,13 +278,15 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
         }
         g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
-        g.drawText(plugin_.format, formatBounds, juce::Justification::centredRight);
+        g.drawText(plugin_.parentId.isNotEmpty() ? juce::String("Preset") : plugin_.format,
+                   formatBounds, juce::Justification::centredRight);
     }
 
     void itemClicked(const juce::MouseEvent& e) override {
-        if (e.mods.isRightButtonDown()) {
+        if (e.mods.isRightButtonDown())
             owner_.showPluginContextMenu(plugin_, e.getScreenPosition());
-        }
+        else if (getNumSubItems() > 0)
+            setOpen(!isOpen());
     }
 
     void itemDoubleClicked(const juce::MouseEvent&) override {
@@ -489,7 +509,9 @@ PluginBrowserContent::PluginBrowserContent() {
 
     // Build internal plugins and tree (external plugins are loaded when engine is set)
     magda::PluginPreferences::getInstance().addListener(this);
+    magda::PresetManager::getInstance().addListener(this);
     buildInternalPluginList();
+    std::ranges::stable_sort(plugins_, browserEntryBefore);
     loadFolders();
     rebuildTree();
 }
@@ -522,6 +544,8 @@ void PluginBrowserContent::loadCategoryIcons() {
         loadIcon(BinaryData::instrumentdevice_svg, BinaryData::instrumentdevice_svgSize);
     effectIcon_ = loadIcon(BinaryData::audiodevice_svg, BinaryData::audiodevice_svgSize);
     midiIcon_ = loadIcon(BinaryData::mididevice_svg, BinaryData::mididevice_svgSize);
+    rackIcon_ = loadIcon(BinaryData::iconracksboldm_svg, BinaryData::iconracksboldm_svgSize);
+    multibandRackIcon_ = loadIcon(BinaryData::multibandrack_svg, BinaryData::multibandrack_svgSize);
 }
 
 void PluginBrowserContent::lookAndFeelChanged() {
@@ -627,6 +651,8 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
 void PluginBrowserContent::buildInternalPluginList() {
     auto internals = getInternalPlugins();
     plugins_.insert(plugins_.end(), internals.begin(), internals.end());
+    auto racks = rackEntries();
+    plugins_.insert(plugins_.end(), racks.begin(), racks.end());
 }
 
 void PluginBrowserContent::loadExternalPlugins() {
@@ -654,6 +680,7 @@ void PluginBrowserContent::loadExternalPlugins() {
 
 PluginBrowserContent::~PluginBrowserContent() {
     magda::PluginPreferences::getInstance().removeListener(this);
+    magda::PresetManager::getInstance().removeListener(this);
     if (listening_)
         PluginService::getInstance().removeListChangeListener(this);
     // Clear root item before TreeView destructor runs
@@ -670,10 +697,15 @@ void PluginBrowserContent::externalPluginFormatPreferenceChanged(magda::PluginFo
     refreshPluginList();
 }
 
+void PluginBrowserContent::rackPresetsChanged() {
+    refreshPluginList();
+}
+
 void PluginBrowserContent::refreshPluginList() {
     plugins_.clear();
     buildInternalPluginList();
     loadExternalPlugins();
+    std::ranges::stable_sort(plugins_, browserEntryBefore);
     auto& prefs = magda::PluginPreferences::getInstance();
     for (auto& plugin : plugins_)
         plugin.categoryOverride =
@@ -689,13 +721,22 @@ void PluginBrowserContent::rebuildTree() {
     pluginTree_.setRootItem(nullptr);
     rootItem_.reset();
 
-    // Create root based on view mode
     auto root = std::make_unique<CategoryTreeItem>("Plugins");
 
-    // User folders view: folders in creation order (empty ones included, so a
-    // fresh folder is a visible drop target), then everything unassigned under
-    // "Unfiled".
+    // plugins_ is in name order, so each folder lists its entries in the order they are added.
+    // A rack preset goes under its rack, unless the view or the user put it somewhere of its own.
+    std::map<juce::String, PluginTreeItem*> rackItems;
+    std::vector<const PluginBrowserInfo*> nestedPresets;
+    const auto addEntry = [&](juce::TreeViewItem& folder, const PluginBrowserInfo& plugin) {
+        auto* item = new PluginTreeItem(plugin, *this);
+        folder.addSubItem(item);
+        if (isRackEntry(plugin) && plugin.parentId.isEmpty())
+            rackItems[plugin.uniqueId] = item;
+    };
+
     if (currentViewMode_ == ViewMode::Folders) {
+        // Folders in creation order, empty ones included so a new folder is a visible drop
+        // target, then everything unassigned under "Unfiled".
         std::map<juce::String, FolderTreeItem*> folderItems;
         for (const auto& folderName : folderNames_) {
             auto* item = new FolderTreeItem(folderName, *this, true);
@@ -706,80 +747,71 @@ void PluginBrowserContent::rebuildTree() {
         for (const auto& plugin : plugins_) {
             auto it = pluginFolderByKey_.find(preferenceIdentifierForPlugin(plugin));
             if (it != pluginFolderByKey_.end() && folderItems.count(it->second) > 0)
-                folderItems[it->second]->addSubItem(new PluginTreeItem(plugin, *this));
+                addEntry(*folderItems[it->second], plugin);
+            else if (plugin.parentId.isNotEmpty())
+                nestedPresets.push_back(&plugin);
             else
-                unfiled->addSubItem(new PluginTreeItem(plugin, *this));
+                addEntry(*unfiled, plugin);
         }
         root->addSubItem(unfiled);
+    } else if (currentViewMode_ == ViewMode::Favorites) {
+        auto favorites = std::make_unique<CategoryTreeItem>("Favorites");
+        for (const auto& plugin : plugins_ | std::views::filter(&PluginBrowserInfo::isFavorite))
+            addEntry(*favorites, plugin);
+        if (favorites->getNumSubItems() > 0)
+            root->addSubItem(favorites.release());
+    } else {
+        const bool byCategory = currentViewMode_ == ViewMode::ByCategory;
+        const auto folderOf = [this](const PluginBrowserInfo& plugin) {
+            if (currentViewMode_ == ViewMode::ByCategory)
+                return std::pair{categoryFolderFor(plugin), categorySubfolderFor(plugin)};
+            return std::pair{currentViewMode_ == ViewMode::ByManufacturer ? plugin.manufacturer
+                                                                          : plugin.format,
+                             juce::String()};
+        };
+        const auto listedOnItsOwn = [](const PluginBrowserInfo& plugin) {
+            return plugin.parentId.isEmpty();
+        };
 
-        rootItem_ = std::move(root);
-        pluginTree_.setRootItem(rootItem_.get());
-        pluginTree_.setRootItemVisible(false);
-        for (int i = 0; i < rootItem_->getNumSubItems(); ++i)
-            rootItem_->getSubItem(i)->setOpen(true);
-        return;
+        juce::StringArray topFolders;
+        std::map<juce::String, juce::StringArray> subfolders;
+        for (const auto& plugin : plugins_ | std::views::filter(listedOnItsOwn)) {
+            const auto [top, sub] = folderOf(plugin);
+            topFolders.addIfNotAlreadyThere(top);
+            if (sub.isNotEmpty())
+                subfolders[top].addIfNotAlreadyThere(sub);
+        }
+        std::sort(topFolders.begin(), topFolders.end(), [byCategory](const auto& a, const auto& b) {
+            return compareBrowserFolders(a, b, byCategory) < 0;
+        });
+
+        // Subfolders come before the entries a folder holds directly.
+        std::map<std::pair<juce::String, juce::String>, CategoryTreeItem*> folderItems;
+        for (const auto& top : topFolders) {
+            auto* topItem = new CategoryTreeItem(top);
+            root->addSubItem(topItem);
+            folderItems[{top, {}}] = topItem;
+            auto& subs = subfolders[top];
+            std::sort(subs.begin(), subs.end(),
+                      [](const auto& a, const auto& b) { return compareBrowserNames(a, b) < 0; });
+            for (const auto& sub : subs) {
+                auto* subItem = new CategoryTreeItem(sub);
+                topItem->addSubItem(subItem);
+                folderItems[{top, sub}] = subItem;
+            }
+        }
+
+        for (const auto& plugin : plugins_) {
+            if (listedOnItsOwn(plugin))
+                addEntry(*folderItems[folderOf(plugin)], plugin);
+            else
+                nestedPresets.push_back(&plugin);
+        }
     }
 
-    std::map<juce::String, CategoryTreeItem*> categories;
-
-    for (const auto& plugin : plugins_) {
-        juce::String groupKey;
-        const auto effectiveCategory = effectiveCategoryForPlugin(plugin);
-        const auto effectiveSubcategory = effectiveSubcategoryForPlugin(plugin);
-
-        switch (currentViewMode_) {
-            case ViewMode::ByCategory:
-                groupKey = effectiveCategory + "/" + effectiveSubcategory;
-                break;
-            case ViewMode::ByManufacturer:
-                groupKey = plugin.manufacturer;
-                break;
-            case ViewMode::ByFormat:
-                groupKey = plugin.format;
-                break;
-            case ViewMode::Favorites:
-                if (!plugin.isFavorite)
-                    continue;
-                groupKey = "Favorites";
-                break;
-            case ViewMode::Folders:
-                continue;  // handled above
-        }
-
-        // For nested categories (e.g., "Effect/EQ")
-        if (currentViewMode_ == ViewMode::ByCategory) {
-            auto parts = juce::StringArray::fromTokens(groupKey, "/", "");
-            const juce::String& parentKey = parts[0];
-            juce::String childKey = parts.size() > 1 ? parts[1] : "";
-
-            // Create parent category if needed
-            if (categories.find(parentKey) == categories.end()) {
-                auto* parentItem = new CategoryTreeItem(parentKey);
-                root->addSubItem(parentItem);
-                categories[parentKey] = parentItem;
-            }
-
-            // Create subcategory if needed
-            if (childKey.isNotEmpty()) {
-                juce::String fullKey = parentKey + "/" + childKey;
-                if (categories.find(fullKey) == categories.end()) {
-                    auto* childItem = new CategoryTreeItem(childKey);
-                    categories[parentKey]->addSubItem(childItem);
-                    categories[fullKey] = childItem;
-                }
-                categories[fullKey]->addSubItem(new PluginTreeItem(plugin, *this));
-            } else {
-                categories[parentKey]->addSubItem(new PluginTreeItem(plugin, *this));
-            }
-        } else {
-            // Single-level grouping
-            if (categories.find(groupKey) == categories.end()) {
-                auto* item = new CategoryTreeItem(groupKey);
-                root->addSubItem(item);
-                categories[groupKey] = item;
-            }
-            categories[groupKey]->addSubItem(new PluginTreeItem(plugin, *this));
-        }
+    for (const auto* preset : nestedPresets) {
+        if (const auto rack = rackItems.find(preset->parentId); rack != rackItems.end())
+            rack->second->addSubItem(new PluginTreeItem(*preset, *this));
     }
 
     rootItem_ = std::move(root);
@@ -787,9 +819,8 @@ void PluginBrowserContent::rebuildTree() {
     pluginTree_.setRootItemVisible(false);
 
     // Open first level
-    for (int i = 0; i < rootItem_->getNumSubItems(); ++i) {
+    for (int i = 0; i < rootItem_->getNumSubItems(); ++i)
         rootItem_->getSubItem(i)->setOpen(true);
-    }
 }
 
 void PluginBrowserContent::filterBySearch(const juce::String& searchText) {
@@ -855,11 +886,15 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
         menu.addSeparator();
     }
 
-    menu.addItem(3, "Configure Parameters...");
-    if (plugin.isExternal)
-        menu.addItem(13, "Configure AI Sound Designer...");
-    menu.addItem(7, "Edit Alias...");
-    menu.addSeparator();
+    // A rack has no parameters of its own and no alias to load it by.
+    const bool isRack = isRackEntry(plugin);
+    if (!isRack) {
+        menu.addItem(3, "Configure Parameters...");
+        if (plugin.isExternal)
+            menu.addItem(13, "Configure AI Sound Designer...");
+        menu.addItem(7, "Edit Alias...");
+        menu.addSeparator();
+    }
 
     const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
 
@@ -906,8 +941,10 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
         menu.addSubMenu("Add to Folder", folderMenu);
     }
 
-    menu.addSeparator();
-    menu.addItem(6, "Show in Finder", !plugin.fileOrIdentifier.isEmpty());
+    if (!isRack) {
+        menu.addSeparator();
+        menu.addItem(6, "Show in Finder", !plugin.fileOrIdentifier.isEmpty());
+    }
 
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetScreenArea({position.x, position.y, 1, 1}),

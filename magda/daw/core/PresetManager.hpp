@@ -32,6 +32,19 @@ class PresetManager {
 
     static PresetManager& getInstance();
 
+    /** @brief Told when a rack preset is saved, deleted or renamed, on the thread that did it. */
+    class Listener {
+      public:
+        virtual ~Listener() = default;
+        virtual void rackPresetsChanged() = 0;
+    };
+    void addListener(Listener* listener) {
+        listeners_.add(listener);
+    }
+    void removeListener(Listener* listener) {
+        listeners_.remove(listener);
+    }
+
     // ========================================================================
     // Preset Directories
     // ========================================================================
@@ -146,6 +159,9 @@ class PresetManager {
      * @brief Get list of available rack presets
      */
     juce::StringArray getRackPresets() const;
+
+    /** @brief Whether rack preset @p presetName holds a multiband rack, read without loading it. */
+    bool isMultibandRackPreset(const juce::String& presetName) const;
 
     /** @brief Delete a rack preset file (and its media DB row). */
     bool deleteRackPreset(const juce::String& presetName);
@@ -305,7 +321,10 @@ class PresetManager {
     bool writeDevicePresetFile(const DeviceInfo& device, const juce::File& target);
     bool readDevicePresetFile(const juce::File& source, DeviceInfo& outDevice);
 
+    void notifyRackPresetsChanged();
+
     juce::String lastError_;
+    juce::ListenerList<Listener> listeners_;
     std::unordered_map<DeviceId, juce::String> suggestedNames_;
 };
 

@@ -76,6 +76,8 @@ set(TEST_SOURCES
     devices/test_device_preset_envelope.cpp
     # Rack and plugin-native presets dropped on a chain or a device slot (#1329)
     devices/test_preset_drops.cpp
+    # Racks listed and dropped as devices from the browser (#3417)
+    devices/test_rack_devices.cpp
     devices/test_device_state_hydration.cpp
     devices/test_internal_plugin_registry.cpp
     # Engine-neutral internal device state schema v2 (issue #1887)
@@ -100,6 +102,7 @@ set(TEST_SOURCES
     devices/test_plugin_capabilities.cpp
     devices/test_plugin_preferences.cpp
     devices/test_plugin_browser_metadata_merge.cpp
+    devices/test_plugin_browser_order.cpp
     devices/test_plugin_metadata_store.cpp
     devices/test_external_plugin_lookup.cpp
     # The ARA musical context and region times, without a plugin (#1579).

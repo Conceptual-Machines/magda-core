@@ -19,12 +19,14 @@
 #include "core/GestureRouter.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
+#include "core/PresetDrops.hpp"
 #include "core/RangesHelpers.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/PluginService.hpp"
+#include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/panels/content/PluginBrowserContent.hpp"
 #include "ui/themes/ActiveTheme.hpp"
@@ -98,7 +100,9 @@ class ChainPanel::ZoomableViewport : public juce::Viewport {
 //==============================================================================
 // ElementSlotsContainer - Custom container that paints arrows between chain elements
 //==============================================================================
-class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::DragAndDropTarget {
+class ChainPanel::ElementSlotsContainer : public juce::Component,
+                                          public juce::DragAndDropTarget,
+                                          public juce::FileDragAndDropTarget {
   public:
     explicit ElementSlotsContainer(ChainPanel& owner) : owner_(owner) {}
 
@@ -168,6 +172,9 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         }
         if (auto* obj = details.description.getDynamicObject()) {
             auto type = obj->getProperty("type").toString();
+            // Linux: the media browser drags preset rows as {type:"files",paths:[...]}.
+            if (type == "files")
+                return anyDroppablePreset(magda::dnd::filesDragPaths(details.description));
             return type == "plugin" || type == "chainElement" || type == "chainElements";
         }
         return false;
@@ -206,6 +213,10 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
 
         if (auto* obj = details.description.getDynamicObject()) {
             const auto type = obj->getProperty("type").toString();
+            if (type == "files") {
+                dropPresets(magda::dnd::filesDragPaths(details.description));
+                return;
+            }
             if (type == "chainElement" || type == "chainElements") {
                 auto sourcePaths = dragObjectToChainNodePaths(*obj);
                 if (!sourcePaths.empty()) {
@@ -261,7 +272,71 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         repaint();
     }
 
+    // FileDragAndDropTarget: macOS and Windows deliver a media-browser preset drag here (#3416).
+    bool isInterestedInFileDrag(const juce::StringArray& files) override {
+        return owner_.hasChain_ && anyDroppablePreset(files);
+    }
+
+    void fileDragEnter(const juce::StringArray&, int x, int /*y*/) override {
+        owner_.dropInsertIndex_ = owner_.calculateInsertIndex(x);
+        owner_.startTimerHz(10);
+        owner_.resized();
+        repaint();
+    }
+
+    void fileDragMove(const juce::StringArray&, int x, int /*y*/) override {
+        owner_.dropInsertIndex_ = owner_.calculateInsertIndex(x);
+        repaint();
+    }
+
+    void fileDragExit(const juce::StringArray&) override {
+        owner_.dropInsertIndex_ = -1;
+        owner_.stopTimer();
+        owner_.resized();
+        repaint();
+    }
+
+    void filesDropped(const juce::StringArray& files, int /*x*/, int /*y*/) override {
+        dropPresets(files);
+    }
+
   private:
+    static bool anyDroppablePreset(const juce::StringArray& files) {
+        return std::ranges::any_of(
+            files, [](const auto& f) { return magda::chainDropPreset(juce::File(f)).has_value(); });
+    }
+
+    // Loads each preset into this chain at the drop position, keeping a multi-file drop in order.
+    // Runs after the drop returns: the edit rebuilds the panel this container belongs to.
+    void dropPresets(const juce::StringArray& files) {
+        const auto chainPath = owner_.chainPath_;
+        const int insertIndex = owner_.dropInsertIndex_ >= 0
+                                    ? owner_.dropInsertIndex_
+                                    : static_cast<int>(elementSlots_->size());
+        owner_.dropInsertIndex_ = -1;
+        owner_.stopTimer();
+        owner_.resized();
+        repaint();
+
+        juce::MessageManager::callAsync([files, chainPath, at = insertIndex]() mutable {
+            for (const auto& path : files) {
+                const auto ref = magda::chainDropPreset(juce::File(path));
+                if (!ref.has_value())
+                    continue;
+                const auto result = magda::dropPresetIntoChain(*ref, chainPath, at);
+                at += result.elementsInserted;
+                if (result.errorTitle.isNotEmpty())
+                    juce::AlertWindow::showAsync(
+                        juce::MessageBoxOptions()
+                            .withIconType(juce::MessageBoxIconType::WarningIcon)
+                            .withTitle(result.errorTitle)
+                            .withMessage(result.error)
+                            .withButton("OK", 0),
+                        nullptr);
+            }
+        });
+    }
+
     void checkAndResetStaleDropState() {
         if (owner_.dropInsertIndex_ >= 0) {
             if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this)) {

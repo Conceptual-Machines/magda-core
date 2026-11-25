@@ -17,6 +17,7 @@
 #include "ChainWalk.hpp"
 #include "ClipManager.hpp"
 #include "Config.hpp"
+#include "RackDevices.hpp"
 #include "RangesHelpers.hpp"
 #include "SelectionManager.hpp"
 #include "TempoUtils.hpp"
@@ -841,12 +842,22 @@ AddDeviceToTrackCommand::AddDeviceToTrackCommand(TrackId trackId, DeviceInfo dev
 
 void AddDeviceToTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
+    if (isRackDevice(device_)) {
+        createdRackId_ = trackManager.addRackDevice(ChainNodePath::trackLevel(trackId_), device_,
+                                                    std::numeric_limits<int>::max());
+        executed_ = createdRackId_ != INVALID_RACK_ID;
+        return;
+    }
     createdDeviceId_ = trackManager.addDeviceToTrack(trackId_, device_);
     executed_ = (createdDeviceId_ != INVALID_DEVICE_ID);
     DBG("UNDO: Added device to track " << trackId_ << " (deviceId=" << createdDeviceId_ << ")");
 }
 
 void AddDeviceToTrackCommand::undo() {
+    if (executed_ && createdRackId_ != INVALID_RACK_ID) {
+        TrackManager::getInstance().removeRackFromTrack(trackId_, createdRackId_);
+        return;
+    }
     if (!executed_ || createdDeviceId_ == INVALID_DEVICE_ID) {
         return;
     }

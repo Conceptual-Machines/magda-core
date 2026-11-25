@@ -9,6 +9,7 @@
 #include "ChainWalk.hpp"
 #include "DrumGridPads.hpp"
 #include "PadChannels.hpp"
+#include "RackDevices.hpp"
 #include "RackInfo.hpp"
 #include "SelectionManager.hpp"
 #include "TrackManager.hpp"
@@ -184,6 +185,12 @@ DeviceId TrackManager::addDeviceToPad(const ChainNodePath& gridPath, ChainId pad
     auto* pad = getPadChain(gridPath, padChainId);
     if (pad == nullptr)
         return INVALID_DEVICE_ID;
+
+    if (isRackDevice(device)) {
+        addRackDevice(padChainPath(gridPath, padChainId), device,
+                      insertIndex < 0 ? static_cast<int>(pad->elements.size()) : insertIndex);
+        return INVALID_DEVICE_ID;
+    }
 
     if (auto* track = getTrack(gridPath.trackId);
         track != nullptr && !track->canHostInstrument() && device.isInstrument)

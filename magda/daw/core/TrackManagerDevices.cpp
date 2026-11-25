@@ -23,6 +23,7 @@
 #include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
 #include "PresetManager.hpp"
+#include "RackDevices.hpp"
 #include "RackInfo.hpp"
 #include "TrackManager.hpp"
 #include "audio/plugins/SavedDeviceState.hpp"
@@ -397,6 +398,11 @@ TrackId TrackManager::createTrackFromPreset(TrackInfo presetTrack, const juce::S
 
 DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
                                         const DeviceInfo& device) {
+    if (isRackDevice(device)) {
+        addRackDevice(ChainNodePath::chain(trackId, rackId, chainId), device,
+                      std::numeric_limits<int>::max());
+        return INVALID_DEVICE_ID;
+    }
     if (auto* track = getTrack(trackId)) {
         if (!track->canHostInstrument() && device.isInstrument) {
             return INVALID_DEVICE_ID;
@@ -424,6 +430,10 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
 
 DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
                                               const DeviceInfo& device, int insertIndex) {
+    if (isRackDevice(device)) {
+        addRackDevice(chainPath, device, insertIndex);
+        return INVALID_DEVICE_ID;
+    }
     if (auto* track = getTrack(chainPath.trackId)) {
         if (!track->canHostInstrument() && device.isInstrument) {
             return INVALID_DEVICE_ID;
@@ -1030,6 +1040,25 @@ DeviceId TrackManager::stageFlatSectionReplacement(const ChainNodePath& devicePa
     notifyTrackDevicesChanged(devicePath.trackId);
     notifyDeviceAdded(stagedPath, staged);
     return staged.id;
+}
+
+RackId TrackManager::addRackDevice(const ChainNodePath& chainPath, const DeviceInfo& rackDevice,
+                                   int insertIndex) {
+    const auto* track = getTrack(chainPath.trackId);
+    auto* elements = getElementContainerForChainPath(*this, chainPath);
+    if (track == nullptr || !track->carriesSignal() || elements == nullptr)
+        return INVALID_RACK_ID;
+
+    auto rack = rackForDevice(rackDevice);
+    if (!rack)
+        return INVALID_RACK_ID;
+
+    insertIndex = std::clamp(insertIndex, 0, static_cast<int>(elements->size()));
+    std::vector<ChainElement> inserted;
+    inserted.push_back(makeRackElement(std::move(*rack)));
+    if (!insertChainElementsByPath(chainPath, std::move(inserted), insertIndex))
+        return INVALID_RACK_ID;
+    return magda::getRack((*elements)[static_cast<std::size_t>(insertIndex)]).id;
 }
 
 bool TrackManager::insertChainElementsByPath(const ChainNodePath& destinationChainPath,
