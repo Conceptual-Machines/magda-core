@@ -615,7 +615,10 @@
     "gestures.action": "Action",
     "gestures.input": "Input",
     "gestures.sensitivity": "Sensitivity",
-    "gestures.invert": "Invert"
+    "gestures.invert": "Invert",
+    "gestures.swap_title": "Input already in use",
+    "gestures.swap_message": "{1} already uses {0}.\nSwap the inputs? {1} then uses {2}.",
+    "gestures.swap": "Swap"
   },
   "controllers": {
     "tab.profiles": "{0} Profiles",
