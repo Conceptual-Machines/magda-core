@@ -294,6 +294,8 @@ set(TEST_SOURCES
     agents/test_agent_runtime.cpp
     agents/test_agent_tool_bridge.cpp
     agents/test_console_agent_orchestrator.cpp
+    agents/test_console_arrangement_notes.cpp
+    agents/eval_console_arrangement.cpp
     midi/test_midi_context.cpp
     agents/test_llama_model_manager.cpp
     routing/test_track_reorder.cpp

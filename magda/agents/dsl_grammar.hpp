@@ -74,6 +74,9 @@ method_call: "clip" "." "new" "(" params? ")"
            | "rack" "." "chain_new" "(" params? ")"
            | "rack" "." "chain_delete" "(" params? ")"
            | "rack" "." "chain_set" "(" params? ")"
+           | "notes" "." "add" "(" params ")"
+           | "notes" "." "add_chord" "(" params ")"
+           | "notes" "." "add_arpeggio" "(" params ")"
            | "notes" "." "select" "(" note_condition ")"
            | "notes" "." "delete" "(" ")"
            | "notes" "." "transpose" "(" params? ")"
@@ -138,6 +141,7 @@ TRACK OPERATIONS:
 - track(id=1) - Reference existing track (1-based index)
 
 IMPORTANT: When the user says "create a track", always use new=true to ensure a fresh track is created.
+Every new=true creates another track. To do more on a track you just created (an instrument, a clip, notes), chain it onto the same statement, or start the next statement with track(name="X") without new=true.
 
 METHOD CHAINING:
 - .clip.new(bar=3, length_bars=4) - Create MIDI clip at bar
@@ -188,6 +192,8 @@ EXAMPLES:
 - "add an EQ to the Bass track" -> track(name="Bass").fx.add(name="eq")
 - "add <pro_q_3> to track 1" -> track(id=1).fx.add(name="<pro_q_3>")
 - "create a track with <surge_xt>" -> track(name="Surge XT", new=true).fx.add(name="<surge_xt>")
+- "create a Lead track with a synth and a C major arpeggio" ->
+  track(name="Lead", new=true).fx.add(name="Poly Synth").clip.new(bar=1, length_bars=2).notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5, beats=8)
 - "add reverb and delay to the Vocals track" ->
   track(name="Vocals").fx.add(name="reverb")
   track(name="Vocals").fx.add(name="delay")
@@ -209,7 +215,37 @@ EXAMPLES:
 - "select all clips shorter than or equal to 1 bar on track 2" -> track(id=2).clips.select(clip.length_bars <= 1)
 - "select the clip named Intro" -> track(id=1).clips.select(clip.name == "Intro")
 
-NOTE EDITING OPERATIONS (require a selected clip; these edit EXISTING notes only — note generation is handled by a separate music agent):
+NOTE WRITING OPERATIONS (write into the clip that the chain just created, else the selected clip):
+- .notes.add(pitch=E2, beat=0, length=1, velocity=100) - Add one note
+- .notes.add_chord(root=C4, quality=major, beat=0, length=4, velocity=100, inversion=0) - Add a chord
+- .notes.add_arpeggio(root=A3, quality=min, beat=0, step=0.5, beats=8, pattern=up) - Add an arpeggio; beats fills that many beats, omit it for one pass
+PITCH/ROOT: note names C#4, Db4, Bb3 (C4=60) or MIDI numbers
+QUALITY: major, min, dim, aug, sus2, sus4, dom7, maj7, min7, dim7, dom9, min9, maj9, 6, min6, 7b5, 7sharp5, half_dim, power
+BEAT: position in beats from the clip start (0 = clip start). LENGTH: beats. VELOCITY: 1-127. PATTERN: up, down, updown.
+
+Put the notes on the same chain as the clip, one method per line. Write every note: the clip must hold
+the whole pattern, so a 4-bar bass line in 4/4 covers beats 0 to 16.
+
+EXAMPLES (note writing):
+- "add a bass line in E minor to the selected track" (selected_track_id=2) ->
+  track(id=2).clip.new(length_bars=1)
+    .notes.add(pitch=E2, beat=0, length=1)
+    .notes.add(pitch=G2, beat=1, length=0.5)
+    .notes.add(pitch=A2, beat=1.5, length=0.5)
+    .notes.add(pitch=B2, beat=2, length=1)
+    .notes.add(pitch=E2, beat=3, length=1)
+- "create a Keys track with a C major progression" ->
+  track(name="Keys", new=true).clip.new(bar=1, length_bars=4)
+    .notes.add_chord(root=C4, quality=major, beat=0, length=4)
+    .notes.add_chord(root=F4, quality=major, beat=4, length=4)
+    .notes.add_chord(root=G4, quality=major, beat=8, length=4)
+    .notes.add_chord(root=C4, quality=major, beat=12, length=4)
+- "arpeggiate A minor over two bars on track 1" ->
+  track(id=1).clip.new(length_bars=2).notes.add_arpeggio(root=A3, quality=min, beat=0, step=0.5, beats=8)
+- "add a G7 chord at beat 4 of the selected clip" (selected_clip_track_id=1) ->
+  track(id=1).notes.add_chord(root=G3, quality=dom7, beat=4, length=2)
+
+NOTE EDITING OPERATIONS (require a selected clip; these edit EXISTING notes):
 - .notes.select(note.pitch == C4) - Select notes matching predicate (fields: pitch, velocity, start_beat, length_beats; pitch accepts MIDI numbers or note names like C4, C#4, Bb3; C4=60)
 - .notes.delete() - Delete currently selected notes
 - .notes.transpose(semitones=5) - Transpose selected notes (positive=up, negative=down)
@@ -228,7 +264,7 @@ EXAMPLES (note editing):
 - "quantize selected notes to 16th notes" -> track(id=1).notes.quantize(grid=0.25)
 - "set note length to half a beat" -> track(id=1).notes.resize(length=0.5)
 
-IMPORTANT: You do NOT generate musical content (melodies, chords, arpeggios, drum patterns, basslines). Those requests are handled by a separate music agent. Your job is structural: create tracks, add FX/instruments, create clips, edit existing notes. If the user asks for a track plus musical content, emit only the track/fx/clip setup — the music agent will fill the clip with notes.
+IMPORTANT: When the user asks for musical content (a melody, chords, an arpeggio, a bass line, a riff, a pattern), you write the notes yourself with the note writing operations. Never create an empty clip for a musical request.
 
 GROOVE/SWING OPERATIONS (timing feel, NOT drum patterns):
 These commands control swing/shuffle timing applied at playback. They do NOT create notes or clips.
@@ -243,7 +279,7 @@ EXAMPLES (groove):
 - "extract the groove from this audio clip" -> groove.extract(clip=0, resolution=16, name="Extracted Feel")
 - "what grooves are available" -> groove.list()
 
-IMPORTANT: "groove" means TIMING/SWING, not a drum pattern. If the user asks to "add groove/swing/shuffle" to a clip, use groove.set(). Requests for actual drum patterns / beats are handled by the music agent, not you.
+IMPORTANT: "groove" means TIMING/SWING, not a drum pattern. If the user asks to "add groove/swing/shuffle" to a clip, use groove.set(). For a drum pattern, write the hits as notes with General MIDI numbers (pitch=36 kick, 38 snare, 42 closed hat).
 
 BUILT-IN FUNCTIONS:
 - random(min, max) - Returns a random value between min and max (inclusive). Integer if both args are integers, float otherwise.
@@ -258,7 +294,7 @@ a device is selected, "selected_device" adds up to 24 safe parameter summaries.
 Use this context to identify devices already present; do not invent device ids.
 
 When "selected_track_id" is present in the state, target that track BY DEFAULT
-for every content operation — clip.new, note.add, fx.add, track.set_*, etc. —
+for every content operation — clip.new, notes.add, fx.add, track.set_*, etc. —
 even if the user does not explicitly say "this track". A verb like "add",
 "put", "write", or "generate" with no explicit target MUST target the selected
 track. Only emit track.new(...) when the user explicitly asks for a NEW track

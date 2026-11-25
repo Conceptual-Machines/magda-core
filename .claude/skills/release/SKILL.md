@@ -57,6 +57,18 @@ python3 scripts/release_gate.py --check HEAD
 When it reports anything, show the user the list and wait. Set `MAGDA_RELEASE_OK=1` only when
 the user says to push anyway. Never set it on your own.
 
+## AI console evals
+
+Before tagging a **stable** release, run the live-model evals on `main` and read the result:
+
+```bash
+gh workflow run evals.yml --ref main
+gh run watch "$(gh run list --workflow evals.yml --branch main --limit 1 --json databaseId -q '.[0].databaseId')" --exit-status
+```
+
+The run summary has a table per provider (Anthropic Haiku, OpenAI gpt-5-mini). When a row
+fails, show the user the table and wait; tag only when they say so. Pre-releases skip this.
+
 ## Rules
 
 - **NEVER** merge a feature branch into main as part of a release. Feature branches go through PRs.

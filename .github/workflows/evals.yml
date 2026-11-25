@@ -1,0 +1,160 @@
+name: AI console evals
+
+# Live-model evals of the AI console (#3436). Run by hand, and by the release skill on main
+# before a stable tag. Each provider needs its secret; a provider without one is skipped.
+on:
+  workflow_dispatch:
+    inputs:
+      providers:
+        description: 'Providers to evaluate'
+        required: false
+        type: choice
+        options: [ all, anthropic, openai ]
+        default: all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MAGDA_FAUST_OUTPUT_DIR: third_party/faust/build
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 120
+
+    steps:
+    - name: Check R2 credentials
+      id: r2-creds
+      continue-on-error: true
+      env:
+        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      run: test -n "$R2_ACCESS_KEY_ID"
+
+    - uses: actions/checkout@v7
+      with:
+        submodules: recursive
+        lfs: true
+
+    - name: Install dependencies
+      run: |
+        sudo grep -rlZ 'dl\.google\.com' /etc/apt/sources.list.d/ 2>/dev/null | sudo xargs -0 -r rm -f
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential cmake ninja-build pkg-config \
+          libgtk-3-dev libasound2-dev libjack-jackd2-dev ladspa-sdk libcurl4-openssl-dev \
+          libfreetype6-dev libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+          libxinerama-dev libxi-dev libxrandr-dev libxrender-dev libwebkit2gtk-4.1-dev \
+          libglu1-mesa-dev mesa-common-dev
+
+    # Same R2 sccache prefix and DSP artifact keys as ci.yml's Linux job, so this
+    # build reads that job's objects. Read-only: this workflow never populates.
+    - name: Setup sccache
+      id: sccache
+      if: steps.r2-creds.outcome == 'success'
+      env:
+        R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      run: |
+        SCCACHE_VERSION=v0.17.0
+        archive="sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+        curl -fsSL --retry 3 --retry-all-errors --connect-timeout 30 --max-time 180 \
+          -o "$archive" \
+          "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/${archive}"
+        tar xzf "$archive"
+        sudo mv sccache-*/sccache /usr/local/bin/sccache
+        {
+          echo "SCCACHE_BUCKET=${R2_BUCKET}"
+          echo "SCCACHE_ENDPOINT=https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          echo "SCCACHE_REGION=auto"
+          echo "SCCACHE_S3_KEY_PREFIX=linux"
+          echo "AWS_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}"
+          echo "AWS_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}"
+        } >> "$GITHUB_ENV"
+
+    - name: Determine Faust/Mutable artifact cache keys
+      id: dsp-cache-keys
+      run: |
+        echo "faust_sha=$(git -C third_party/faust rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        echo "eurorack_sha=$(git -C third_party/eurorack rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        dsp_cfg=$(shasum magda/daw/audio/DevicesDependencies.cmake | cut -c1-12)
+        echo "compiler=$(cc --version | head -n1 | shasum | cut -c1-12)-${dsp_cfg}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore prebuilt Faust/Mutable artifacts (R2)
+      id: dsp-r2
+      if: steps.r2-creds.outcome == 'success'
+      env:
+        R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: auto
+        AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+        AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      run: |
+        endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+        fetch() {
+          local key="$1" out="$2"
+          if aws s3 cp "s3://${R2_BUCKET}/dsp/${key}.tar.gz" - --endpoint-url "$endpoint" --only-show-errors | tar -xzf - 2>/dev/null; then
+            echo "${out}=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "miss: ${key}"
+          fi
+        }
+        fetch "${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-wasm-debug" faust_hit
+        fetch "${{ runner.os }}-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-debug" mutable_hit
+
+    - name: Configure CMake
+      run: |
+        "$GITHUB_WORKSPACE/scripts/ci-retry.sh" cmake -B build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DMAGDA_BUILD_TESTS=ON \
+          -DMAGDA_EXTENSION_DIRS=magda/daw/extensions/stub \
+          "-DCMAKE_C_COMPILER_LAUNCHER=${{ steps.sccache.outcome == 'success' && 'sccache' || '' }}" \
+          "-DCMAKE_CXX_COMPILER_LAUNCHER=${{ steps.sccache.outcome == 'success' && 'sccache' || '' }}" \
+          ${{ steps.dsp-r2.outputs.faust_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace) || '' }} \
+          ${{ steps.dsp-r2.outputs.mutable_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}/third_party/eurorack/build', github.workspace) || '' }}
+
+    - name: Build
+      run: cmake --build build --config Debug --target magda_tests -j"$(nproc)"
+
+    - name: Anthropic
+      id: anthropic
+      if: inputs.providers == 'all' || inputs.providers == 'anthropic'
+      continue-on-error: true
+      env:
+        MAGDA_EVAL_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        MAGDA_EVAL_PROVIDER: anthropic
+        MAGDA_EVAL_MODEL: claude-haiku-4-5-20251001
+      run: scripts/run-evals.sh build/tests/magda_tests anthropic
+
+    - name: OpenAI
+      id: openai
+      if: inputs.providers == 'all' || inputs.providers == 'openai'
+      continue-on-error: true
+      env:
+        MAGDA_EVAL_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        MAGDA_EVAL_PROVIDER: openai_responses
+        MAGDA_EVAL_MODEL: gpt-5-mini
+      run: scripts/run-evals.sh build/tests/magda_tests openai
+
+    - name: Upload eval logs
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: eval-logs
+        path: |
+          eval-*.log
+          eval-*.xml
+        if-no-files-found: ignore
+
+    - name: Result
+      if: steps.anthropic.outcome == 'failure' || steps.openai.outcome == 'failure'
+      run: |
+        echo "::error::An eval failed: anthropic=${{ steps.anthropic.outcome }} openai=${{ steps.openai.outcome }}"
+        exit 1
