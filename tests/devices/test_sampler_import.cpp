@@ -340,3 +340,31 @@ TEST_CASE("SFZ v2 header volumes add to the region's", "[sampler][import][3099]"
     REQUIRE(instrument.zones.size() == 1);
     CHECK(instrument.zones.front().gainDb == Catch::Approx(-8.0f));
 }
+
+TEST_CASE("Loading a sample keeps the Root a sampler already has", "[sampler][import][3431]") {
+    const auto dir = freshDir("keep-root");
+    juce::StringPairArray tagged;
+    tagged.set("MidiUnityNote", "36");
+    const auto first = writeWav(dir.getChildFile("first.wav"), tagged);
+    tagged.set("MidiUnityNote", "72");
+    const auto second = writeWav(dir.getChildFile("second.wav"), tagged);
+
+    const auto path = addSampler();
+    const auto root = [&path] {
+        const auto zones = sampler_edits::zones(path);
+        REQUIRE(zones.size() == 1);
+        return zones.front().rootNote;
+    };
+
+    // An empty sampler takes the root the file's metadata names.
+    REQUIRE(sampler_edits::loadSample(path, first));
+    CHECK(root() == 36);
+
+    // A swap keeps the Root set on the sampler, such as a pad's.
+    REQUIRE(sampler_edits::setRootNote(path, 50));
+    REQUIRE(sampler_edits::loadSample(path, second));
+    CHECK(root() == 50);
+    CHECK(sampler_edits::zones(path).front().source == second.getFullPathName());
+
+    TrackManager::getInstance().clearAllTracks();
+}
