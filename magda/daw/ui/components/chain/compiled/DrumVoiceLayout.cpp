@@ -11,6 +11,7 @@ namespace magda::daw::ui {
 
 namespace {
 
+// Every layer fits two rows: three leave no room for a value at the smallest chain height (#3435).
 std::vector<DrumVoiceSection> voiceLayers(const juce::String& pluginId) {
     if (pluginId.equalsIgnoreCase("magda_kick"))
         return {{.title = "Transient", .slots = {0, 1, 2, 3, 13}, .decaySlot = 3, .curveSlot = 13},
@@ -18,7 +19,8 @@ std::vector<DrumVoiceSection> voiceLayers(const juce::String& pluginId) {
                  .slots = {4, 5, 6, 7, 8, 9, 12},
                  .attackSlot = 7,
                  .decaySlot = 8,
-                 .curveSlot = 12},
+                 .curveSlot = 12,
+                 .columns = 4},
                 {.title = "Click", .slots = {10, 11}}};
     if (pluginId.equalsIgnoreCase("magda_snare"))
         return {
@@ -31,7 +33,8 @@ std::vector<DrumVoiceSection> voiceLayers(const juce::String& pluginId) {
             {.title = "Rattle",
              .slots = {10, 11, 12, 13, 14, 15, 18},
              .decaySlot = 14,
-             .curveSlot = 18}};
+             .curveSlot = 18,
+             .columns = 4}};
     if (pluginId.equalsIgnoreCase("magda_clap"))
         return {{.title = "Flam", .slots = {0, 1, 2, 3, 7}, .decaySlot = 2, .curveSlot = 7},
                 {.title = "Shape", .slots = {4, 5, 6}}};
