@@ -687,7 +687,8 @@ std::vector<PadDto> makePadDtos(const DeviceInfo& grid, const ChainNodePath& gri
         dto.gridPath = makeDevicePathDto(gridPath);
         dto.index = index;
         dto.midiNote = padNoteFor(index);
-        dto.lowNote = dto.highNote = dto.rootNote = dto.midiNote;
+        dto.lowNote = dto.highNote = dto.midiNote;
+        dto.rootNote = kPadRootNote;
         const auto* pad = grid.pads ? findPadChain(*grid.pads.get(), index) : nullptr;
         if (pad != nullptr) {
             dto.populated = true;

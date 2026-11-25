@@ -899,11 +899,11 @@ DeviceId DeviceApiLive::setPadSample(const ChainNodePath& gridPath, int padIndex
     const auto* track = tm.getTrack(gridPath.trackId);
     if (track == nullptr || !track->canHostInstrument())
         return INVALID_DEVICE_ID;
-    if (const auto* existing = tm.getPad(gridPath, padIndex);
-        existing != nullptr &&
+    const auto* existing = tm.getPad(gridPath, padIndex);
+    if (existing != nullptr &&
         (existing->lowNote != padNoteFor(padIndex) || existing->highNote != padNoteFor(padIndex)))
         return INVALID_DEVICE_ID;
-    const auto sampler = padSamplerDevice(file.getFullPathName(), padNoteFor(padIndex));
+    const auto sampler = padSamplerDevice(file.getFullPathName(), padRootNote(existing));
     DeviceId id = INVALID_DEVICE_ID;
     editPads(gridPath, "Set Pad Sample",
              [&] { id = tm.setPadDevice(gridPath, padIndex, sampler); });

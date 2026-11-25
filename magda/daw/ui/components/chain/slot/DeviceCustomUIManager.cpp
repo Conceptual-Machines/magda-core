@@ -1297,7 +1297,7 @@ void DeviceCustomUIManager::showPad(int padIndex, const magda::ChainInfo* pad) {
 
     const auto name = magda::padHasDevices(*pad) ? magda::padDisplayName(*pad) : pad->name;
     drumGridUI_->updatePadInfo(padIndex, name, pad->muted, pad->solo, pad->volume, pad->pan,
-                               pad->id, pad->bypassed);
+                               pad->id, pad->bypassed, pad->rootNote);
 }
 
 bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
@@ -1352,14 +1352,16 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     };
 
     // Loading a sample onto a pad is a model edit: it puts a sampler device on
-    // the pad's chain, rooted on the pad's note. The plugin follows by sync.
+    // the pad's chain, rooted on the note the pad sends. The plugin follows by sync.
     auto loadSampleToPad = [postPadEdit, updatePadFromModel](int padIndex, const juce::File& file) {
         postPadEdit(
             "Load Pad Sample",
             [padIndex, file](const magda::ChainNodePath& grid) {
-                magda::TrackManager::getInstance().setPadDevice(
+                auto& tm = magda::TrackManager::getInstance();
+                tm.setPadDevice(
                     grid, padIndex,
-                    magda::padSamplerDevice(file.getFullPathName(), magda::padNoteFor(padIndex)));
+                    magda::padSamplerDevice(file.getFullPathName(),
+                                            magda::padRootNote(tm.getPad(grid, padIndex))));
             },
             [padIndex, updatePadFromModel]() { updatePadFromModel(padIndex); });
     };
@@ -1420,6 +1422,17 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             "Rename Pad",
             [padIndex, name](const magda::ChainNodePath& grid) {
                 magda::TrackManager::getInstance().setPadName(grid, padIndex, name);
+            },
+            [padIndex, updatePadFromModel]() { updatePadFromModel(padIndex); });
+    };
+
+    drumGridUI_->onPadRootChanged = [postPadEdit, updatePadFromModel](int padIndex, int rootNote) {
+        postPadEdit(
+            "Set Pad Root",
+            [padIndex, rootNote](const magda::ChainNodePath& grid) {
+                auto& tm = magda::TrackManager::getInstance();
+                if (const auto* pad = tm.getPad(grid, padIndex))
+                    tm.setPadNoteRange(grid, padIndex, pad->lowNote, pad->highNote, rootNote);
             },
             [padIndex, updatePadFromModel]() { updatePadFromModel(padIndex); });
     };

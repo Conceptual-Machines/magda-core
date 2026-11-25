@@ -156,6 +156,7 @@ struct ChainInfo {
 struct RackInfo {
     RackId id = INVALID_RACK_ID;
     juce::String name;              // e.g., "FX Rack"
+    juce::String presetName;        // The rack preset last loaded or saved, by its path
     std::vector<ChainInfo> chains;  // Parallel chains
     bool bypassed = false;
     bool deltaSolo = false;
@@ -209,6 +210,7 @@ struct RackInfo {
         if (this != &other) {
             id = other.id;
             name = other.name;
+            presetName = other.presetName;
             chains = other.chains;  // ChainInfo has its own deep copy
             bypassed = other.bypassed;
             deltaSolo = other.deltaSolo;

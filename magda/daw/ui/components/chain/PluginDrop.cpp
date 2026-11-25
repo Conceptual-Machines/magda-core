@@ -3,6 +3,15 @@
 
 #include "PluginDrop.hpp"
 
+#include <juce_gui_basics/juce_gui_basics.h>
+
+#include "core/DrumGridPads.hpp"
+#include "core/PresetDrops.hpp"
+#include "core/TrackCommands.hpp"
+#include "core/TrackManager.hpp"
+#include "core/UndoManager.hpp"
+#include "ui/utils/AudioFileTypes.hpp"
+
 namespace magda::daw::ui {
 
 magda::DeviceInfo deviceInfoFromPluginDrag(const juce::DynamicObject& obj) {
@@ -41,6 +50,39 @@ magda::DeviceInfo deviceInfoFromPluginDrag(const juce::DynamicObject& obj) {
         device.format = magda::PluginFormat::Internal;
 
     return device;
+}
+
+bool isChainDroppableFile(const juce::String& path) {
+    return isAudioFile(path) || magda::chainDropPreset(juce::File(path)).has_value();
+}
+
+int dropFilesIntoChain(const juce::StringArray& files, const magda::ChainNodePath& chainPath,
+                       int insertIndex) {
+    auto& tm = magda::TrackManager::getInstance();
+    int at = insertIndex;
+    for (const auto& path : files) {
+        if (isAudioFile(path)) {
+            // Rooted on what the pad sends, so it plays at the sample's own pitch.
+            if (magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::AddDeviceByPathCommand>(
+                        chainPath, magda::padSamplerDevice(path, tm.padRootNoteAt(chainPath)), at)))
+                ++at;
+            continue;
+        }
+        const auto ref = magda::chainDropPreset(juce::File(path));
+        if (!ref.has_value())
+            continue;
+        const auto result = magda::dropPresetIntoChain(*ref, chainPath, at);
+        at += result.elementsInserted;
+        if (result.errorTitle.isNotEmpty())
+            juce::AlertWindow::showAsync(juce::MessageBoxOptions()
+                                             .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                             .withTitle(result.errorTitle)
+                                             .withMessage(result.error)
+                                             .withButton("OK", 0),
+                                         nullptr);
+    }
+    return at - insertIndex;
 }
 
 }  // namespace magda::daw::ui

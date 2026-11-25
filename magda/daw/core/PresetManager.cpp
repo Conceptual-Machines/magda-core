@@ -513,6 +513,7 @@ bool PresetManager::loadRackPreset(const juce::String& presetName, RackInfo& out
     device_param_migrations::migrateRackPreset(outRack);
     namespace hydration = daw::audio::device_state_hydration;
     hydration::hydrateRack(outRack, hydration::provenanceFromMagdaVersion(savedVersion));
+    outRack.presetName = presetName;
     return true;
 }
 

@@ -271,6 +271,86 @@ TEST_CASE("Two pads trade what they answer to", "[drumgrid][pads][commands]") {
     CHECK(atThree->lowNote == padNoteFor(3));
 }
 
+TEST_CASE("A new pad sends C3 to its devices", "[drumgrid][pads][commands][3432]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    // C3 is a Sampler's default root, so any layer added to the pad plays at its own pitch.
+    CHECK(padRootNote(nullptr) == kPadRootNote);
+    for (const int padIndex : {0, 7, kPadCount - 1}) {
+        REQUIRE(tm.ensurePad(gridPath, padIndex) != INVALID_CHAIN_ID);
+        const auto* pad = tm.getPad(gridPath, padIndex);
+        REQUIRE(pad != nullptr);
+        CHECK(pad->lowNote == padNoteFor(padIndex));
+        CHECK(pad->rootNote == kPadRootNote);
+        CHECK(padRootNote(pad) == kPadRootNote);
+    }
+}
+
+TEST_CASE("A pad's root travels with its sound", "[drumgrid][pads][commands][3432]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    const auto kickId = tm.setPadDevice(gridPath, 0, padVoice("Kick"));
+    tm.setPadDevice(gridPath, 3, padVoice("Snare"));
+    REQUIRE(tm.setPadNoteRange(gridPath, 0, padNoteFor(0), padNoteFor(0), 48));
+
+    SECTION("Two pads trading places") {
+        tm.swapPads(gridPath, 0, 3);
+        CHECK(tm.getPad(gridPath, 3)->rootNote == 48);
+        CHECK(tm.getPad(gridPath, 0)->rootNote == kPadRootNote);
+    }
+
+    SECTION("A pad moved onto an empty one") {
+        tm.swapPads(gridPath, 0, 9);
+        const auto* moved = tm.getPad(gridPath, 9);
+        REQUIRE(moved != nullptr);
+        CHECK(getDevice(moved->elements[0]).id == kickId);
+        CHECK(moved->rootNote == 48);
+    }
+}
+
+TEST_CASE("A sample dropped on a rack chain inside a pad is rooted on the pad's root",
+          "[drumgrid][pads][commands][3432]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    auto& undo = UndoManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+    REQUIRE(tm.setPadNoteRange(gridPath, 0, padNoteFor(0), padNoteFor(0), 48));
+    const auto padPath = TrackManager::padChainPath(gridPath, tm.getPad(gridPath, 0)->id);
+
+    auto addRack = std::make_unique<AddRackByPathCommand>(padPath, "Layers");
+    auto* rackCommand = addRack.get();
+    undo.executeCommand(std::move(addRack));
+    const auto rackPath = padPath.withRack(rackCommand->getCreatedRackId());
+    const auto* rack = tm.getRackByPath(rackPath);
+    REQUIRE(rack != nullptr);
+    const auto layerPath = rackPath.withChain(rack->chains.front().id);
+
+    CHECK(tm.padRootNoteAt(padPath) == 48);
+    CHECK(tm.padRootNoteAt(layerPath) == 48);
+    CHECK(tm.padRootNoteAt(ChainNodePath::chain(trackId, 5, 1)) == kPadRootNote);
+
+    // What a sample dropped on the layer adds: one undoable Sampler.
+    REQUIRE(undo.executeCommand(std::make_unique<AddDeviceByPathCommand>(
+        layerPath, padSamplerDevice({}, tm.padRootNoteAt(layerPath)), 0)));
+    CHECK(tm.getRackByPath(rackPath)->chains.front().elements.size() == 1);
+    REQUIRE(undo.undo());
+    CHECK(tm.getRackByPath(rackPath)->chains.front().elements.empty());
+}
+
 TEST_CASE("A duplicated Drum Grid keeps nothing of the original's pad keys",
           "[drumgrid][pads][commands]") {
     resetState();

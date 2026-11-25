@@ -7,11 +7,14 @@
 
 #include <algorithm>
 #include <functional>
+#include <optional>
 #include <ranges>
 
 #include "ChainNodeDeletion.hpp"
+#include "ChainNodePathDrag.hpp"
 #include "ChainPanel.hpp"
 #include "ChainRowComponent.hpp"
+#include "PluginDrop.hpp"
 #include "audio/DeviceMeters.hpp"
 #include "audio/TrackMeters.hpp"
 #include "core/Config.hpp"
@@ -21,12 +24,190 @@
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "layout/NodeHeaderStyles.hpp"
+#include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/components/common/MagdaAlertWindow.hpp"
 #include "ui/components/common/MidiActivityLed.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
+
+/**
+ * @brief The chain list, as a drop target: over a chain a drop joins the end of that chain, and
+ *        over the empty space below the chains it makes a new chain holding it.
+ *
+ * It takes the mouse so a drop over empty space finds it, and hands every click on to the rack.
+ */
+class RackComponent::ChainListDropArea : public juce::Component,
+                                         public juce::DragAndDropTarget,
+                                         public juce::FileDragAndDropTarget {
+  public:
+    explicit ChainListDropArea(RackComponent& owner) : owner_(owner) {}
+
+    void paintOverChildren(juce::Graphics& g) override {
+        if (!hovering_)
+            return;
+        const auto* row = rowAt(hoverPoint_);
+        if (row == nullptr && owner_.multiband_)
+            return;
+        const auto target = row != nullptr ? row->getBounds() : owner_.addChainButton_.getBounds();
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        g.drawRoundedRectangle(target.toFloat().reduced(1.0f), 4.0f, 2.0f);
+    }
+
+    // Clicks belong to the rack: selecting it, its chain tabs, dragging it.
+    void mouseDown(const juce::MouseEvent& e) override {
+        owner_.mouseDown(e.getEventRelativeTo(&owner_));
+    }
+    void mouseDrag(const juce::MouseEvent& e) override {
+        owner_.mouseDrag(e.getEventRelativeTo(&owner_));
+    }
+    void mouseUp(const juce::MouseEvent& e) override {
+        owner_.mouseUp(e.getEventRelativeTo(&owner_));
+    }
+    void mouseMove(const juce::MouseEvent& e) override {
+        owner_.mouseMove(e.getEventRelativeTo(&owner_));
+    }
+    void mouseDoubleClick(const juce::MouseEvent& e) override {
+        owner_.mouseDoubleClick(e.getEventRelativeTo(&owner_));
+    }
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
+        owner_.mouseWheelMove(e.getEventRelativeTo(&owner_), wheel);
+    }
+
+    bool isInterestedInDragSource(const SourceDetails& details) override {
+        const auto* obj = details.description.getDynamicObject();
+        if (obj == nullptr)
+            return false;
+        const auto type = obj->getProperty("type").toString();
+        if (type == "files")
+            return std::ranges::any_of(magda::dnd::filesDragPaths(details.description),
+                                       isChainDroppableFile);
+        if (type == "chainElement" || type == "chainElements")
+            return std::ranges::none_of(readChainNodePathsFromDragInfo(*obj),
+                                        [this](const auto& path) { return holdsThisRack(path); });
+        return type == "plugin";
+    }
+    void itemDragEnter(const SourceDetails& details) override {
+        hover(details.localPosition);
+    }
+    void itemDragMove(const SourceDetails& details) override {
+        hover(details.localPosition);
+    }
+    void itemDragExit(const SourceDetails&) override {
+        endHover();
+    }
+    void itemDropped(const SourceDetails& details) override {
+        const auto* obj = details.description.getDynamicObject();
+        if (obj == nullptr)
+            return;
+        const auto type = obj->getProperty("type").toString();
+        Payload payload;
+        if (type == "files") {
+            payload.files = magda::dnd::filesDragPaths(details.description);
+        } else if (type == "chainElement" || type == "chainElements") {
+            payload.elements = readChainNodePathsFromDragInfo(*obj);
+        } else if (type == "plugin") {
+            payload.device = deviceInfoFromPluginDrag(*obj);
+        } else {
+            return;
+        }
+        drop(details.localPosition, std::move(payload));
+    }
+
+    bool isInterestedInFileDrag(const juce::StringArray& files) override {
+        return std::ranges::any_of(files, isChainDroppableFile);
+    }
+    void fileDragEnter(const juce::StringArray&, int x, int y) override {
+        hover({x, y});
+    }
+    void fileDragMove(const juce::StringArray&, int x, int y) override {
+        hover({x, y});
+    }
+    void fileDragExit(const juce::StringArray&) override {
+        endHover();
+    }
+    void filesDropped(const juce::StringArray& files, int x, int y) override {
+        drop({x, y}, Payload{.files = files});
+    }
+
+  private:
+    struct Payload {
+        juce::StringArray files;
+        std::vector<magda::ChainNodePath> elements;
+        std::optional<magda::DeviceInfo> device;
+    };
+
+    const ChainRowComponent* rowAt(juce::Point<int> point) const {
+        for (const auto& row : owner_.chainRows_)
+            if (row->getBounds().contains(point))
+                return row.get();
+        return nullptr;
+    }
+
+    // A rack cannot be dropped into itself, nor into a rack inside it.
+    bool holdsThisRack(const magda::ChainNodePath& source) const {
+        const auto& rack = owner_.rackPath_;
+        return source.trackId == rack.trackId && source.steps.size() <= rack.steps.size() &&
+               std::equal(source.steps.begin(), source.steps.end(), rack.steps.begin());
+    }
+
+    void hover(juce::Point<int> point) {
+        hovering_ = true;
+        hoverPoint_ = point;
+        repaint();
+    }
+    void endHover() {
+        hovering_ = false;
+        repaint();
+    }
+
+    // Runs after the drop returns: the edit rebuilds the rack this belongs to.
+    void drop(juce::Point<int> point, Payload payload) {
+        endHover();
+        const auto* row = rowAt(point);
+        if (row == nullptr && owner_.multiband_)
+            return;
+        const auto chainId = row != nullptr ? row->getChainId() : magda::INVALID_CHAIN_ID;
+        juce::MessageManager::callAsync(
+            [rackPath = owner_.rackPath_, chainId, payload = std::move(payload)]() {
+                auto& undo = magda::UndoManager::getInstance();
+                if (chainId != magda::INVALID_CHAIN_ID) {
+                    fill(rackPath.withChain(chainId), payload);
+                    return;
+                }
+                // One undo step, and no empty chain left behind when nothing went in.
+                undo.beginCompoundOperation("Add Chain");
+                auto add = std::make_unique<magda::AddChainByPathCommand>(rackPath, "");
+                auto* added = add.get();
+                if (!undo.executeCommand(std::move(add)) ||
+                    !fill(rackPath.withChain(added->getCreatedChainId()), payload))
+                    undo.rollbackCompoundOperation();
+                undo.endCompoundOperation();
+            });
+    }
+
+    // Everything the drop carries, at the end of the chain. False when nothing went in.
+    static bool fill(const magda::ChainNodePath& chainPath, const Payload& payload) {
+        auto& tm = magda::TrackManager::getInstance();
+        const auto* chain = tm.getChainByPath(chainPath);
+        if (chain == nullptr)
+            return false;
+        const auto end = static_cast<int>(chain->elements.size());
+        auto& undo = magda::UndoManager::getInstance();
+        if (payload.device.has_value())
+            return undo.executeCommand(
+                std::make_unique<magda::AddDeviceByPathCommand>(chainPath, *payload.device, end));
+        if (!payload.elements.empty())
+            return undo.executeCommand(std::make_unique<magda::MoveChainElementsCommand>(
+                payload.elements, chainPath, end));
+        return dropFilesIntoChain(payload.files, chainPath, end) > 0;
+    }
+
+    RackComponent& owner_;
+    bool hovering_ = false;
+    juce::Point<int> hoverPoint_;
+};
 
 // Constructor for top-level rack (in track)
 RackComponent::RackComponent(magda::TrackId trackId, const magda::RackInfo& rack)
@@ -106,11 +287,11 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     };
     addAndMakeVisible(*macroButton_);
 
-    presetButton_ = std::make_unique<magda::SvgButton>("Presets", BinaryData::chevron_down_svg,
-                                                       BinaryData::chevron_down_svgSize);
-    presetButton_->setTooltip("MAGDA Rack Presets");
-    presetButton_->onClick = [this]() { showPresetMenu(); };
-    addAndMakeVisible(*presetButton_);
+    presetSelector_ =
+        std::make_unique<PresetSelector>(getHeaderButtonSize().y, getHeaderButtonSize().x);
+    presetSelector_->onOpenMenu = [this]() { showPresetMenu(); };
+    presetSelector_->onSave = [this]() { showSaveRackPresetDialog(); };
+    addAndMakeVisible(*presetSelector_);
 
     // Gain slider — vertical, overlaid on the level meter strip in the
     // content area. Same pattern (and LookAndFeel) as DeviceSlotComponent so
@@ -152,17 +333,17 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     faceplateToggle_->onClick = [this]() { toggleListView(true); };
     addChildComponent(*faceplateToggle_);
 
+    chainRowsContainer_ = std::make_unique<ChainListDropArea>(*this);
     addChainButton_.setTooltip("Add a chain to this rack");
     addChainButton_.onClick = [this]() { onAddChainClicked(); };
-    chainRowsContainer_.addAndMakeVisible(addChainButton_);
+    chainRowsContainer_->addAndMakeVisible(addChainButton_);
 
     // Viewport for chain rows
-    chainViewport_.setViewedComponent(&chainRowsContainer_, false);
+    chainViewport_.setViewedComponent(chainRowsContainer_.get(), false);
     chainViewport_.setScrollBarsShown(true, false);  // Vertical only
     chainViewport_.setScrollBarThickness(6);
     // Allow clicks on empty areas to pass through to parent for selection
     chainViewport_.setInterceptsMouseClicks(false, true);
-    chainRowsContainer_.setInterceptsMouseClicks(false, true);
     addAndMakeVisible(chainViewport_);
 
     // Create chain panel (initially hidden)
@@ -313,10 +494,11 @@ void RackComponent::styleShellControls() {
             node_header::applyDeviceIconStyle(*toggle, DeviceIcon::Toggle, key,
                                               ActiveTheme::DEVICE_BLUE,
                                               static_cast<float>(getHeaderButtonSize().y));
-    node_header::applyDeviceIconStyle(*presetButton_, DeviceIcon::Chevron, key,
-                                      ActiveTheme::PRESET_INDIGO,
+    auto& save = presetSelector_->getSaveButton();
+    node_header::applyDeviceIconStyle(save, DeviceIcon::Action, key, ActiveTheme::PRESET_INDIGO,
                                       static_cast<float>(getHeaderButtonSize().y));
-    presetButton_->setHoverColor(ActiveTheme::PRESET_INDIGO);
+    save.setHoverColor(ActiveTheme::PRESET_INDIGO);
+    save.setIconPadding(4.0f);  // the floppy sits well inside its viewBox, as on a device
     styleHeaderPower();
     chainViewport_.getVerticalScrollBar().setColour(
         juce::ScrollBar::thumbColourId, ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
@@ -422,8 +604,8 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
             chainPanel_->setVisible(false);
         if (gainSlider_)
             gainSlider_->setVisible(false);
-        if (presetButton_)
-            presetButton_->setVisible(false);
+        presetSelector_->setVisible(false);
+        shellRows_.headerSeparatorPreset = {};
         // levelMeter_ is placed by resizedCollapsed
         return;
     }
@@ -433,8 +615,7 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     chainViewport_.setVisible(bandsShown);
     modButton_->setVisible(true);
     macroButton_->setVisible(true);
-    if (presetButton_)
-        presetButton_->setVisible(true);
+    presetSelector_->setVisible(true);
     levelMeter_.setVisible(true);
 
     shellRows_.sidebar = contentArea.removeFromLeft(SIDEBAR_WIDTH);
@@ -482,7 +663,7 @@ void RackComponent::layoutChainList(juce::Rectangle<int> list) {
     const int totalHeight = stackedChainRowsHeight();
     const bool scrolls = totalHeight > area.getHeight();
     const int width = area.getWidth() - (scrolls ? chainViewport_.getScrollBarThickness() + 2 : 0);
-    chainRowsContainer_.setSize(width, juce::jmax(totalHeight, area.getHeight()));
+    chainRowsContainer_->setSize(width, juce::jmax(totalHeight, area.getHeight()));
     int y = 0;
     if (multiband_) {
         // Bands read high to low; each divider is the crossover
@@ -550,6 +731,15 @@ void RackComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     // The separator carries its own 6px margins in place of the last gap.
     headerArea.setLeft(headerArea.getX() - getHeaderButtonGap());
     shellRows_.headerSeparatorLeft = headerArea.removeFromLeft(13).withSizeKeepingCentre(1, 14);
+    // The preset box stands before the name between separators, as on a device (#3234).
+    if (presetSelector_->isVisible()) {
+        const int width =
+            juce::jmin(presetSelector_->getPreferredWidth(), headerArea.getWidth() / 2);
+        presetSelector_->setBounds(
+            headerArea.removeFromLeft(width).withSizeKeepingCentre(width, getHeaderButtonSize().y));
+        shellRows_.headerSeparatorPreset =
+            headerArea.removeFromLeft(13).withSizeKeepingCentre(1, 14);
+    }
     // The MIDI LED sits before the header's own buttons, as on a device.
     shellRows_.midiLed = headerArea.removeFromRight(7).withSizeKeepingCentre(7, 7);
     headerArea.removeFromRight(getHeaderButtonGap());
@@ -651,6 +841,8 @@ void RackComponent::setAvailableWidth(int width) {
 
 void RackComponent::updateFromRack(const magda::RackInfo& rack) {
     setNodeName(rack.name);
+    currentPresetName_ = rack.presetName;
+    presetSelector_->setPresetName(rack.presetName);
     setBypassed(rack.bypassed);
     if (gainSlider_)
         gainSlider_->setValue(rack.volume, juce::dontSendNotification);
@@ -743,7 +935,7 @@ void RackComponent::rebuildChainRows() {
                     showChainPanel(chainId);
                 }
             };
-            chainRowsContainer_.addAndMakeVisible(*row);
+            chainRowsContainer_->addAndMakeVisible(*row);
             newRows.push_back(std::move(row));
         }
     }
@@ -788,7 +980,7 @@ void RackComponent::syncMultiband(const magda::RackInfo& rack) {
     while (crossoverDividers_.size() < crossovers) {
         auto divider = std::make_unique<multiband::CrossoverDivider>(
             rackPath_, static_cast<int>(crossoverDividers_.size()));
-        chainRowsContainer_.addAndMakeVisible(*divider);
+        chainRowsContainer_->addAndMakeVisible(*divider);
         crossoverDividers_.push_back(std::move(divider));
     }
     for (auto& divider : crossoverDividers_)
@@ -1180,9 +1372,14 @@ void RackComponent::showPresetMenu() {
     menu.addItem(kRevealInFinder, "Reveal in Finder");
 
     const auto indexCopy = index;
+    presetSelector_->setMenuOpen(true);
+    juce::Component::SafePointer<RackComponent> self(this);
     menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(presetButton_.get()),
-        [this, indexCopy](int chosen) {
+        juce::PopupMenu::Options().withTargetComponent(&presetSelector_->getBox()),
+        [this, self, indexCopy](int chosen) {
+            if (self == nullptr)
+                return;
+            presetSelector_->setMenuOpen(false);
             if (chosen == 0)
                 return;
             if (chosen == kSaveAs) {
@@ -1238,7 +1435,10 @@ void RackComponent::showSaveRackPresetDialog() {
                     showRackPresetErrorAsync("Save Rack Preset Failed", mgr.getLastError());
                     return;
                 }
+                if (auto* live = magda::TrackManager::getInstance().getRackByPath(self->rackPath_))
+                    live->presetName = name;
                 self->currentPresetName_ = name;
+                self->presetSelector_->setPresetName(name);
             };
 
             if (magda::PresetManager::getInstance().getRackPresets().contains(name)) {
@@ -1277,11 +1477,9 @@ void RackComponent::loadRackPresetByName(const juce::String& presetName) {
         showRackPresetErrorAsync("Load Rack Preset Failed", pm.getLastError());
         return;
     }
-    if (!magda::TrackManager::getInstance().applyRackPreset(rackPath_, preset)) {
+    // The preset carries its name into the model, and the rebuild this triggers shows it.
+    if (!magda::TrackManager::getInstance().applyRackPreset(rackPath_, preset))
         showRackPresetErrorAsync("Load Rack Preset Failed", "Failed to apply preset to live rack.");
-        return;
-    }
-    currentPresetName_ = presetName;
 }
 
 }  // namespace magda::daw::ui

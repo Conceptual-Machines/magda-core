@@ -328,6 +328,10 @@ DrumGridUI::DrumGridUI() {
             onPadSwitchesChanged(selectedPad_, mute, solo, bypassed);
         refreshPadButtons();
     };
+    padMixPanel_.onRootChanged = [this](int rootNote) {
+        if (onPadRootChanged)
+            onPadRootChanged(selectedPad_, rootNote);
+    };
     addAndMakeVisible(padMixPanel_);
 
     refreshPadButtons();
@@ -402,7 +406,8 @@ void DrumGridUI::timerCallback() {
 }
 
 void DrumGridUI::updatePadInfo(int padIndex, const juce::String& sampleName, bool mute, bool solo,
-                               float levelDb, float pan, int chainIndex, bool bypassed) {
+                               float levelDb, float pan, int chainIndex, bool bypassed,
+                               int rootNote) {
     if (padIndex < 0 || padIndex >= kTotalPads)
         return;
 
@@ -414,6 +419,7 @@ void DrumGridUI::updatePadInfo(int padIndex, const juce::String& sampleName, boo
     info.level = levelDb;
     info.pan = pan;
     info.chainIndex = chainIndex;
+    info.rootNote = rootNote;
 
     // Update visible pad buttons if this pad is on the current page
     int pageStart = currentPage_ * kPadsPerPage;
@@ -483,28 +489,39 @@ bool DrumGridUI::isInterestedInFileDrag(const juce::StringArray& files) {
 
 void DrumGridUI::fileDragEnter(const juce::StringArray& files, int x, int y) {
     fileDropCount_ = countPadsFilledDG(files);
-    int btnIdx = padButtonIndexAtPoint({x, y});
-    fileDropStartPad_ = (btnIdx >= 0) ? currentPage_ * kPadsPerPage + btnIdx : -1;
-    repaint();
+    highlightFileDrop({x, y});
 }
 
 void DrumGridUI::fileDragMove(const juce::StringArray& /*files*/, int x, int y) {
-    int btnIdx = padButtonIndexAtPoint({x, y});
-    int newStart = (btnIdx >= 0) ? currentPage_ * kPadsPerPage + btnIdx : -1;
-    if (newStart != fileDropStartPad_) {
-        fileDropStartPad_ = newStart;
-        repaint();
-    }
+    highlightFileDrop({x, y});
+}
+
+// Over a pad, samples fill pads from there on; over the panel or chain, they go to the selected
+// pad.
+void DrumGridUI::highlightFileDrop(juce::Point<int> point) {
+    const bool overPad = padButtonIndexAtPoint(point) >= 0;
+    setDropZone(dropZoneAt(point));
+    const int start = overPad ? dropPadAt(point) : -1;
+    const int single = overPad ? -1 : dropPadAt(point);
+    if (start == fileDropStartPad_ && single == dropHighlightPad_)
+        return;
+    fileDropStartPad_ = start;
+    dropHighlightPad_ = single;
+    repaint();
 }
 
 void DrumGridUI::fileDragExit(const juce::StringArray& /*files*/) {
     fileDropStartPad_ = -1;
+    dropHighlightPad_ = -1;
+    setDropZone({});
     fileDropCount_ = 0;
     repaint();
 }
 
 void DrumGridUI::filesDropped(const juce::StringArray& droppedFiles, int x, int y) {
     fileDropStartPad_ = -1;
+    dropHighlightPad_ = -1;
+    setDropZone({});
     fileDropCount_ = 0;
     repaint();
 
@@ -514,10 +531,7 @@ void DrumGridUI::filesDropped(const juce::StringArray& droppedFiles, int x, int 
     for (const auto& f : droppedFiles)
         (isChainPresetFile(f) ? presets : files).add(f);
     if (!presets.isEmpty() && onPresetDropped) {
-        const int presetBtn = padButtonIndexAtPoint({x, y});
-        const int presetPad = presetBtn >= 0              ? currentPage_ * kPadsPerPage + presetBtn
-                              : chainArea_.contains(x, y) ? selectedPad_
-                                                          : -1;
+        const int presetPad = dropPadAt({x, y});
         if (presetPad >= 0) {
             for (const auto& preset : presets)
                 onPresetDropped(presetPad, juce::File(preset));
@@ -600,6 +614,15 @@ void DrumGridUI::paintOverChildren(juce::Graphics& g) {
         g.setColour(blue.withAlpha(alphaStroke));
         g.drawRoundedRectangle(padBounds.reduced(0.75f), 5.0f, 1.5f);
     };
+
+    if (!dropZone_.isEmpty()) {
+        const auto blue = ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE);
+        const auto zone = dropZone_.toFloat().reduced(2.0f);
+        g.setColour(blue.withAlpha(0.08f));
+        g.fillRoundedRectangle(zone, 5.0f);
+        g.setColour(blue.withAlpha(0.8f));
+        g.drawRoundedRectangle(zone, 5.0f, 1.5f);
+    }
 
     // Plugin/pad drop highlight — single pad under cursor.
     if (dropHighlightPad_ >= 0)
@@ -692,11 +715,7 @@ void DrumGridUI::itemDragEnter(const SourceDetails& details) {
     if (magda::dnd::forwardFilesDragEnter(*this, details))
         return;
 
-    int btnIdx = padButtonIndexAtPoint(details.localPosition);
-    if (btnIdx >= 0)
-        dropHighlightPad_ = currentPage_ * kPadsPerPage + btnIdx;
-    else
-        dropHighlightPad_ = -1;
+    highlightItemDrop(details);
     repaint();
 }
 
@@ -704,8 +723,19 @@ void DrumGridUI::itemDragMove(const SourceDetails& details) {
     if (magda::dnd::forwardFilesDragMove(*this, details))
         return;
 
-    int btnIdx = padButtonIndexAtPoint(details.localPosition);
-    int newHighlight = btnIdx >= 0 ? currentPage_ * kPadsPerPage + btnIdx : -1;
+    highlightItemDrop(details);
+}
+
+// A pad dragged to swap lands on pads only; a device also lands on the selected pad's panel or
+// chain.
+void DrumGridUI::highlightItemDrop(const SourceDetails& details) {
+    const auto* obj = details.description.getDynamicObject();
+    const bool padDrag = obj != nullptr && obj->getProperty("type").toString() == "pad";
+    const auto point = details.localPosition;
+    const int btnIdx = padButtonIndexAtPoint(point);
+    setDropZone(padDrag ? juce::Rectangle<int>{} : dropZoneAt(point));
+    const int newHighlight =
+        padDrag ? (btnIdx >= 0 ? currentPage_ * kPadsPerPage + btnIdx : -1) : dropPadAt(point);
     if (newHighlight != dropHighlightPad_) {
         dropHighlightPad_ = newHighlight;
         repaint();
@@ -717,6 +747,7 @@ void DrumGridUI::itemDragExit(const SourceDetails& details) {
         return;
 
     dropHighlightPad_ = -1;
+    setDropZone({});
     repaint();
 }
 
@@ -725,6 +756,7 @@ void DrumGridUI::itemDropped(const SourceDetails& details) {
         return;
 
     dropHighlightPad_ = -1;
+    setDropZone({});
 
     int btnIdx = padButtonIndexAtPoint(details.localPosition);
     if (btnIdx < 0) {
@@ -754,13 +786,14 @@ void DrumGridUI::itemDropped(const SourceDetails& details) {
 
 bool DrumGridUI::dropOnChainArea(juce::Point<int> point, const juce::var& description,
                                  const juce::StringArray& files) {
-    if (!chainArea_.contains(point))
+    if (padButtonIndexAtPoint(point) >= 0 || dropPadAt(point) != selectedPad_)
         return false;
 
     std::optional<magda::DeviceInfo> device;
     const auto sample = std::ranges::find_if(files, isAudioFile);
     if (sample != files.end()) {
-        device = magda::padSamplerDevice(*sample, magda::padNoteFor(selectedPad_));
+        device =
+            magda::padSamplerDevice(*sample, padInfos_[static_cast<size_t>(selectedPad_)].rootNote);
     } else if (auto* obj = description.getDynamicObject();
                obj != nullptr && obj->getProperty("type").toString() == "plugin") {
         // A pad with no chain yet is made by the drop, as on the pad itself.
@@ -907,6 +940,7 @@ void DrumGridUI::refreshPadRow() {
     const auto& info = padInfos_[static_cast<size_t>(selectedPad_)];
     padMixPanel_.setPad({.name = info.sampleName,
                          .note = getNoteName(selectedPad_),
+                         .rootNote = info.rootNote,
                          .colourIndex = juce::jmax(0, info.chainIndex),
                          .volume = info.level,
                          .pan = info.pan,
@@ -938,6 +972,27 @@ void DrumGridUI::goToNextPage() {
 juce::String DrumGridUI::getNoteName(int padIndex) {
     int midiNote = magda::padNoteFor(padIndex);
     return juce::MidiMessage::getMidiNoteName(midiNote, true, true, 3);
+}
+
+int DrumGridUI::dropPadAt(juce::Point<int> point) const {
+    if (const int btnIdx = padButtonIndexAtPoint(point); btnIdx >= 0)
+        return currentPage_ * kPadsPerPage + btnIdx;
+    const bool overPanel = padMixPanel_.isVisible() && padMixPanel_.getBounds().contains(point);
+    return overPanel || chainArea_.contains(point) ? selectedPad_ : -1;
+}
+
+juce::Rectangle<int> DrumGridUI::dropZoneAt(juce::Point<int> point) const {
+    if (padMixPanel_.isVisible() && padMixPanel_.getBounds().contains(point))
+        return padMixPanel_.getBounds();
+    return chainArea_.contains(point) ? chainArea_ : juce::Rectangle<int>{};
+}
+
+void DrumGridUI::setDropZone(juce::Rectangle<int> zone) {
+    if (zone == dropZone_)
+        return;
+    repaint(dropZone_);
+    dropZone_ = zone;
+    repaint(dropZone_);
 }
 
 int DrumGridUI::padButtonIndexAtPoint(juce::Point<int> point) const {

@@ -174,7 +174,7 @@ class ChainPanel::ElementSlotsContainer : public juce::Component,
             auto type = obj->getProperty("type").toString();
             // Linux: the media browser drags preset rows as {type:"files",paths:[...]}.
             if (type == "files")
-                return anyDroppablePreset(magda::dnd::filesDragPaths(details.description));
+                return anyDroppableFile(magda::dnd::filesDragPaths(details.description));
             return type == "plugin" || type == "chainElement" || type == "chainElements";
         }
         return false;
@@ -214,7 +214,7 @@ class ChainPanel::ElementSlotsContainer : public juce::Component,
         if (auto* obj = details.description.getDynamicObject()) {
             const auto type = obj->getProperty("type").toString();
             if (type == "files") {
-                dropPresets(magda::dnd::filesDragPaths(details.description));
+                dropFiles(magda::dnd::filesDragPaths(details.description));
                 return;
             }
             if (type == "chainElement" || type == "chainElements") {
@@ -272,9 +272,9 @@ class ChainPanel::ElementSlotsContainer : public juce::Component,
         repaint();
     }
 
-    // FileDragAndDropTarget: macOS and Windows deliver a media-browser preset drag here (#3416).
+    // FileDragAndDropTarget: macOS and Windows deliver a media-browser drag here (#3416).
     bool isInterestedInFileDrag(const juce::StringArray& files) override {
-        return owner_.hasChain_ && anyDroppablePreset(files);
+        return owner_.hasChain_ && anyDroppableFile(files);
     }
 
     void fileDragEnter(const juce::StringArray&, int x, int /*y*/) override {
@@ -297,18 +297,18 @@ class ChainPanel::ElementSlotsContainer : public juce::Component,
     }
 
     void filesDropped(const juce::StringArray& files, int /*x*/, int /*y*/) override {
-        dropPresets(files);
+        dropFiles(files);
     }
 
   private:
-    static bool anyDroppablePreset(const juce::StringArray& files) {
-        return std::ranges::any_of(
-            files, [](const auto& f) { return magda::chainDropPreset(juce::File(f)).has_value(); });
+    static bool anyDroppableFile(const juce::StringArray& files) {
+        return std::ranges::any_of(files, isChainDroppableFile);
     }
 
-    // Loads each preset into this chain at the drop position, keeping a multi-file drop in order.
-    // Runs after the drop returns: the edit rebuilds the panel this container belongs to.
-    void dropPresets(const juce::StringArray& files) {
+    // Loads each preset, and a new Sampler for each sample, into this chain at the drop
+    // position, keeping a multi-file drop in order. Runs after the drop returns: the edit
+    // rebuilds the panel this container belongs to.
+    void dropFiles(const juce::StringArray& files) {
         const auto chainPath = owner_.chainPath_;
         const int insertIndex = owner_.dropInsertIndex_ >= 0
                                     ? owner_.dropInsertIndex_
@@ -318,22 +318,8 @@ class ChainPanel::ElementSlotsContainer : public juce::Component,
         owner_.resized();
         repaint();
 
-        juce::MessageManager::callAsync([files, chainPath, at = insertIndex]() mutable {
-            for (const auto& path : files) {
-                const auto ref = magda::chainDropPreset(juce::File(path));
-                if (!ref.has_value())
-                    continue;
-                const auto result = magda::dropPresetIntoChain(*ref, chainPath, at);
-                at += result.elementsInserted;
-                if (result.errorTitle.isNotEmpty())
-                    juce::AlertWindow::showAsync(
-                        juce::MessageBoxOptions()
-                            .withIconType(juce::MessageBoxIconType::WarningIcon)
-                            .withTitle(result.errorTitle)
-                            .withMessage(result.error)
-                            .withButton("OK", 0),
-                        nullptr);
-            }
+        juce::MessageManager::callAsync([files, chainPath, insertIndex]() {
+            dropFilesIntoChain(files, chainPath, insertIndex);
         });
     }
 

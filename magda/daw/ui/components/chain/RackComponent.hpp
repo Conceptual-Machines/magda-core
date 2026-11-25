@@ -16,6 +16,7 @@
 #include "core/TrackManager.hpp"
 #include "layout/DashedAddButton.hpp"
 #include "layout/DeviceShellPainter.hpp"
+#include "ui/components/common/PresetSelector.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 
@@ -97,9 +98,6 @@ class RackComponent : public NodeComponent, public juce::Timer {
     int getHeaderButtonGap() const override {
         return 4;
     }
-    juce::Component* getHeaderPresetButton() override {
-        return presetButton_.get();
-    }
     void resizedCollapsed(juce::Rectangle<int>& area) override;
     juce::String getCollapsedName() const override;
 
@@ -150,11 +148,10 @@ class RackComponent : public NodeComponent, public juce::Timer {
     // Header extra controls
     std::unique_ptr<magda::SvgButton> modButton_;     // Modulators toggle
     std::unique_ptr<magda::SvgButton> macroButton_;   // Macros toggle
-    std::unique_ptr<magda::SvgButton> presetButton_;  // MAGDA rack presets menu
+    std::unique_ptr<PresetSelector> presetSelector_;  // Rack preset box and floppy disk (#3234)
     DashedAddButton addChainButton_{"Add chain"};
 
-    // Currently-loaded preset name (empty when none) — used as the default
-    // for "Save as" and to surface the loaded preset in the popup tick.
+    // The rack's RackInfo::presetName, as last read: the "Save as" default and the menu's tick.
     juce::String currentPresetName_;
 
     // Preset menu wiring (mirrors DeviceSlotComponent's MAGDA preset UX).
@@ -174,7 +171,8 @@ class RackComponent : public NodeComponent, public juce::Timer {
 
     // Viewport for chain rows
     juce::Viewport chainViewport_;
-    juce::Component chainRowsContainer_;
+    class ChainListDropArea;
+    std::unique_ptr<ChainListDropArea> chainRowsContainer_;
 
     // Chain rows
     std::vector<std::unique_ptr<ChainRowComponent>> chainRows_;

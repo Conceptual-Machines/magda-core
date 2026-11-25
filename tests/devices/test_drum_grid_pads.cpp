@@ -98,7 +98,7 @@ TEST_CASE("A pad chain is made on the note its pad answers to", "[drumgrid][pads
 
     CHECK(pad.lowNote == note);
     CHECK(pad.highNote == note);
-    CHECK(pad.rootNote == note);
+    CHECK(pad.rootNote == magda::kPadRootNote);
     CHECK_FALSE(pad.answersToEveryNote());
 
     // The pad's index is also its parameter slot: the device reaches padLevelN

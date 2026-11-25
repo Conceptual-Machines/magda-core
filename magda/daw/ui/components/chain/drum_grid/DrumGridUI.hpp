@@ -15,6 +15,7 @@
 
 #include "ChainPanel.hpp"
 #include "core/ChainNodePath.hpp"
+#include "core/DrumGridPads.hpp"
 #include "drum_grid/PadMixPanel.hpp"
 #include "layout/DashedAddButton.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
@@ -55,7 +56,8 @@ class DrumGridUI : public juce::Component,
 
     /** Update cached info for a single pad. Called from DeviceSlotComponent::updateCustomUI. */
     void updatePadInfo(int padIndex, const juce::String& sampleName, bool mute, bool solo,
-                       float levelDb, float pan, int chainIndex = -1, bool bypassed = false);
+                       float levelDb, float pan, int chainIndex = -1, bool bypassed = false,
+                       int rootNote = magda::kPadRootNote);
 
     /** Set which pad is selected and populate the detail panel. */
     void setSelectedPad(int padIndex);
@@ -129,6 +131,8 @@ class DrumGridUI : public juce::Component,
     /// The mix row: the pad's channel fader and switches, and its power (#3010).
     std::function<void(int padIndex, float volumeDb, float pan)> onPadMixChanged;
     std::function<void(int padIndex, bool mute, bool solo, bool bypassed)> onPadSwitchesChanged;
+    /// The note a pad sends its devices (#3432).
+    std::function<void(int padIndex, int rootNote)> onPadRootChanged;
 
     /** Called by the add slot of a pad with no chain yet. (padIndex) */
     std::function<void(int)> onAddDeviceRequested;
@@ -252,6 +256,7 @@ class DrumGridUI : public juce::Component,
         float level = 0.0f;
         float pan = 0.0f;
         int chainIndex = -1;  // Index of the chain covering this pad, or -1 if empty
+        int rootNote = magda::kPadRootNote;
     };
 
     std::array<PadInfo, kTotalPads> padInfos_;
@@ -305,6 +310,15 @@ class DrumGridUI : public juce::Component,
 
     /** Find which pad button (0-15) a screen point falls on, or -1 if none. */
     int padButtonIndexAtPoint(juce::Point<int> point) const;
+    /// The pad a drop at @p point goes to: the pad under it, or the selected pad over its
+    /// mix panel or chain. -1 elsewhere.
+    int dropPadAt(juce::Point<int> point) const;
+    void highlightFileDrop(juce::Point<int> point);
+    void highlightItemDrop(const SourceDetails& details);
+    /// The selected pad's mix panel or chain when @p point is over one, else empty.
+    juce::Rectangle<int> dropZoneAt(juce::Point<int> point) const;
+    void setDropZone(juce::Rectangle<int> zone);
+    juce::Rectangle<int> dropZone_;  // Lit while a drag over it would land on the selected pad
 
     void showPadContextMenu(int padIndex, juce::Point<int> screenPos);
 

@@ -995,6 +995,8 @@ juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
 
     obj->setProperty("id", rack.id);
     obj->setProperty("name", rack.name);
+    if (rack.presetName.isNotEmpty())
+        obj->setProperty("presetName", rack.presetName);
     obj->setProperty("bypassed", rack.bypassed);
     obj->setProperty("deltaSolo", rack.deltaSolo);
     obj->setProperty("expanded", rack.expanded);
@@ -1062,6 +1064,7 @@ bool ProjectSerializer::deserializeRackInfo(const juce::var& json, RackInfo& out
 
     outRack.id = obj->getProperty("id");
     outRack.name = obj->getProperty("name").toString();
+    outRack.presetName = obj->getProperty("presetName").toString();
     outRack.bypassed = obj->getProperty("bypassed");
     if (obj->hasProperty("deltaSolo"))
         outRack.deltaSolo = static_cast<bool>(obj->getProperty("deltaSolo"));

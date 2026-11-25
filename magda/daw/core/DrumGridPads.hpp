@@ -37,6 +37,10 @@ struct RackInfo;
 constexpr int kPadCount = 64;
 constexpr int kPadBaseNote = 24;
 
+/// The note a new pad sends its devices, whichever key triggers it: the root a Sampler
+/// has by default, so every layer on a pad plays at its own pitch (#3432).
+constexpr int kPadRootNote = 60;
+
 /// The outputs a project saved before #3010 could send a pad to: 0 the grid's
 /// own mix, 1 upwards multi-out buses. Read at load and migrated onto channels.
 constexpr int kPadBusCount = 32;
@@ -84,9 +88,11 @@ const ChainInfo* findPadChain(const RackInfo& pads, int padIndex);
 
 /// The pad chain covering @p padIndex, made if it is not there yet.
 ///
-/// A new one answers to that pad's note alone and is rooted on it, which is
-/// what a sampler mapped at C0 needs to play from whichever pad triggered it.
+/// A new one answers to that pad's note alone and sends its devices kPadRootNote.
 ChainInfo& ensurePadChain(RackInfo& pads, int padIndex);
+
+/// The note @p pad sends its devices for its bottom note; kPadRootNote for a pad not made yet.
+int padRootNote(const ChainInfo* pad);
 
 /// The next free chain id in @p pads.
 ///

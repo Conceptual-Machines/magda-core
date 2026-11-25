@@ -3,6 +3,8 @@
 
 #include "drum_grid/PadMixPanel.hpp"
 
+#include <cmath>
+
 #include "drum_grid/PadNameEditor.hpp"
 #include "layout/DeviceShellPainter.hpp"
 #include "layout/NodeHeaderStyles.hpp"
@@ -40,6 +42,20 @@ PadMixPanel::PadMixPanel() {
         addChildComponent(*value);
     }
 
+    rootLabel_.setRange(0.0, 127.0, magda::kPadRootNote);
+    rootLabel_.setSnapToInteger(true);
+    rootLabel_.setTooltip("The note this pad sends its devices");
+    rootLabel_.onDragStart = [this]() { rootDragging_ = true; };
+    rootLabel_.onDragEnd = [this](double) {
+        rootDragging_ = false;
+        reportRoot();
+    };
+    rootLabel_.onValueChange = [this]() {
+        if (!rootDragging_)
+            reportRoot();
+    };
+    addChildComponent(rootLabel_);
+
     muteButton_.setTooltip("Mute pad");
     muteButton_.onClick = [this]() {
         pad_.mute = muteButton_.getToggleState();
@@ -74,6 +90,11 @@ void PadMixPanel::styleControls() {
         value->setShowFillIndicator(false);
         value->setShowText(false);
     }
+    rootLabel_.setDrawBackground(false);
+    rootLabel_.setDrawBorder(false);
+    rootLabel_.setShowFillIndicator(false);
+    rootLabel_.setFont(FontManager::getInstance().getMonoFont(10.5f));
+    rootLabel_.setTextColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
     node_header::applyDeviceMuteStyle(muteButton_, kButtonHeight);
     node_header::applyDeviceSoloStyle(soloButton_, kButtonHeight);
     node_header::applyDeviceIconStyle(powerButton_, DeviceIcon::Power, juce::Colour(0xFFE6E6E6),
@@ -92,6 +113,8 @@ void PadMixPanel::setPad(const PadMixView& pad) {
         gainLabel_.setValue(pad.volume, juce::dontSendNotification);
         panLabel_.setValue(pad.pan, juce::dontSendNotification);
     }
+    if (!rootDragging_)
+        rootLabel_.setValue(pad.rootNote, juce::dontSendNotification);
     syncMuteGlyph(muteButton_, pad.mute);
     soloButton_.setToggleState(pad.solo, juce::dontSendNotification);
     powerButton_.setToggleState(!pad.bypassed, juce::dontSendNotification);
@@ -105,7 +128,8 @@ void PadMixPanel::setMixable(bool mixable) {
     mixable_ = mixable;
     for (juce::Component* control :
          {static_cast<juce::Component*>(&gainLabel_), static_cast<juce::Component*>(&panLabel_),
-          static_cast<juce::Component*>(&muteButton_), static_cast<juce::Component*>(&soloButton_),
+          static_cast<juce::Component*>(&rootLabel_), static_cast<juce::Component*>(&muteButton_),
+          static_cast<juce::Component*>(&soloButton_),
           static_cast<juce::Component*>(&powerButton_)})
         control->setVisible(mixable);
     resized();
@@ -115,6 +139,12 @@ void PadMixPanel::setMixable(bool mixable) {
 void PadMixPanel::reportSwitches() {
     if (onSwitchesChanged)
         onSwitchesChanged(pad_.mute, pad_.solo, pad_.bypassed);
+}
+
+void PadMixPanel::reportRoot() {
+    const auto root = static_cast<int>(std::round(rootLabel_.getValue()));
+    if (root != pad_.rootNote && onRootChanged)
+        onRootChanged(root);
 }
 
 void PadMixPanel::paint(juce::Graphics& g) {
@@ -145,6 +175,14 @@ void PadMixPanel::paint(juce::Graphics& g) {
     g.setFont(fonts.getUIFont(10.5f));
     g.drawText("Gain", gainCaption_, juce::Justification::centredLeft, false);
     g.drawText("Pan", panCaption_, juce::Justification::centredLeft, false);
+    g.drawText("Root", rootCaption_, juce::Justification::centredRight, false);
+
+    // The root is a field like the faders' wells, its note drawn by the label over it.
+    const auto well = rootLabel_.getBounds().toFloat();
+    g.setColour(colour(ActiveTheme::DEVICE_WELL));
+    g.fillRoundedRectangle(well, 4.0f);
+    g.setColour(colour(ActiveTheme::DEVICE_FIELD_BORDER));
+    g.drawRoundedRectangle(well.reduced(0.5f), 4.0f, 1.0f);
 
     g.beginTransparencyLayer(pad_.bypassed ? 0.55f : 1.0f);
     device_shell::paintGainSlider(g, gainLabel_.getBounds(), gainLabel_.getValue(), kMinGainDb);
@@ -210,7 +248,24 @@ void PadMixPanel::resized() {
     auto area = getLocalBounds().reduced(10, 10);
     area.removeFromLeft(1);
     nameArea_ = area.removeFromTop(18);
-    noteArea_ = area.removeFromTop(16).withTrimmedLeft(14);
+    // The switches end the name row, power last, as on a device header.
+    for (juce::Component* button :
+         {static_cast<juce::Component*>(&powerButton_), static_cast<juce::Component*>(&soloButton_),
+          static_cast<juce::Component*>(&muteButton_)}) {
+        button->setBounds(
+            nameArea_.removeFromRight(kButtonWidth)
+                .withSizeKeepingCentre(kButtonWidth, static_cast<int>(kButtonHeight)));
+        nameArea_.removeFromRight(4);
+    }
+    area.removeFromTop(10);
+    {
+        // The pad's note, then the root it sends its devices, on one row.
+        auto row = area.removeFromTop(16).withTrimmedLeft(14);
+        noteArea_ = row.removeFromLeft(30);
+        rootLabel_.setBounds(row.removeFromRight(40));
+        row.removeFromRight(6);
+        rootCaption_ = row.removeFromRight(30);
+    }
     area.removeFromTop(10);
 
     gainCaption_ = area.removeFromTop(14);
@@ -218,15 +273,6 @@ void PadMixPanel::resized() {
     area.removeFromTop(8);
     panCaption_ = area.removeFromTop(14);
     panLabel_.setBounds(area.removeFromTop(18));
-    area.removeFromTop(10);
-
-    auto buttons = area.removeFromTop(static_cast<int>(kButtonHeight));
-    for (juce::Component* button :
-         {static_cast<juce::Component*>(&muteButton_), static_cast<juce::Component*>(&soloButton_),
-          static_cast<juce::Component*>(&powerButton_)}) {
-        button->setBounds(buttons.removeFromLeft(kButtonWidth));
-        buttons.removeFromLeft(4);
-    }
 }
 
 }  // namespace magda::daw::ui
