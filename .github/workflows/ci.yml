@@ -818,6 +818,7 @@ jobs:
         seed "$SQLITE_DIR" \
           36ad6e7f38540a3b21a2ac36340833f0a9e426bc1c752751c3ba669466827eae \
           sqlite-amalgamation-3530100.zip \
+          https://github.com/Conceptual-Machines/magda-deps/releases/download/sqlite-3.53.1/sqlite-amalgamation-3530100.zip \
           https://www.sqlite.org/2026/sqlite-amalgamation-3530100.zip \
           && echo "sqlite_dir=$SQLITE_DIR" >> "$GITHUB_OUTPUT"
 
@@ -1668,6 +1669,7 @@ jobs:
         # not a digest the tools on a runner can take. Both are of the same
         # file and a version bump changes both.
         if (Seed $sqliteDir '36ad6e7f38540a3b21a2ac36340833f0a9e426bc1c752751c3ba669466827eae' 'sqlite-amalgamation-3530100.zip' @(
+                'https://github.com/Conceptual-Machines/magda-deps/releases/download/sqlite-3.53.1/sqlite-amalgamation-3530100.zip',
                 'https://www.sqlite.org/2026/sqlite-amalgamation-3530100.zip')) {
             [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "sqlite_dir=$sqliteDir`n")
         }
