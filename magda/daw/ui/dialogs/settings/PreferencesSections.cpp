@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <unordered_set>
 #include <vector>
 
 #include "../../../audio/io/AudioIOControl.hpp"
@@ -3433,8 +3434,8 @@ class ShortcutsPage {
                                          : GestureAxis::Vertical;
             const auto kind =
                 wheel.isSmooth ? GestureInputKind::SmoothWheel : GestureInputKind::Wheel;
-            setRowInput(*capturingRow_,
-                        {kind, GestureArea::Main, axis, gestureModifierMaskFrom(e.mods)});
+            learnInput(*capturingRow_,
+                       {kind, GestureArea::Main, axis, gestureModifierMaskFrom(e.mods)});
             setCapturingRow(nullptr);
             return true;
         }
@@ -3455,8 +3456,8 @@ class ShortcutsPage {
                 return;
 
             const auto area = learnedDragAreaFor(*capturingRow_);
-            setRowInput(*capturingRow_, {GestureInputKind::Drag, area, GestureAxis::Vertical,
-                                         gestureModifierMaskFrom(e.mods)});
+            learnInput(*capturingRow_, {GestureInputKind::Drag, area, GestureAxis::Vertical,
+                                        gestureModifierMaskFrom(e.mods)});
             setCapturingRow(nullptr);
         }
 
@@ -3917,6 +3918,15 @@ class ShortcutsPage {
         }
 
         void loadFromRouter(const GestureRouter& router) {
+            // Each bound input shows on one row: its own, else the first row whose action moved
+            // there.
+            std::unordered_set<uint64_t> claimed;
+            for (auto& row : rows_) {
+                if (const auto* current = router.findBinding(row->context, row->input);
+                    current != nullptr && current->action != GestureActionType::None)
+                    claimed.insert(GestureRouter::makeKey(row->context, row->input));
+            }
+
             for (auto& row : rows_) {
                 GestureBinding binding;
                 GestureInput displayedInput = row->input;
@@ -3931,6 +3941,8 @@ class ShortcutsPage {
                         if (moved == nullptr || moved->action != row->defaultBinding.action)
                             continue;
                         if (!isOverrideBinding(router, row->context, candidate, *moved))
+                            continue;
+                        if (!claimed.insert(GestureRouter::makeKey(row->context, candidate)).second)
                             continue;
 
                         binding = *moved;
@@ -3969,6 +3981,45 @@ class ShortcutsPage {
 
             setCapturingRow(nullptr);
             layoutRows(viewport_.getMaximumVisibleWidth());
+        }
+
+        // The router holds one action per input, so a row already on it swaps to the learner's old
+        // one.
+        void learnInput(GestureRow& row, GestureInput input) {
+            const auto key = GestureRouter::makeKey(row.context, input);
+            GestureRow* holder = nullptr;
+            for (auto& other : rows_) {
+                if (other.get() != &row && other->contextLabel.isVisible() &&
+                    GestureRouter::makeKey(other->context, other->currentInput) == key)
+                    holder = other.get();
+            }
+
+            if (holder == nullptr) {
+                setRowInput(row, input);
+                layoutRows(viewport_.getMaximumVisibleWidth());
+                return;
+            }
+
+            const auto previous = row.currentInput;
+            const juce::Component::SafePointer<GestureBindingsPage> self(this);
+            juce::AlertWindow::showAsync(
+                juce::MessageBoxOptions()
+                    .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                    .withTitle(tr("preferences.gestures.swap_title"))
+                    .withMessage(tr("preferences.gestures.swap_message")
+                                     .replace("{0}", inputName(input))
+                                     .replace("{1}", actionName(holder->action))
+                                     .replace("{2}", inputName(previous)))
+                    .withButton(tr("preferences.gestures.swap"), 1)
+                    .withButton(tr("dialogs.cancel"), 0),
+                [self, &row, holder, input, previous](int result) {
+                    auto* page = self.getComponent();
+                    if (page == nullptr || result != 1)
+                        return;
+                    setRowInput(*holder, previous);
+                    setRowInput(row, input);
+                    page->layoutRows(page->viewport_.getMaximumVisibleWidth());
+                });
         }
 
         static void setRowInput(GestureRow& row, GestureInput input) {
