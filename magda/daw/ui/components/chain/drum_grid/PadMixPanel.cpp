@@ -175,7 +175,7 @@ void PadMixPanel::paint(juce::Graphics& g) {
     g.setFont(fonts.getUIFont(10.5f));
     g.drawText("Gain", gainCaption_, juce::Justification::centredLeft, false);
     g.drawText("Pan", panCaption_, juce::Justification::centredLeft, false);
-    g.drawText("Root", rootCaption_, juce::Justification::centredLeft, false);
+    g.drawText("Root", rootCaption_, juce::Justification::centredRight, false);
 
     // The root is a field like the faders' wells, its note drawn by the label over it.
     const auto well = rootLabel_.getBounds().toFloat();
@@ -257,13 +257,14 @@ void PadMixPanel::resized() {
                 .withSizeKeepingCentre(kButtonWidth, static_cast<int>(kButtonHeight)));
         nameArea_.removeFromRight(4);
     }
+    area.removeFromTop(10);
     {
         // The pad's note, then the root it sends its devices, on one row.
         auto row = area.removeFromTop(16).withTrimmedLeft(14);
         noteArea_ = row.removeFromLeft(30);
-        row.removeFromLeft(8);
-        rootCaption_ = row.removeFromLeft(30);
-        rootLabel_.setBounds(row.removeFromLeft(40));
+        rootLabel_.setBounds(row.removeFromRight(40));
+        row.removeFromRight(6);
+        rootCaption_ = row.removeFromRight(30);
     }
     area.removeFromTop(10);
 
