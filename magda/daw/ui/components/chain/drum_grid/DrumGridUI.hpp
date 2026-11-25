@@ -310,6 +310,15 @@ class DrumGridUI : public juce::Component,
 
     /** Find which pad button (0-15) a screen point falls on, or -1 if none. */
     int padButtonIndexAtPoint(juce::Point<int> point) const;
+    /// The pad a drop at @p point goes to: the pad under it, or the selected pad over its
+    /// mix panel or chain. -1 elsewhere.
+    int dropPadAt(juce::Point<int> point) const;
+    void highlightFileDrop(juce::Point<int> point);
+    void highlightItemDrop(const SourceDetails& details);
+    /// The selected pad's mix panel or chain when @p point is over one, else empty.
+    juce::Rectangle<int> dropZoneAt(juce::Point<int> point) const;
+    void setDropZone(juce::Rectangle<int> zone);
+    juce::Rectangle<int> dropZone_;  // Lit while a drag over it would land on the selected pad
 
     void showPadContextMenu(int padIndex, juce::Point<int> screenPos);
 

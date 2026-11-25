@@ -171,7 +171,8 @@ class RackComponent : public NodeComponent, public juce::Timer {
 
     // Viewport for chain rows
     juce::Viewport chainViewport_;
-    juce::Component chainRowsContainer_;
+    class ChainListDropArea;
+    std::unique_ptr<ChainListDropArea> chainRowsContainer_;
 
     // Chain rows
     std::vector<std::unique_ptr<ChainRowComponent>> chainRows_;

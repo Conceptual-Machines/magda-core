@@ -93,7 +93,7 @@ void PadMixPanel::styleControls() {
     rootLabel_.setDrawBackground(false);
     rootLabel_.setDrawBorder(false);
     rootLabel_.setShowFillIndicator(false);
-    rootLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
+    rootLabel_.setFont(FontManager::getInstance().getMonoFont(10.5f));
     rootLabel_.setTextColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
     node_header::applyDeviceMuteStyle(muteButton_, kButtonHeight);
     node_header::applyDeviceSoloStyle(soloButton_, kButtonHeight);
@@ -173,9 +173,16 @@ void PadMixPanel::paint(juce::Graphics& g) {
 
     g.setColour(colour(ActiveTheme::DEVICE_DIM2));
     g.setFont(fonts.getUIFont(10.5f));
-    g.drawText("Root", rootCaption_, juce::Justification::centredRight, false);
     g.drawText("Gain", gainCaption_, juce::Justification::centredLeft, false);
     g.drawText("Pan", panCaption_, juce::Justification::centredLeft, false);
+    g.drawText("Root", rootCaption_, juce::Justification::centredLeft, false);
+
+    // The root is a field like the faders' wells, its note drawn by the label over it.
+    const auto well = rootLabel_.getBounds().toFloat();
+    g.setColour(colour(ActiveTheme::DEVICE_WELL));
+    g.fillRoundedRectangle(well, 4.0f);
+    g.setColour(colour(ActiveTheme::DEVICE_FIELD_BORDER));
+    g.drawRoundedRectangle(well.reduced(0.5f), 4.0f, 1.0f);
 
     g.beginTransparencyLayer(pad_.bypassed ? 0.55f : 1.0f);
     device_shell::paintGainSlider(g, gainLabel_.getBounds(), gainLabel_.getValue(), kMinGainDb);
@@ -241,12 +248,22 @@ void PadMixPanel::resized() {
     auto area = getLocalBounds().reduced(10, 10);
     area.removeFromLeft(1);
     nameArea_ = area.removeFromTop(18);
-    noteArea_ = area.removeFromTop(16).withTrimmedLeft(14);
+    // The switches end the name row, power last, as on a device header.
+    for (juce::Component* button :
+         {static_cast<juce::Component*>(&powerButton_), static_cast<juce::Component*>(&soloButton_),
+          static_cast<juce::Component*>(&muteButton_)}) {
+        button->setBounds(
+            nameArea_.removeFromRight(kButtonWidth)
+                .withSizeKeepingCentre(kButtonWidth, static_cast<int>(kButtonHeight)));
+        nameArea_.removeFromRight(4);
+    }
     {
-        // The root shares the note's row, on the right: the note it is sent as.
-        auto row = noteArea_;
-        rootLabel_.setBounds(row.removeFromRight(32));
-        rootCaption_ = row.removeFromRight(32);
+        // The pad's note, then the root it sends its devices, on one row.
+        auto row = area.removeFromTop(16).withTrimmedLeft(14);
+        noteArea_ = row.removeFromLeft(30);
+        row.removeFromLeft(8);
+        rootCaption_ = row.removeFromLeft(30);
+        rootLabel_.setBounds(row.removeFromLeft(40));
     }
     area.removeFromTop(10);
 
@@ -255,15 +272,6 @@ void PadMixPanel::resized() {
     area.removeFromTop(8);
     panCaption_ = area.removeFromTop(14);
     panLabel_.setBounds(area.removeFromTop(18));
-    area.removeFromTop(10);
-
-    auto buttons = area.removeFromTop(static_cast<int>(kButtonHeight));
-    for (juce::Component* button :
-         {static_cast<juce::Component*>(&muteButton_), static_cast<juce::Component*>(&soloButton_),
-          static_cast<juce::Component*>(&powerButton_)}) {
-        button->setBounds(buttons.removeFromLeft(kButtonWidth));
-        buttons.removeFromLeft(4);
-    }
 }
 
 }  // namespace magda::daw::ui

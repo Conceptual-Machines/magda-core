@@ -16,7 +16,6 @@
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "core/DeviceInfo.hpp"
-#include "core/DrumGridPads.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
@@ -31,7 +30,6 @@
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/panels/content/PluginBrowserContent.hpp"
 #include "ui/themes/ActiveTheme.hpp"
-#include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda::daw::ui {
 
@@ -304,9 +302,7 @@ class ChainPanel::ElementSlotsContainer : public juce::Component,
 
   private:
     static bool anyDroppableFile(const juce::StringArray& files) {
-        return std::ranges::any_of(files, [](const auto& f) {
-            return isAudioFile(f) || magda::chainDropPreset(juce::File(f)).has_value();
-        });
+        return std::ranges::any_of(files, isChainDroppableFile);
     }
 
     // Loads each preset, and a new Sampler for each sample, into this chain at the drop
@@ -322,32 +318,8 @@ class ChainPanel::ElementSlotsContainer : public juce::Component,
         owner_.resized();
         repaint();
 
-        juce::MessageManager::callAsync([files, chainPath, at = insertIndex]() mutable {
-            auto& tm = magda::TrackManager::getInstance();
-            for (const auto& path : files) {
-                if (isAudioFile(path)) {
-                    // Rooted on what the pad sends, so it plays at the sample's own pitch.
-                    if (magda::UndoManager::getInstance().executeCommand(
-                            std::make_unique<magda::AddDeviceByPathCommand>(
-                                chainPath,
-                                magda::padSamplerDevice(path, tm.padRootNoteAt(chainPath)), at)))
-                        ++at;
-                    continue;
-                }
-                const auto ref = magda::chainDropPreset(juce::File(path));
-                if (!ref.has_value())
-                    continue;
-                const auto result = magda::dropPresetIntoChain(*ref, chainPath, at);
-                at += result.elementsInserted;
-                if (result.errorTitle.isNotEmpty())
-                    juce::AlertWindow::showAsync(
-                        juce::MessageBoxOptions()
-                            .withIconType(juce::MessageBoxIconType::WarningIcon)
-                            .withTitle(result.errorTitle)
-                            .withMessage(result.error)
-                            .withButton("OK", 0),
-                        nullptr);
-            }
+        juce::MessageManager::callAsync([files, chainPath, insertIndex]() {
+            dropFilesIntoChain(files, chainPath, insertIndex);
         });
     }
 
