@@ -5,6 +5,7 @@
 #include <juce_core/juce_core.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <memory>
 #include <vector>
 
@@ -1463,7 +1464,10 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             expect(event != nullptr);
             if (event != nullptr) {
                 expect(source["path"].toString() == event->sourceFilePath());
-                expect(juce::File(source["path"].toString()) == sample);
+                // The API resolves symlinks, and macOS's temp folder sits under one (/var).
+                std::error_code ec;
+                expect(std::filesystem::equivalent(source["path"].toString().toStdString(),
+                                                   sample.getFullPathName().toStdString(), ec));
                 expectWithinAbsoluteError(static_cast<double>(source["sampleRate"]), 48000.0, 1e-9);
                 expectWithinAbsoluteError(static_cast<double>(source["lengthSeconds"]), 2.0, 1e-6);
                 const auto& trimmedAudio = trimmed.result["audio"];
