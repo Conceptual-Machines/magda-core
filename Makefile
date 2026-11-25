@@ -379,6 +379,27 @@ test: test-build
 	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	cd $(BUILD_DIR) && $(TEST_ENV) ./tests/magda_tests
 
+# Live-model evals of the AI console (tests tagged [.eval]); CI runs them in evals.yml.
+# PROVIDER=anthropic|openai picks the CI model, MODEL= overrides it. The key is
+# MAGDA_EVAL_API_KEY, else the provider's key from the environment or .env.
+EVAL_PROVIDER_anthropic = anthropic
+EVAL_MODEL_anthropic = claude-haiku-4-5-20251001
+EVAL_KEY_anthropic = ANTHROPIC_API_KEY
+EVAL_PROVIDER_openai = openai_responses
+EVAL_MODEL_openai = gpt-5-mini
+EVAL_KEY_openai = OPENAI_API_KEY
+PROVIDER ?= anthropic
+.PHONY: eval
+eval: test-build
+	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; \
+	key="$${MAGDA_EVAL_API_KEY:-$$$(EVAL_KEY_$(PROVIDER))}"; \
+	if [ -z "$$key" ]; then echo "No key: set MAGDA_EVAL_API_KEY or $(EVAL_KEY_$(PROVIDER))"; exit 1; fi; \
+	cd $(BUILD_DIR) && $(TEST_ENV) MAGDA_EVAL_API_KEY="$$key" \
+		MAGDA_EVAL_PROVIDER=$(EVAL_PROVIDER_$(PROVIDER)) \
+		MAGDA_EVAL_MODEL=$(or $(MODEL),$(EVAL_MODEL_$(PROVIDER))) \
+		../scripts/run-evals.sh ./tests/magda_tests $(PROVIDER)
+
 
 
 # Build and run the Catch2 tests under ThreadSanitizer. The native engine's
