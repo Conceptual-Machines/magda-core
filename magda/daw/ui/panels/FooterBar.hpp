@@ -46,10 +46,6 @@ class FooterBar : public juce::Component,
     // ViewModeListener interface
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
 
-    // Bottom panel collapse control
-    void setBottomPanelCollapsed(bool collapsed);
-    std::function<void()> onBottomPanelCollapseToggle;
-
     // Click on a controller pill in the footer opens the Controllers dialog.
     std::function<void()> onControllersClicked;
 
@@ -75,8 +71,6 @@ class FooterBar : public juce::Component,
     void refreshRegisteredModes();
     void updateExitModeButton(ViewMode currentMode);
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
-    std::unique_ptr<SvgButton> bottomCollapseButton_;
-    bool bottomCollapsed_ = false;
 
     // ----- Local model strip on the right -----
     enum class LocalModelState {
@@ -129,8 +123,6 @@ class FooterBar : public juce::Component,
     juce::String lastActiveLuaScriptName_;
 
     void setupButtons();
-    void setupBottomCollapseButton();
-    void updateBottomCollapseIcon();
     void updateButtonStates();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FooterBar)

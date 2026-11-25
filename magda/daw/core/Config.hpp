@@ -344,13 +344,6 @@ class Config {
         scrollbarOnLeft = onLeft;
     }
 
-    bool getTrackChainHeaderFolded() const {
-        return trackChainHeaderFolded;
-    }
-    void setTrackChainHeaderFolded(bool folded) {
-        trackChainHeaderFolded = folded;
-    }
-
     // When true, the primary-view scrollbars hide on idle and fade in on hover.
     // When false, they are always visible (classic behaviour).
     bool getMainViewScrollbarsAutoHide() const {
@@ -1760,8 +1753,7 @@ class Config {
     int narrowTrackWidth = 80;
     int mediumTrackWidth = 96;
     int wideTrackWidth = 140;
-    bool scrollbarOnLeft = false;  // Scrollbar on right by default
-    bool trackChainHeaderFolded = false;
+    bool scrollbarOnLeft = false;               // Scrollbar on right by default
     bool arrangementScrollbarsAutoHide = true;  // Hover-reveal scrollbars by default
 
     // UI scale: 0 = Auto (pick from display DPI), otherwise an explicit factor (1.0, 1.25, …)

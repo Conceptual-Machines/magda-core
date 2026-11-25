@@ -42,7 +42,6 @@ FooterBar::FooterBar(juce::ApplicationCommandManager* commands) : infoLine_(comm
     addChildComponent(infoLine_);
     setupButtons();
     setupLocalModelButtons();
-    setupBottomCollapseButton();
     ViewModeController::getInstance().addListener(this);
     ModeContentRegistry::getInstance().addChangeListener(this);
     refreshRegisteredModes();
@@ -283,18 +282,9 @@ void FooterBar::resized() {
     infoLine_.setBounds(kStripLeftMargin, 0, juce::jmax(0, startX - 12 - kStripLeftMargin),
                         bounds.getHeight());
 
-    // Bottom panel collapse button on the right side
-    if (bottomCollapseButton_) {
-        constexpr int collapseSize = 20;
-        int cy = (bounds.getHeight() - collapseSize) / 2;
-        bottomCollapseButton_->setBounds(bounds.getWidth() - collapseSize - 8, cy, collapseSize,
-                                         collapseSize);
-    }
-
     const int modelStripWidth =
         NUM_LOCAL_MODELS * kLocalModelButtonSize + (NUM_LOCAL_MODELS - 1) * kLocalModelGap;
-    const int collapseLeft =
-        bottomCollapseButton_ != nullptr ? bottomCollapseButton_->getX() : bounds.getRight();
+    const int collapseLeft = bounds.getRight();
     int modelX = collapseLeft - kLocalModelRightGap - modelStripWidth;
     const int modelY = (bounds.getHeight() - kLocalModelButtonSize) / 2;
     const int minModelX = centreRight + 12;
@@ -627,38 +617,6 @@ void FooterBar::showLocalModelDownloadMenu() {
                                     safeThis->onLocalModelsClicked)
                                safeThis->onLocalModelsClicked();
                        });
-}
-
-void FooterBar::setupBottomCollapseButton() {
-    // Start with "close" icon (panel starts expanded by default)
-    bottomCollapseButton_ = std::make_unique<SvgButton>(
-        "BottomCollapse", BinaryData::bottom_close_svg, BinaryData::bottom_close_svgSize);
-    bottomCollapseButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    bottomCollapseButton_->setNormalColor(ActiveTheme::DEVICE_ICON);
-    bottomCollapseButton_->setHoverColor(ActiveTheme::DEVICE_ICON_HOVER);
-    bottomCollapseButton_->onClick = [this]() {
-        if (onBottomPanelCollapseToggle)
-            onBottomPanelCollapseToggle();
-    };
-    addAndMakeVisible(*bottomCollapseButton_);
-}
-
-void FooterBar::setBottomPanelCollapsed(bool collapsed) {
-    bottomCollapsed_ = collapsed;
-    updateBottomCollapseIcon();
-}
-
-void FooterBar::updateBottomCollapseIcon() {
-    if (!bottomCollapseButton_)
-        return;
-
-    if (bottomCollapsed_) {
-        bottomCollapseButton_->updateSvgData(BinaryData::bottom_open_svg,
-                                             BinaryData::bottom_open_svgSize);
-    } else {
-        bottomCollapseButton_->updateSvgData(BinaryData::bottom_close_svg,
-                                             BinaryData::bottom_close_svgSize);
-    }
 }
 
 }  // namespace magda
