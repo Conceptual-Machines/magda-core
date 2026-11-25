@@ -106,11 +106,11 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     };
     addAndMakeVisible(*macroButton_);
 
-    presetButton_ = std::make_unique<magda::SvgButton>("Presets", BinaryData::chevron_down_svg,
-                                                       BinaryData::chevron_down_svgSize);
-    presetButton_->setTooltip("MAGDA Rack Presets");
-    presetButton_->onClick = [this]() { showPresetMenu(); };
-    addAndMakeVisible(*presetButton_);
+    presetSelector_ =
+        std::make_unique<PresetSelector>(getHeaderButtonSize().y, getHeaderButtonSize().x);
+    presetSelector_->onOpenMenu = [this]() { showPresetMenu(); };
+    presetSelector_->onSave = [this]() { showSaveRackPresetDialog(); };
+    addAndMakeVisible(*presetSelector_);
 
     // Gain slider — vertical, overlaid on the level meter strip in the
     // content area. Same pattern (and LookAndFeel) as DeviceSlotComponent so
@@ -313,10 +313,11 @@ void RackComponent::styleShellControls() {
             node_header::applyDeviceIconStyle(*toggle, DeviceIcon::Toggle, key,
                                               ActiveTheme::DEVICE_BLUE,
                                               static_cast<float>(getHeaderButtonSize().y));
-    node_header::applyDeviceIconStyle(*presetButton_, DeviceIcon::Chevron, key,
-                                      ActiveTheme::PRESET_INDIGO,
+    auto& save = presetSelector_->getSaveButton();
+    node_header::applyDeviceIconStyle(save, DeviceIcon::Action, key, ActiveTheme::PRESET_INDIGO,
                                       static_cast<float>(getHeaderButtonSize().y));
-    presetButton_->setHoverColor(ActiveTheme::PRESET_INDIGO);
+    save.setHoverColor(ActiveTheme::PRESET_INDIGO);
+    save.setIconPadding(4.0f);  // the floppy sits well inside its viewBox, as on a device
     styleHeaderPower();
     chainViewport_.getVerticalScrollBar().setColour(
         juce::ScrollBar::thumbColourId, ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
@@ -422,8 +423,8 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
             chainPanel_->setVisible(false);
         if (gainSlider_)
             gainSlider_->setVisible(false);
-        if (presetButton_)
-            presetButton_->setVisible(false);
+        presetSelector_->setVisible(false);
+        shellRows_.headerSeparatorPreset = {};
         // levelMeter_ is placed by resizedCollapsed
         return;
     }
@@ -433,8 +434,7 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     chainViewport_.setVisible(bandsShown);
     modButton_->setVisible(true);
     macroButton_->setVisible(true);
-    if (presetButton_)
-        presetButton_->setVisible(true);
+    presetSelector_->setVisible(true);
     levelMeter_.setVisible(true);
 
     shellRows_.sidebar = contentArea.removeFromLeft(SIDEBAR_WIDTH);
@@ -550,6 +550,15 @@ void RackComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     // The separator carries its own 6px margins in place of the last gap.
     headerArea.setLeft(headerArea.getX() - getHeaderButtonGap());
     shellRows_.headerSeparatorLeft = headerArea.removeFromLeft(13).withSizeKeepingCentre(1, 14);
+    // The preset box stands before the name between separators, as on a device (#3234).
+    if (presetSelector_->isVisible()) {
+        const int width =
+            juce::jmin(presetSelector_->getPreferredWidth(), headerArea.getWidth() / 2);
+        presetSelector_->setBounds(
+            headerArea.removeFromLeft(width).withSizeKeepingCentre(width, getHeaderButtonSize().y));
+        shellRows_.headerSeparatorPreset =
+            headerArea.removeFromLeft(13).withSizeKeepingCentre(1, 14);
+    }
     // The MIDI LED sits before the header's own buttons, as on a device.
     shellRows_.midiLed = headerArea.removeFromRight(7).withSizeKeepingCentre(7, 7);
     headerArea.removeFromRight(getHeaderButtonGap());
@@ -651,6 +660,8 @@ void RackComponent::setAvailableWidth(int width) {
 
 void RackComponent::updateFromRack(const magda::RackInfo& rack) {
     setNodeName(rack.name);
+    currentPresetName_ = rack.presetName;
+    presetSelector_->setPresetName(rack.presetName);
     setBypassed(rack.bypassed);
     if (gainSlider_)
         gainSlider_->setValue(rack.volume, juce::dontSendNotification);
@@ -1180,9 +1191,14 @@ void RackComponent::showPresetMenu() {
     menu.addItem(kRevealInFinder, "Reveal in Finder");
 
     const auto indexCopy = index;
+    presetSelector_->setMenuOpen(true);
+    juce::Component::SafePointer<RackComponent> self(this);
     menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(presetButton_.get()),
-        [this, indexCopy](int chosen) {
+        juce::PopupMenu::Options().withTargetComponent(&presetSelector_->getBox()),
+        [this, self, indexCopy](int chosen) {
+            if (self == nullptr)
+                return;
+            presetSelector_->setMenuOpen(false);
             if (chosen == 0)
                 return;
             if (chosen == kSaveAs) {
@@ -1238,7 +1254,10 @@ void RackComponent::showSaveRackPresetDialog() {
                     showRackPresetErrorAsync("Save Rack Preset Failed", mgr.getLastError());
                     return;
                 }
+                if (auto* live = magda::TrackManager::getInstance().getRackByPath(self->rackPath_))
+                    live->presetName = name;
                 self->currentPresetName_ = name;
+                self->presetSelector_->setPresetName(name);
             };
 
             if (magda::PresetManager::getInstance().getRackPresets().contains(name)) {
@@ -1277,11 +1296,9 @@ void RackComponent::loadRackPresetByName(const juce::String& presetName) {
         showRackPresetErrorAsync("Load Rack Preset Failed", pm.getLastError());
         return;
     }
-    if (!magda::TrackManager::getInstance().applyRackPreset(rackPath_, preset)) {
+    // The preset carries its name into the model, and the rebuild this triggers shows it.
+    if (!magda::TrackManager::getInstance().applyRackPreset(rackPath_, preset))
         showRackPresetErrorAsync("Load Rack Preset Failed", "Failed to apply preset to live rack.");
-        return;
-    }
-    currentPresetName_ = presetName;
 }
 
 }  // namespace magda::daw::ui

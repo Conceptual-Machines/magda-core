@@ -708,6 +708,9 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     /// The pad chain answering to pad @p padIndex, or null.
     const ChainInfo* getPad(const ChainNodePath& gridPath, int padIndex) const;
 
+    /// The note the pad holding @p path sends its devices; kPadRootNote outside a pad (#3432).
+    int padRootNoteAt(const ChainNodePath& path) const;
+
     /// The pad carrying @p padChainId, or null.
     ChainInfo* getPadChain(const ChainNodePath& gridPath, ChainId padChainId);
 

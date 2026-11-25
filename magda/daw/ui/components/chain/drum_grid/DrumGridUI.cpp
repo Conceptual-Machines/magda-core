@@ -328,6 +328,10 @@ DrumGridUI::DrumGridUI() {
             onPadSwitchesChanged(selectedPad_, mute, solo, bypassed);
         refreshPadButtons();
     };
+    padMixPanel_.onRootChanged = [this](int rootNote) {
+        if (onPadRootChanged)
+            onPadRootChanged(selectedPad_, rootNote);
+    };
     addAndMakeVisible(padMixPanel_);
 
     refreshPadButtons();
@@ -402,7 +406,8 @@ void DrumGridUI::timerCallback() {
 }
 
 void DrumGridUI::updatePadInfo(int padIndex, const juce::String& sampleName, bool mute, bool solo,
-                               float levelDb, float pan, int chainIndex, bool bypassed) {
+                               float levelDb, float pan, int chainIndex, bool bypassed,
+                               int rootNote) {
     if (padIndex < 0 || padIndex >= kTotalPads)
         return;
 
@@ -414,6 +419,7 @@ void DrumGridUI::updatePadInfo(int padIndex, const juce::String& sampleName, boo
     info.level = levelDb;
     info.pan = pan;
     info.chainIndex = chainIndex;
+    info.rootNote = rootNote;
 
     // Update visible pad buttons if this pad is on the current page
     int pageStart = currentPage_ * kPadsPerPage;
@@ -760,7 +766,8 @@ bool DrumGridUI::dropOnChainArea(juce::Point<int> point, const juce::var& descri
     std::optional<magda::DeviceInfo> device;
     const auto sample = std::ranges::find_if(files, isAudioFile);
     if (sample != files.end()) {
-        device = magda::padSamplerDevice(*sample, magda::padNoteFor(selectedPad_));
+        device =
+            magda::padSamplerDevice(*sample, padInfos_[static_cast<size_t>(selectedPad_)].rootNote);
     } else if (auto* obj = description.getDynamicObject();
                obj != nullptr && obj->getProperty("type").toString() == "plugin") {
         // A pad with no chain yet is made by the drop, as on the pad itself.
@@ -907,6 +914,7 @@ void DrumGridUI::refreshPadRow() {
     const auto& info = padInfos_[static_cast<size_t>(selectedPad_)];
     padMixPanel_.setPad({.name = info.sampleName,
                          .note = getNoteName(selectedPad_),
+                         .rootNote = info.rootNote,
                          .colourIndex = juce::jmax(0, info.chainIndex),
                          .volume = info.level,
                          .pan = info.pan,

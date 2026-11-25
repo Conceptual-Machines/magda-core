@@ -4430,6 +4430,17 @@ TEST_CASE("The preset names a device and a track show survive a roundtrip",
                                                     loadedTrack));
     CHECK(loadedTrack.chainPresetName == "Vocal Chain");
 
+    RackInfo rack;
+    rack.name = "Layers";
+    rack.presetName = "Drums/Kick Stack";
+    RackInfo loadedRack;
+    REQUIRE(ProjectSerializer::deserializeRackInfo(ProjectSerializer::serializeRackInfo(rack),
+                                                   loadedRack));
+    CHECK(loadedRack.presetName == "Drums/Kick Stack");
+    RackInfo copied;
+    copied = rack;
+    CHECK(copied.presetName == "Drums/Kick Stack");
+
     // An older project has neither key.
     DeviceInfo plainDevice;
     DeviceInfo plainDeviceLoaded;

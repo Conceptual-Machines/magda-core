@@ -1750,6 +1750,10 @@ TEST_CASE("Drum Grid pad discovery returns empty slots and addressable child dev
             ChainNodePath::padChain(1, 7, chainId).withDevice(11));
     REQUIRE_FALSE(slots[1].populated);
     REQUIRE_FALSE(slots[1].chainPath);
+    // An empty slot reports the root a pad made there would get (#3432).
+    REQUIRE(slots[0].rootNote == kPadRootNote);
+    REQUIRE(slots[1].rootNote == kPadRootNote);
+    REQUIRE(slots[1].lowNote == padNoteFor(1));
 
     const auto graph = makeDeviceGraphDto({track});
     REQUIRE(graph.devices.size() == 2);

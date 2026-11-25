@@ -8,6 +8,7 @@
 
 #include <functional>
 
+#include "core/DrumGridPads.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
 
@@ -17,6 +18,8 @@ namespace magda::daw::ui {
 struct PadMixView {
     juce::String name;
     juce::String note;
+    /// The note the pad sends its devices (#3432).
+    int rootNote = magda::kPadRootNote;
     int colourIndex = 0;
     float volume = 0.0f;
     float pan = 0.0f;
@@ -41,6 +44,8 @@ class PadMixPanel : public juce::Component {
     std::function<void(float, float)> onMixChanged;
     std::function<void()> onGestureEnd;
     std::function<void(bool mute, bool solo, bool bypassed)> onSwitchesChanged;
+    /// The pad's root, once a drag or an entry ends: each one rebuilds the track's chain.
+    std::function<void(int rootNote)> onRootChanged;
     /// The pad named here; an empty name unnames it.
     std::function<void(const juce::String&)> onRenamed;
 
@@ -58,17 +63,20 @@ class PadMixPanel : public juce::Component {
   private:
     void styleControls();
     void reportSwitches();
+    void reportRoot();
     juce::Rectangle<int> nameTextArea() const;
     void finishRename(bool commit);
 
     PadMixView pad_;
     bool mixable_ = false;
     bool dragging_ = false;
-    juce::Rectangle<int> nameArea_, noteArea_, gainCaption_, panCaption_;
+    bool rootDragging_ = false;
+    juce::Rectangle<int> nameArea_, noteArea_, rootCaption_, gainCaption_, panCaption_;
     std::unique_ptr<juce::TextEditor> nameEditor_;
 
     magda::DraggableValueLabel gainLabel_{magda::DraggableValueLabel::Format::Decibels};
     magda::DraggableValueLabel panLabel_{magda::DraggableValueLabel::Format::Pan};
+    magda::DraggableValueLabel rootLabel_{magda::DraggableValueLabel::Format::MidiNote};
     magda::SvgButton muteButton_{"mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize};
     magda::SvgButton soloButton_{"solo", BinaryData::solo_svg, BinaryData::solo_svgSize};
     magda::SvgButton powerButton_{"Power", BinaryData::power_svg, BinaryData::power_svgSize};

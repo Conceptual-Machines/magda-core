@@ -15,6 +15,7 @@
 
 #include "ChainPanel.hpp"
 #include "core/ChainNodePath.hpp"
+#include "core/DrumGridPads.hpp"
 #include "drum_grid/PadMixPanel.hpp"
 #include "layout/DashedAddButton.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
@@ -55,7 +56,8 @@ class DrumGridUI : public juce::Component,
 
     /** Update cached info for a single pad. Called from DeviceSlotComponent::updateCustomUI. */
     void updatePadInfo(int padIndex, const juce::String& sampleName, bool mute, bool solo,
-                       float levelDb, float pan, int chainIndex = -1, bool bypassed = false);
+                       float levelDb, float pan, int chainIndex = -1, bool bypassed = false,
+                       int rootNote = magda::kPadRootNote);
 
     /** Set which pad is selected and populate the detail panel. */
     void setSelectedPad(int padIndex);
@@ -129,6 +131,8 @@ class DrumGridUI : public juce::Component,
     /// The mix row: the pad's channel fader and switches, and its power (#3010).
     std::function<void(int padIndex, float volumeDb, float pan)> onPadMixChanged;
     std::function<void(int padIndex, bool mute, bool solo, bool bypassed)> onPadSwitchesChanged;
+    /// The note a pad sends its devices (#3432).
+    std::function<void(int padIndex, int rootNote)> onPadRootChanged;
 
     /** Called by the add slot of a pad with no chain yet. (padIndex) */
     std::function<void(int)> onAddDeviceRequested;
@@ -252,6 +256,7 @@ class DrumGridUI : public juce::Component,
         float level = 0.0f;
         float pan = 0.0f;
         int chainIndex = -1;  // Index of the chain covering this pad, or -1 if empty
+        int rootNote = magda::kPadRootNote;
     };
 
     std::array<PadInfo, kTotalPads> padInfos_;

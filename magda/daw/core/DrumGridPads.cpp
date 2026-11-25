@@ -373,9 +373,13 @@ ChainInfo& ensurePadChain(RackInfo& pads, int padIndex) {
     pad.id = nextPadChainId(pads);
     pad.lowNote = note;
     pad.highNote = note;
-    pad.rootNote = note;
+    pad.rootNote = kPadRootNote;
     pads.chains.push_back(std::move(pad));
     return pads.chains.back();
+}
+
+int padRootNote(const ChainInfo* pad) {
+    return pad != nullptr ? pad->rootNote : kPadRootNote;
 }
 
 DeviceInfo padSamplerDevice(const juce::String& samplePath, int rootNote) {

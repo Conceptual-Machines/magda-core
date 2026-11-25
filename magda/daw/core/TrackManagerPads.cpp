@@ -162,6 +162,14 @@ const ChainInfo* TrackManager::getPad(const ChainNodePath& gridPath, int padInde
     return pads != nullptr ? findPadChain(*pads, padIndex) : nullptr;
 }
 
+int TrackManager::padRootNoteAt(const ChainNodePath& path) const {
+    if (!path.isPadOwned())
+        return kPadRootNote;
+    const auto padPath =
+        ChainNodePath::padChain(path.trackId, path.getPadOwnerDeviceId(), path.getPadChainId());
+    return padRootNote(getChainByPath(padPath));
+}
+
 ChainId TrackManager::ensurePad(const ChainNodePath& gridPath, int padIndex) {
     if (padIndex < 0 || padIndex >= kPadCount)
         return INVALID_CHAIN_ID;
@@ -364,18 +372,17 @@ void TrackManager::swapPads(const ChainNodePath& gridPath, int padA, int padB) {
     // The chains stay where they are and their note ranges trade: the pad is
     // the note, so moving a sound to another pad is retuning the chain that
     // makes it. Chain ids are untouched, so a macro, a mod or an automation
-    // lane naming one still names the same devices afterwards.
+    // lane naming one still names the same devices afterwards. The root stays
+    // with the sound, so it plays at the same pitch from its new pad.
     const auto retune = [](ChainInfo& chain, int padIndex) {
         const auto note = padNoteFor(padIndex);
         chain.lowNote = note;
         chain.highNote = note;
-        chain.rootNote = note;
     };
 
     if (chainA != nullptr && chainB != nullptr) {
         std::swap(chainA->lowNote, chainB->lowNote);
         std::swap(chainA->highNote, chainB->highNote);
-        std::swap(chainA->rootNote, chainB->rootNote);
         std::swap(chainA->name, chainB->name);
     } else if (chainA != nullptr) {
         retune(*chainA, padB);

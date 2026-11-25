@@ -3141,7 +3141,7 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
     for (int i = 0; i < numSlices; ++i) {
         const auto& slice = slices[static_cast<size_t>(i)];
         const auto samplerDeviceId = trackManager.setPadDevice(
-            gridPath, i, padSamplerDevice(audioFile.getFullPathName(), kPadBaseNote + i));
+            gridPath, i, padSamplerDevice(audioFile.getFullPathName(), kPadRootNote));
 
         const auto* pad = trackManager.getPad(gridPath, i);
         if (samplerDeviceId == INVALID_DEVICE_ID || pad == nullptr)
