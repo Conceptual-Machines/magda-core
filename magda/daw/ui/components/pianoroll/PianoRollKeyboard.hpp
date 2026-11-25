@@ -18,7 +18,7 @@ class PitchFoldMap;
 /**
  * Piano keyboard component for the piano roll.
  * Displays note names and responds to vertical scroll offset.
- * Supports vertical zoom by dragging up/down.
+ * A press plays the key; a drag plays each key it crosses.
  */
 class PianoRollKeyboard : public juce::Component {
   public:
@@ -27,7 +27,6 @@ class PianoRollKeyboard : public juce::Component {
 
     void paint(juce::Graphics& g) override;
 
-    // Mouse interaction for zoom and scroll
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
@@ -70,17 +69,6 @@ class PianoRollKeyboard : public juce::Component {
     int rowCount() const;
     int noteForRow(int row) const;
 
-    // Drag state (zoom or scroll)
-    enum class DragMode { None, Zooming, Scrolling };
-    DragMode dragMode_ = DragMode::None;
-    int mouseDownX_ = 0;
-    int mouseDownY_ = 0;
-    int lastDragY_ = 0;
-    GestureAxis dragGestureAxis_ = GestureAxis::Horizontal;
-    int zoomStartHeight_ = 0;
-    int zoomAnchorNote_ = 0;
-    static constexpr int DRAG_THRESHOLD = 3;
-
     // Note preview state
     std::array<bool, 128> pressedNotes_{};
     std::set<int> highlightedNotes_;
@@ -90,6 +78,8 @@ class PianoRollKeyboard : public juce::Component {
     static bool isBlackKey(int noteNumber);
     static juce::String getNoteName(int noteNumber);
     int yToNoteNumber(int y) const;
+    void startNote(int noteNumber);
+    void stopNote();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PianoRollKeyboard)
 };

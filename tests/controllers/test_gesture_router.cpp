@@ -222,10 +222,11 @@ TEST_CASE("GestureRouter: drag zoom defaults", "[gesture]") {
                     .resolveDrag(GestureContext::PianoRoll, GestureArea::ZoomStrip,
                                  GestureAxis::Vertical, juce::ModifierKeys(), 30.0f, kAnchor)
                     .type == GestureActionType::ZoomVertical);
+        // A drag on the keys plays notes, so it is not a gesture (#3429).
         REQUIRE(router
                     .resolveDrag(GestureContext::PianoRoll, GestureArea::Keyboard,
                                  GestureAxis::Horizontal, juce::ModifierKeys(), 10.0f, kAnchor)
-                    .type == GestureActionType::ZoomVertical);
+                    .type == GestureActionType::None);
         REQUIRE(router
                     .resolveDrag(GestureContext::DrumGrid, GestureArea::ZoomStrip,
                                  GestureAxis::Vertical, juce::ModifierKeys(), 30.0f, kAnchor)

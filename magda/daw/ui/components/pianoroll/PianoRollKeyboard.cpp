@@ -167,105 +167,39 @@ int PianoRollKeyboard::yToNoteNumber(int y) const {
     return juce::jlimit(minNote_, maxNote_, noteForRow(row));
 }
 
-void PianoRollKeyboard::mouseDown(const juce::MouseEvent& event) {
-    mouseDownX_ = event.x;
-    mouseDownY_ = event.y;
-    lastDragY_ = event.y;
-    zoomStartHeight_ = noteHeight_;
-    dragMode_ = DragMode::None;
-    dragGestureAxis_ = GestureAxis::Horizontal;
-
-    // Capture anchor note at mouse position
-    zoomAnchorNote_ = yToNoteNumber(event.y);
-
-    // Start note preview
-    currentPlayingNote_ = yToNoteNumber(event.y);
+void PianoRollKeyboard::startNote(int noteNumber) {
+    currentPlayingNote_ = noteNumber;
     isPlayingNote_ = true;
-    setNotePressed(currentPlayingNote_, true);
+    setNotePressed(noteNumber, true);
+    if (onNotePreview)
+        onNotePreview(noteNumber, 100, true);
+}
 
-    DBG("Piano keyboard: Note pressed - " << currentPlayingNote_);
+void PianoRollKeyboard::stopNote() {
+    if (!isPlayingNote_)
+        return;
+    if (onNotePreview)
+        onNotePreview(currentPlayingNote_, 0, false);
+    setNotePressed(currentPlayingNote_, false);
+    isPlayingNote_ = false;
+    currentPlayingNote_ = -1;
+}
 
-    if (onNotePreview) {
-        DBG("Piano keyboard: Calling onNotePreview callback");
-        onNotePreview(currentPlayingNote_, 100, true);  // Note on with velocity 100
-    } else {
-        DBG("Piano keyboard: WARNING - onNotePreview callback not set!");
-    }
-
-    repaint();  // Redraw to show highlight
+void PianoRollKeyboard::mouseDown(const juce::MouseEvent& event) {
+    startNote(yToNoteNumber(event.y));
 }
 
 void PianoRollKeyboard::mouseDrag(const juce::MouseEvent& event) {
-    int deltaX = std::abs(event.x - mouseDownX_);
-    int deltaY = std::abs(event.y - mouseDownY_);
-
-    // Determine drag mode if not yet set
-    if (dragMode_ == DragMode::None) {
-        if (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD) {
-            // Stop note preview when drag starts
-            if (isPlayingNote_ && onNotePreview) {
-                DBG("Piano keyboard: Stopping note due to drag");
-                onNotePreview(currentPlayingNote_, 0, false);  // Note off
-                setNotePressed(currentPlayingNote_, false);
-                isPlayingNote_ = false;
-                currentPlayingNote_ = -1;
-            }
-
-            dragGestureAxis_ = (deltaX > deltaY) ? GestureAxis::Horizontal : GestureAxis::Vertical;
-            const int dragDelta = dragGestureAxis_ == GestureAxis::Horizontal
-                                      ? event.x - mouseDownX_
-                                      : mouseDownY_ - event.y;
-            const auto gesture = GestureRouter::getInstance().resolveDrag(
-                GestureContext::PianoRoll, GestureArea::Keyboard, dragGestureAxis_, event.mods,
-                static_cast<float>(dragDelta), {mouseDownX_, mouseDownY_});
-            dragMode_ = gesture.type == GestureActionType::ZoomVertical
-                            ? DragMode::Zooming
-                            : (dragGestureAxis_ == GestureAxis::Vertical ? DragMode::Scrolling
-                                                                         : DragMode::None);
-        }
-    }
-
-    if (dragMode_ == DragMode::Zooming) {
-        const int dragDelta = dragGestureAxis_ == GestureAxis::Horizontal ? event.x - mouseDownX_
-                                                                          : mouseDownY_ - event.y;
-        const auto gesture = GestureRouter::getInstance().resolveDrag(
-            GestureContext::PianoRoll, GestureArea::Keyboard, dragGestureAxis_, event.mods,
-            static_cast<float>(dragDelta), {mouseDownX_, mouseDownY_});
-        if (gesture.type != GestureActionType::ZoomVertical)
-            return;
-
-        int newHeight = static_cast<int>(
-            std::round(static_cast<double>(zoomStartHeight_) * std::pow(2.0, gesture.magnitude)));
-
-        // Clamp to reasonable limits
-        newHeight = juce::jlimit(ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT,
-                                 ClipInfo::MAX_MIDI_EDITOR_ROW_HEIGHT, newHeight);
-
-        if (onZoomChanged && newHeight != noteHeight_) {
-            onZoomChanged(newHeight, zoomAnchorNote_, mouseDownY_);
-        }
-    } else if (dragMode_ == DragMode::Scrolling) {
-        // Calculate scroll delta (drag up scrolls up, drag down scrolls down)
-        int scrollDelta = lastDragY_ - event.y;
-        lastDragY_ = event.y;
-
-        if (onScrollRequested && scrollDelta != 0) {
-            onScrollRequested(scrollDelta);
-        }
-    }
+    // A drag across the keys plays each key it reaches; zoom lives on the zoom strip (#3429).
+    const int note = yToNoteNumber(event.y);
+    if (!isPlayingNote_ || note == currentPlayingNote_)
+        return;
+    stopNote();
+    startNote(note);
 }
 
 void PianoRollKeyboard::mouseUp(const juce::MouseEvent& /*event*/) {
-    // Stop note preview if still playing
-    if (isPlayingNote_ && onNotePreview) {
-        DBG("Piano keyboard: Note released - " << currentPlayingNote_);
-        onNotePreview(currentPlayingNote_, 0, false);  // Note off
-        setNotePressed(currentPlayingNote_, false);
-        isPlayingNote_ = false;
-        currentPlayingNote_ = -1;
-    }
-
-    dragMode_ = DragMode::None;
+    stopNote();
 }
 
 void PianoRollKeyboard::mouseWheelMove(const juce::MouseEvent& event,

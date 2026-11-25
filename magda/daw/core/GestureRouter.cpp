@@ -64,7 +64,6 @@ constexpr float kSequencerScrollSensitivity = 5.0f;
 constexpr float kDragZoomSensitivity = 30.0f;
 constexpr float kFastDragZoomSensitivity = 8.0f;
 constexpr float kFineDragZoomSensitivity = 90.0f;
-constexpr float kKeyboardDragZoomSensitivity = 10.0f;
 
 GestureBinding retuneLearnedDragBinding(
     GestureContext context, GestureInput input, GestureBinding binding,
@@ -322,10 +321,6 @@ void GestureRouter::installDefaults() {
     setBinding(GestureContext::CurveEditor,
                {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical, GestureMod_None},
                {GestureActionType::ZoomHorizontal, kDragZoomSensitivity, false});
-    setBinding(
-        GestureContext::PianoRoll,
-        {GestureInputKind::Drag, GestureArea::Keyboard, GestureAxis::Horizontal, GestureMod_None},
-        {GestureActionType::ZoomVertical, kKeyboardDragZoomSensitivity, false});
 
     setBinding(GestureContext::Waveform,
                {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical, GestureMod_None},
