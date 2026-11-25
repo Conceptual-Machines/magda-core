@@ -12,7 +12,8 @@ using magda::daw::ui::drumVoiceSections;
 using magda::daw::ui::kDrumVoicePluginIds;
 using magda::daw::ui::ParamControlStyle;
 
-TEST_CASE("Every drum voice tab keeps whole text cells in two rows", "[ui][drum][3435]") {
+TEST_CASE("Every drum voice tab keeps whole text cells in two rows, its curve in its decay cell",
+          "[ui][drum][3435]") {
     juce::ScopedJuceInitialiser_GUI gui;
     constexpr int kCellH = 48;
     // Padding, the tab row, and two rows of text cells.
@@ -27,10 +28,23 @@ TEST_CASE("Every drum voice tab keeps whole text cells in two rows", "[ui][drum]
         const auto shown =
             DrumVoiceGeometry::of({0, 0, 600, height}, ParamControlStyle::Text, sections);
         CHECK(geometry.cells.empty());
-        for (const auto& cell : shown.cells) {
-            INFO(pluginId);
-            CHECK(cell.getHeight() == kCellH);
-            CHECK(cell.getBottom() <= height - DrumVoiceGeometry::kSpace);
+        size_t index = 0;
+        for (const auto& section : sections) {
+            juce::Rectangle<int> decayCell;
+            for (const int slot : section.slots) {
+                INFO(pluginId << " slot " << slot);
+                REQUIRE(index < shown.cells.size());
+                const auto cell = shown.cells[index++];
+                if (slot == section.curveSlot) {
+                    // The curve is a chip inside its decay cell, not a cell of its own.
+                    CHECK(decayCell.contains(cell));
+                    continue;
+                }
+                CHECK(cell.getHeight() == kCellH);
+                CHECK(cell.getBottom() <= height - DrumVoiceGeometry::kSpace);
+                if (slot == section.decaySlot)
+                    decayCell = cell;
+            }
         }
     }
 }
