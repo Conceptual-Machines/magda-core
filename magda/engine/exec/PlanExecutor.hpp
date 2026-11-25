@@ -509,6 +509,12 @@ class PlanExecutor {
     void renderOp(OpId op, const OpValue& value, const BlockInfo& block,
                   juce::AudioBuffer<float>& output);
 
+    /// Where the master's Output op also adds the master's own stereo signal (#3424); null for
+    /// none. The caller clears it and points it at each block's samples.
+    void setMasterTap(juce::AudioBuffer<float>* tap) {
+        masterTap_ = tap;
+    }
+
     /// Where each op's render time goes (#3357); null for an executor that does not play live.
     /// Off the audio thread, before either side renders.
     void setRenderLoad(RenderLoad* load) {
@@ -977,6 +983,7 @@ class PlanExecutor {
     CallbackRenderer* callbackRenderer_ = nullptr;
     AheadState* aheadState_ = nullptr;
     RenderLoad* load_ = nullptr;
+    juce::AudioBuffer<float>* masterTap_ = nullptr;
 
     /// The block the ahead side is rendering, while it is: a Handoff op writes into its entry.
     std::optional<std::uint64_t> aheadBlock_;

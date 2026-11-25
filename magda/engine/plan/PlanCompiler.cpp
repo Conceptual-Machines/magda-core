@@ -279,6 +279,7 @@ class Compiler {
 
     /// Send @p out where @p track's output routing names.
     void routeOutput(const TrackInfo& track, PortRef out);
+    HardwareOutputRoute masterHardwareOutput(const TrackInfo& master);
 
     /// The Pad track that is pad @p padId's channel on grid @p gridId, or null.
     const TrackInfo* padChannelFor(DeviceId gridId, ChainId padId) const;
@@ -2073,13 +2074,27 @@ PortRef Compiler::emitStrip(const TrackInfo& track, ChainSignal signal) {
     return out;
 }
 
+// A pair that is not open falls back to the first open pair: the master never goes silent.
+HardwareOutputRoute Compiler::masterHardwareOutput(const TrackInfo& master) {
+    const auto name = master.audioOutputDevice.toStdString();
+    if (name.empty() || name == "master")
+        return {};
+    const auto found = options_.hardwareOutputs.find(name);
+    if (found != options_.hardwareOutputs.end() && found->second.valid())
+        return found->second;
+    diagnose("master: hardware output '" + name + "' is unavailable, playing to the first outputs");
+    return {};
+}
+
 void Compiler::routeOutput(const TrackInfo& track, PortRef out) {
     const auto isMaster = track.id == master_.id;
 
     if (isMaster) {
         const OpKey outputKey{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
                               INVALID_DEVICE_ID, OpRole::HardwareOutput, 0};
-        plan_.outputOps.push_back(addOp(OpKind::Output, outputKey, {out}, {}));
+        const auto output = addOp(OpKind::Output, outputKey, {out}, {});
+        plan_.ops[static_cast<std::size_t>(output)].hardwareOutput = masterHardwareOutput(track);
+        plan_.outputOps.push_back(output);
         return;
     }
 

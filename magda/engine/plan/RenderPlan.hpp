@@ -514,6 +514,11 @@ struct PlanOp {
     ChainZones chainZones;
 };
 
+/** @brief The master's Output op, which also feeds the master tap (#3424). */
+inline bool isMasterOutput(const PlanOp& op) {
+    return op.kind == OpKind::Output && op.key.trackId == MASTER_TRACK_ID;
+}
+
 /** @brief An insert's send, which reads the insert's CC knobs (#3164). Not a track's MIDI Out. */
 inline bool readsInsertControls(const PlanOp& op) {
     return op.kind == OpKind::InsertSend && op.key.role == OpRole::InsertSend;

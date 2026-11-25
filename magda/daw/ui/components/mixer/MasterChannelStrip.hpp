@@ -6,6 +6,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -16,9 +17,12 @@
 #include "../common/TextSlider.hpp"
 #include "ClickableLabel.hpp"
 #include "LevelMeter.hpp"
+#include "RoutingSelector.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magda {
+
+class HardwareChannels;
 
 namespace daw::audio {
 class MagdaDevice;
@@ -44,8 +48,15 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     void lookAndFeelChanged() override;
 
     // TrackManagerListener
-    void tracksChanged() override {}
+    void tracksChanged() override;
+    void trackPropertyChanged(int trackId) override;
     void masterChannelChanged() override;
+
+    /// The device the output selector lists pairs from; null lists none.
+    void setHardware(const HardwareChannels* hardware);
+
+    /// Re-read the device's pairs and the master's output (#3424).
+    void refreshOutputSelector();
 
     // Set meter levels (for audio engine integration)
     void setPeakLevels(float leftPeak, float rightPeak);
@@ -67,6 +78,12 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     std::unique_ptr<juce::Label> titleLabel;
     std::unique_ptr<daw::ui::TextSlider> volumeSlider;
     std::unique_ptr<magda::SvgButton> speakerButton;  // Speaker on/off toggle
+
+    std::unique_ptr<RoutingSelector> outputSelector_;
+    const HardwareChannels* hardware_ = nullptr;
+    std::map<int, TrackId> outputTrackMapping_;
+    std::map<int, TrackId> midiOutputTrackMapping_;
+    std::map<int, juce::String> outputChannelMapping_;
 
     std::unique_ptr<LevelMeter> peakMeter;
     std::unique_ptr<ClickableLabel> peakValueLabel;

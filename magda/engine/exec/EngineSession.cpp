@@ -4,6 +4,7 @@
 #include "exec/EngineSession.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <optional>
 #include <span>
@@ -52,6 +53,7 @@ namespace {
 
 /// How long a publish waits for the callback to play out the blocks rendered ahead.
 constexpr auto kRenderAheadDrainLimit = std::chrono::milliseconds(250);
+constexpr int kMasterTapChannels = 2;
 
 }  // namespace
 
@@ -178,6 +180,14 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
             std::max(prepared->outputChannels, std::max(route.leftChannel, route.rightChannel) + 1);
     }
     prepared->segmentOutput.setSize(prepared->outputChannels, 1);
+    for (const auto output : prepared->plan->outputOps)
+        if (output >= 0 && output < static_cast<OpId>(prepared->plan->ops.size()) &&
+            isMasterOutput(prepared->plan->ops[static_cast<std::size_t>(output)]))
+            prepared->masterRoute =
+                prepared->plan->ops[static_cast<std::size_t>(output)].hardwareOutput;
+    prepared->master.prepare(kMasterTapChannels, std::max(1, context.maxBlockSize));
+    prepared->segmentMaster.setSize(kMasterTapChannels, 1);
+    prepared->executor.setMasterTap(&prepared->segmentMaster);
 
     // The epoch's values become the ones in flight as well. Matching
     // fingerprints say two tables fit the same structure, which is not the same
@@ -452,7 +462,8 @@ void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
 }
 
 void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
-                            const LiveInputBlock& input, const PhaseReference* phase) {
+                            const LiveInputBlock& input, const PhaseReference* phase,
+                            juce::AudioBuffer<float>* master) {
     // The executor asserts on a block longer than the plan was prepared for.
     // Here the same number also says how much buffer there is to write into, so
     // it is held to what the caller actually provided rather than trusted: the
@@ -473,6 +484,8 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
     liveOutputs_.beginCallback(output);
 
     output.clear();
+    if (master != nullptr)
+        master->clear();
 
     PublishedRender::ScopedAccess<farbot::ThreadType::realtime> render(published_);
 
@@ -495,6 +508,9 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
     // still asked at the next real one.
     if (numSamples <= 0)
         return;
+    auto& masterTap = (*render)->master;
+    const auto tapped = std::min(numSamples, masterTap.getNumSamples());
+    masterTap.clear(0, tapped);
     if (load_ != nullptr)
         load_->addBudget(numSamples, (*render)->context.sampleRate);
     lastCallback_.published = std::exchange(lastEpoch_, (*render)->epoch) != (*render)->epoch;
@@ -562,6 +578,12 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         auto& piece = (*render)->segmentOutput;
         piece.setDataToReferTo(output.getArrayOfWritePointers(), (*render)->outputChannels,
                                segment.startSample, segment.block.numSamples);
+        // Held to the tap's room: a caller may pass more than the plan was prepared for.
+        const auto tapRoom = std::clamp(tapped - segment.startSample, 0, segment.block.numSamples);
+        auto& segmentMaster = (*render)->segmentMaster;
+        segmentMaster.setDataToReferTo(masterTap.getArrayOfWritePointers(),
+                                       masterTap.getNumChannels(),
+                                       tapRoom > 0 ? segment.startSample : 0, tapRoom);
 
         liveInputs_.beginSegment(segment.startSample, segment.block.numSamples);
         liveOutputs_.beginSegment(segment.startSample, segment.block.numSamples);
@@ -681,18 +703,24 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
 
         if (captureRing_ != nullptr) {
             captureRing_->writeMidi(input.midi, segment.startSample, segment.block.numSamples);
-            captureRing_->write(piece, segment.block.beats, segment.block.playing);
+            captureRing_->write(segmentMaster, segment.block.beats, segment.block.playing);
         }
 
         // After the plan and outside it. The metronome is not in the graph: it
         // is never recorded, never routed, and not the master fader's to
-        // attenuate.
+        // attenuate. It plays where the master does.
         if ((*render)->click != nullptr) {
-            const auto clickChannels =
-                std::min(output.getNumChannels(), (*render)->context.numChannels);
+            const auto& route = (*render)->masterRoute;
+            std::array<float*, kMasterTapChannels> clickPointers{};
+            auto clickChannels = 0;
+            for (const auto channel : {route.leftChannel, route.rightChannel})
+                if (channel >= 0 && channel < output.getNumChannels() &&
+                    clickChannels < (*render)->context.numChannels)
+                    clickPointers[static_cast<std::size_t>(clickChannels++)] =
+                        output.getArrayOfWritePointers()[channel];
             if (clickChannels > 0) {
-                juce::AudioBuffer<float> clickOutput(output.getArrayOfWritePointers(),
-                                                     clickChannels, 0, output.getNumSamples());
+                juce::AudioBuffer<float> clickOutput(clickPointers.data(), clickChannels, 0,
+                                                     output.getNumSamples());
                 (*render)->click->render(transport->tempo, transport->click,
                                          segment.countingIn ? segment.count : segment.block,
                                          segment.countingIn, clickOutput, segment.startSample);
@@ -701,6 +729,12 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
 
         midiClock_.render(segment, transport->midiClock);
     }
+
+    if (master != nullptr)
+        for (auto channel = 0; channel < std::min(master->getNumChannels(), kMasterTapChannels);
+             ++channel)
+            master->copyFrom(channel, 0, masterTap, channel, 0,
+                             std::min(tapped, master->getNumSamples()));
 
     // After the blocks are released, so the ring has room for what the thread renders next.
     if (renderAhead_ != nullptr)

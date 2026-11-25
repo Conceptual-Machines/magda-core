@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Conceptual Machines
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <algorithm>
 #include <atomic>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -1043,6 +1044,63 @@ TEST_CASE("A loop segment renders to a prepared wide hardware output view",
     CHECK(output.getMagnitude(63, 0, kBlockSize) == approx(1.0f));
 }
 
+TEST_CASE("The master plays to the output pair it names", "[engine][session][3424]") {
+    Ledger ledger;
+    TestFactory factory(ledger);
+    EngineSession session(factory);
+
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    auto master = makeMaster();
+    CompileOptions options;
+    options.hardwareOutputs.emplace("stereo:Out 63 + 64",
+                                    magda::engine::HardwareOutputRoute{62, 63});
+
+    const auto render = [&] {
+        const auto plan = std::make_shared<const RenderPlan>(
+            magda::engine::compileRenderPlan(tracks, master, options));
+        PlanValues values;
+        magda::engine::resolvePlanValues(*plan, tracks, master, values);
+        REQUIRE(session.publish(plan, context(), modelIds(tracks), std::move(values)).published);
+        session.publishTransport(rolling(0.0));
+        juce::AudioBuffer<float> output(64, kBlockSize);
+        juce::AudioBuffer<float> tap(2, kBlockSize);
+        session.process(kBlockSize, output, {}, nullptr, &tap);
+        return std::pair{std::move(output), std::move(tap)};
+    };
+
+    SECTION("an open pair") {
+        master.audioOutputDevice = "stereo:Out 63 + 64";
+        const auto [output, tap] = render();
+        CHECK(output.getMagnitude(0, 0, kBlockSize) == 0.0f);
+        CHECK(output.getMagnitude(62, 0, kBlockSize) == approx(1.0f));
+        CHECK(output.getMagnitude(63, 0, kBlockSize) == approx(1.0f));
+        CHECK(tap.getMagnitude(0, 0, kBlockSize) == approx(1.0f));
+        CHECK(tap.getMagnitude(1, 0, kBlockSize) == approx(1.0f));
+    }
+
+    SECTION("a pair that is not open falls back to the first outputs") {
+        master.audioOutputDevice = "stereo:Out 9 + 10";
+        const auto plan = magda::engine::compileRenderPlan(tracks, master, options);
+        CHECK(std::ranges::any_of(plan.diagnostics, [](const std::string& message) {
+            return message.find("Out 9 + 10") != std::string::npos;
+        }));
+        const auto [output, tap] = render();
+        CHECK(output.getMagnitude(0, 0, kBlockSize) == approx(1.0f));
+        CHECK(output.getMagnitude(1, 0, kBlockSize) == approx(1.0f));
+        CHECK(output.getMagnitude(62, 0, kBlockSize) == 0.0f);
+    }
+
+    SECTION("the tap holds the master alone, not what shares its channels") {
+        tracks.push_back(makeTrack(2));
+        tracks[1].audioOutputDevice = "stereo:Out 1 + 2";
+        options.hardwareOutputs.emplace("stereo:Out 1 + 2", magda::engine::HardwareOutputRoute{});
+        master.muted = true;
+        const auto [output, tap] = render();
+        CHECK(output.getMagnitude(0, 0, kBlockSize) == approx(1.0f));
+        CHECK(tap.getMagnitude(0, kBlockSize) == 0.0f);
+    }
+}
+
 TEST_CASE("The transport, not the caller, says where the timeline is",
           "[engine][session][transport]") {
     LoggingFactory factory;
@@ -1118,6 +1176,40 @@ TEST_CASE("The metronome is added after the plan, not through it",
         CHECK(output.getMagnitude(2, 0, kBlockSize) == 0.0f);
         CHECK(output.getMagnitude(3, 0, kBlockSize) == 0.0f);
     }
+}
+
+TEST_CASE("The metronome plays where the master plays", "[engine][session][click][3424]") {
+    LoggingFactory factory;
+    EngineSession session(factory);
+
+    // Muted, so all the output holds is the click.
+    auto master = makeMaster();
+    master.muted = true;
+    master.audioOutputDevice = "stereo:Out 3 + 4";
+    CompileOptions options;
+    options.hardwareOutputs.emplace("stereo:Out 3 + 4", magda::engine::HardwareOutputRoute{2, 3});
+    const std::vector<TrackInfo> tracks{makeTrack(1)};
+    const auto plan = std::make_shared<const RenderPlan>(
+        magda::engine::compileRenderPlan(tracks, master, options));
+    PlanValues values;
+    magda::engine::resolvePlanValues(*plan, tracks, master, values);
+    REQUIRE(
+        session
+            .publish(plan, context(), magda::engine::collectRuntimeStateIds(tracks, master), values)
+            .published);
+
+    auto transport = rolling(0.0);
+    transport.click = {true, true, 1.0f};
+    session.publishTransport(transport);
+    juce::AudioBuffer<float> output(4, kBlockSize);
+    juce::AudioBuffer<float> tap(2, kBlockSize);
+    session.process(kBlockSize, output, {}, nullptr, &tap);
+
+    CHECK(output.getMagnitude(0, 0, kBlockSize) == 0.0f);
+    CHECK(output.getMagnitude(1, 0, kBlockSize) == 0.0f);
+    CHECK(output.getMagnitude(2, 0, kBlockSize) > 0.1f);
+    CHECK(output.getMagnitude(3, 0, kBlockSize) > 0.1f);
+    CHECK(tap.getMagnitude(0, kBlockSize) == 0.0f);
 }
 
 TEST_CASE("A meter is bound at the master, at a track and at a device slot",
