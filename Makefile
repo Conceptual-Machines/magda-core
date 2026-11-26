@@ -118,9 +118,14 @@ probe-on:
 probe-off:
 	cd $(BUILD_DIR) && $(BUILD_ENV) cmake -DMAGDA_RENDER_PROBE=OFF .. && $(BUILD_ENV) ninja
 
+# Submodules at the commits the superproject records, before any build (see the script).
+.PHONY: submodules
+submodules:
+	@scripts/sync_submodules.sh
+
 # Debug build
 .PHONY: debug
-debug:
+debug: submodules
 	@echo "🔨 Building MAGDA DAW (Debug)..."
 	@mkdir -p $(BUILD_DIR) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
@@ -130,7 +135,7 @@ debug:
 	cd $(BUILD_DIR) && $(BUILD_ENV) ninja
 
 .PHONY: debug-cpu
-debug-cpu:
+debug-cpu: submodules
 	@echo "🔨 Building MAGDA DAW (Debug, analyzer CPU baseline)..."
 	@mkdir -p $(BUILD_DIR_DEBUG_CPU) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	cd $(BUILD_DIR_DEBUG_CPU) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
@@ -140,7 +145,7 @@ debug-cpu:
 	cd $(BUILD_DIR_DEBUG_CPU) && $(BUILD_ENV) ninja magda_daw_app
 
 .PHONY: debug-webgpu
-debug-webgpu:
+debug-webgpu: submodules
 	@echo "🔨 Building MAGDA DAW (Debug, Dawn/WebGPU analyzer POC)..."
 	@mkdir -p $(BUILD_DIR_DEBUG_WEBGPU) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	cd $(BUILD_DIR_DEBUG_WEBGPU) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
@@ -153,14 +158,14 @@ debug-webgpu:
 
 # Reconfigure build (force CMake to run)
 .PHONY: configure
-configure:
+configure: submodules
 	@echo "📝 Reconfiguring MAGDA DAW (Debug)..."
 	@mkdir -p $(BUILD_DIR) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON $(CMAKE_EXTRA_ARGS) ..
 
 # Release build
 .PHONY: release
-release:
+release: submodules
 	@echo "🚀 Building MAGDA DAW (Release)..."
 	@mkdir -p $(BUILD_DIR_RELEASE) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	cd $(BUILD_DIR_RELEASE) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Release $(CMAKE_EXTRA_ARGS) ..
@@ -174,7 +179,7 @@ run-release: release
 
 # ASAN (AddressSanitizer) build
 .PHONY: asan
-asan:
+asan: submodules
 	@echo "🔬 Building MAGDA DAW (Debug + AddressSanitizer)..."
 	@mkdir -p $(BUILD_DIR_ASAN) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR_ASAN)/CMakeCache.txt ]; then \
@@ -196,7 +201,7 @@ run-asan: asan
 
 # TSAN (ThreadSanitizer) build — catches data races that ASAN cannot see.
 .PHONY: tsan
-tsan:
+tsan: submodules
 	@echo "🧵 Building MAGDA DAW (Debug + ThreadSanitizer)..."
 	@mkdir -p $(BUILD_DIR_TSAN) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR_TSAN)/CMakeCache.txt ]; then \
@@ -304,7 +309,7 @@ run-profile: debug
 
 # Build tests
 .PHONY: test-build
-test-build:
+test-build: submodules
 	@echo "🔨 Building tests..."
 	@mkdir -p $(BUILD_DIR) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \

@@ -21,8 +21,9 @@ inline FloatingWindowHook& floatingWindowReleaseHook() {
 }
 }  // namespace detail
 
-/// Keeps a floating window over MAGDA's main window rather than over every app (#3084). Call last
-/// in its constructor: setResizable and setUsingNativeTitleBar recreate the native window.
+/// Keeps a floating window over MAGDA's main window rather than over every app (#3084). Call after
+/// setResizable and setUsingNativeTitleBar, which recreate the native window, and before a plugin
+/// editor goes in: on Linux this recreates the native window too (#3450).
 inline void floatOverMainWindow(juce::Component& window) {
     if (auto hook = detail::floatingWindowHook())
         hook(window);

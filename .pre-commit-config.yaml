@@ -60,6 +60,15 @@ repos:
         files: \.(cpp|hpp|h|c|cc|cxx)$
         pass_filenames: true
 
+      # A staged submodule pointer never goes back to an older commit. always_run: the top-level
+      # exclude drops third_party/, so the hook reads the staged gitlinks itself.
+      - id: submodule-rewind
+        name: Submodule Rewind
+        entry: .pre-commit-hooks/submodule_rewind.sh
+        language: system
+        always_run: true
+        pass_filenames: false
+
       # Every first-party source names its copyright holder and license.
       - id: spdx-headers
         name: SPDX License Headers
