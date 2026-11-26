@@ -30,19 +30,21 @@ struct MidiFileWriter {
     static constexpr int ticksPerQuarter = 960;
 
     /**
-     * @brief Adds one clip's notes, CC and pitch bend to @p seq, cut to an export range.
+     * @brief Adds one clip's notes, CC, pitch bend and program changes to @p seq, cut to an
+     * export range.
      *
      * @p clipStartBeats is the clip's start relative to the range start and may be negative.
      * Ticks run from the range start. A note crossing either edge is shortened to it, and one
-     * wholly outside is dropped, so no note-off lands before its note-on (#3279). CC and pitch
-     * bend from before the range land on its first tick.
+     * wholly outside is dropped, so no note-off lands before its note-on (#3279). CC, pitch
+     * bend and program changes from before the range land on its first tick.
      * @return The latest tick added, or 0 when nothing fell inside the range.
      */
     static double appendClipInRange(juce::MidiMessageSequence& seq,
                                     const std::vector<MidiNote>& notes,
                                     const std::vector<MidiCCData>& ccData,
                                     const std::vector<MidiPitchBendData>& pitchBendData,
-                                    double clipStartBeats, double rangeLengthBeats, int channel);
+                                    double clipStartBeats, double rangeLengthBeats, int channel,
+                                    const std::vector<MidiProgramChangeData>& programChanges = {});
 
     /**
      * Write clip MIDI data to a specific .mid file (Type 0, single track).
@@ -51,7 +53,8 @@ struct MidiFileWriter {
                             const std::vector<MidiCCData>& ccData,
                             const std::vector<MidiPitchBendData>& pitchBendData, double tempo,
                             const juce::String& nameHint = "pattern",
-                            const std::vector<ChordMarker>& chordMarkers = {});
+                            const std::vector<ChordMarker>& chordMarkers = {},
+                            const std::vector<MidiProgramChangeData>& programChanges = {});
 
     /**
      * Write notes to a temporary .mid file (Type 0, single track).

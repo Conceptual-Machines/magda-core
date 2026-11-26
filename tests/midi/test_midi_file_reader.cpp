@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "core/MidiFileReader.hpp"
+#include "core/MidiFileWriter.hpp"
 
 namespace {
 
@@ -70,4 +71,40 @@ TEST_CASE("A MIDI file holding only program changes still imports a track",
     REQUIRE(imported.has_value());
     REQUIRE(imported->tracks.size() == 1);
     CHECK(imported->tracks.front().programChanges.size() == 1);
+}
+
+TEST_CASE("Program changes written to a MIDI file read back with their banks",
+          "[midi][export][import][3412]") {
+    magda::MidiProgramChangeData banked;
+    banked.program = 12;
+    banked.bankMsb = 2;
+    banked.bankLsb = 5;
+    banked.beatPosition = 0.0;
+    magda::MidiProgramChangeData plain;
+    plain.program = 40;
+    plain.beatPosition = 3.0;
+
+    magda::MidiNote note;
+    note.startBeat = 0.0;
+    note.lengthBeats = 1.0;
+    note.noteNumber = 60;
+
+    juce::TemporaryFile temp(".mid");
+    REQUIRE(magda::daw::MidiFileWriter::writeToFile(temp.getFile(), {note}, {}, {}, 120.0, "pc", {},
+                                                    {banked, plain}));
+
+    const auto imported = magda::daw::readMidiTracks(temp.getFile(), 120.0);
+    REQUIRE(imported.has_value());
+    REQUIRE(imported->tracks.size() == 1);
+    const auto& track = imported->tracks.front();
+    REQUIRE(track.programChanges.size() == 2);
+    CHECK(track.programChanges[0].program == 12);
+    CHECK(track.programChanges[0].bankMsb == 2);
+    CHECK(track.programChanges[0].bankLsb == 5);
+    CHECK(track.programChanges[0].beatPosition == Catch::Approx(0.0));
+    CHECK(track.programChanges[1].program == 40);
+    CHECK(track.programChanges[1].bankMsb == -1);
+    CHECK(track.programChanges[1].beatPosition == Catch::Approx(3.0));
+    CHECK(track.controllers.empty());
+    CHECK(track.notes.size() == 1);
 }

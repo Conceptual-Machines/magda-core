@@ -2209,7 +2209,7 @@ bool ClipManager::saveClipToLibrary(ClipId clipId,
         const double tempo = currentProjectTempoOrDefault();
         if (!magda::daw::MidiFileWriter::writeToFile(outFile, clip->midiNotes, clip->midiCCData,
                                                      clip->midiPitchBendData, tempo, clip->name,
-                                                     chordMarkers)) {
+                                                     chordMarkers, clip->midiProgramChangeData)) {
             return false;
         }
 
