@@ -23,9 +23,11 @@ struct Transcription {
     juce::String error;  ///< Empty on success.
 };
 
-/// Mono @p samples at @p sampleRate to text; blocks, so never on the message thread.
-using SpeechToText = std::function<Transcription(
-    const std::vector<float>& samples, double sampleRate, const std::atomic<bool>* abort)>;
+/// Mono @p samples at @p sampleRate to text, @p prompt biasing the vocabulary; blocks, so never on
+/// the message thread.
+using SpeechToText =
+    std::function<Transcription(const std::vector<float>& samples, double sampleRate,
+                                const juce::String& prompt, const std::atomic<bool>* abort)>;
 
 /** @brief Install @p speechToText before the remote API starts; an empty one removes it. */
 void setSpeechToText(SpeechToText speechToText);

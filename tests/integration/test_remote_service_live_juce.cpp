@@ -1713,9 +1713,11 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
 
             // Each phrase is transcribed from its own audio (#3445).
             double heardSeconds = 0.0;
-            setSpeechToText([&heardSeconds](const std::vector<float>& samples, double rate,
-                                            const std::atomic<bool>*) {
+            juce::String heardPrompt;
+            setSpeechToText([&](const std::vector<float>& samples, double rate,
+                                const juce::String& prompt, const std::atomic<bool>*) {
                 heardSeconds += static_cast<double>(samples.size()) / rate;
+                heardPrompt = prompt;
                 return Transcription{" hello there ", {}};
             });
             const auto spoken = fixture.run(
@@ -1726,8 +1728,10 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             if (named != nullptr && named->size() == 1)
                 expect(named->getReference(0)["text"].toString() == "hello there");
             expectWithinAbsoluteError(heardSeconds, 1.0, 0.1);
+            expect(heardPrompt == "Voice", heardPrompt);
 
-            setSpeechToText([](const std::vector<float>&, double, const std::atomic<bool>*) {
+            setSpeechToText([](const std::vector<float>&, double, const juce::String&,
+                               const std::atomic<bool>*) {
                 return Transcription{{}, "The speech model is not downloaded."};
             });
             const auto unnamed = fixture.run(

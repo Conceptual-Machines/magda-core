@@ -395,11 +395,12 @@ class MagdaDAWApplication : public JUCEApplication {
         // reads the levels the audio path already publishes; nothing else in the
         // remote API touches it.
         magda::remote::setSpeechToText([](const std::vector<float>& samples, double sampleRate,
+                                          const juce::String& prompt,
                                           const std::atomic<bool>* abort) {
             const auto result = magda::SpeechTranscriber::getInstance().transcribe(
                 magda::SpeechTranscriber::toWhisperRate(
                     samples.data(), static_cast<int>(samples.size()), sampleRate),
-                {}, abort);
+                prompt.toStdString(), abort);
             return magda::remote::Transcription{juce::String::fromUTF8(result.text.c_str()),
                                                 juce::String::fromUTF8(result.error.c_str())};
         });

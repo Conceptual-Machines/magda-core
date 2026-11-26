@@ -550,7 +550,7 @@ derived from the take's floor and voice, or given as `thresholdDb`; the
 result reports the level it used. A clip changed during the analysis fails
 the job, and a result over 60 KiB fails it with a request to analyse the clip
 in parts. With `transcribe`, each phrase also carries its words as `text`,
-from the local speech model (#3445). When the model cannot run, for example
+from the local speech model, with the track's name biasing its vocabulary (#3445, #3446). When the model cannot run, for example
 because it is not downloaded, the regions still come back, and the result
 carries the reason as `transcriptionError`.
 

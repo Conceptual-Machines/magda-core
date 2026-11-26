@@ -19,6 +19,7 @@
 #include "remote_handlers.hpp"
 #include "remote_jobs.hpp"
 #include "remote_speech_to_text.hpp"
+#include "track_api.hpp"
 
 namespace magda::remote::handlers {
 namespace {
@@ -49,6 +50,7 @@ struct SpeechWork {
     SpeechToText speechToText;                     ///< Set when the phrases are transcribed.
     std::vector<std::vector<juce::String>> texts;  ///< Per segment, per phrase.
     juce::String transcriptionError;
+    juce::String prompt;  ///< The track's name, for its vocabulary (#3446).
 };
 
 double bpmAt(MagdaApi& api, const ClipInfo& clip) {
@@ -135,7 +137,8 @@ void transcribe(SpeechWork& work, juce::AudioFormatManager& formats,
                         mono.data(), buffer.getReadPointer(channel),
                         1.0f / static_cast<float>(channels.size()), count);
             }
-            const auto transcription = work.speechToText(mono, rate, work.cancelled.get());
+            const auto transcription =
+                work.speechToText(mono, rate, work.prompt, work.cancelled.get());
             if (transcription.error.isNotEmpty()) {
                 work.transcriptionError = transcription.error;
                 work.texts.clear();
@@ -349,6 +352,8 @@ HandlerResult clipsAnalyzeSpeech(MagdaApi& api, const juce::var& input,
             return HandlerResult::fail(ErrorCode::Conflict,
                                        "this build has no speech to text; analyse without "
                                        "transcribe");
+        if (const auto* track = api.tracks().getTrack(clip->trackId))
+            work->prompt = track->name;
     }
     work->cancelled = std::make_shared<std::atomic_bool>(false);
     const auto jobId = context.jobs->accept(
