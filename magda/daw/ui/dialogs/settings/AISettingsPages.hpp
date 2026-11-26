@@ -26,6 +26,8 @@ class AISettingsPages {
 
     juce::Component& cloudPage();
     juce::Component& configPage();
+    /** @brief The Assistant tab's height, which grows with the agents it lists. */
+    int configPreferredHeight() const;
     juce::Component& modelsPage();
     /** @brief Each page's status, shown at the right of the tab row. */
     juce::Component& cloudToolbar();
@@ -47,6 +49,7 @@ class AISettingsPages {
     class BeatTrackerPage;
     class StemSeparationPage;
     class CommandModelPage;
+    class SpeechModelPage;
     class ModelDownloadsPage;
 
     std::unique_ptr<CloudPage> cloudPage_;
@@ -56,6 +59,7 @@ class AISettingsPages {
     std::unique_ptr<BeatTrackerPage> beatTrackerPage_;
     std::unique_ptr<StemSeparationPage> stemsPage_;
     std::unique_ptr<CommandModelPage> commandModelPage_;
+    std::unique_ptr<SpeechModelPage> speechPage_;
     std::unique_ptr<ModelDownloadsPage> modelDownloadsPage_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AISettingsPages)

@@ -9,6 +9,7 @@ target_sources(magda_daw_app PRIVATE
     PresetBrowserContent.cpp
     EmptyContent.cpp
     AIChatConsoleContent.cpp
+    SpeechModel.cpp
     SlashCommands.cpp
     ScriptingConsoleContent.cpp
     PanelContent.cpp
@@ -31,6 +32,7 @@ target_sources(magda_daw_app PRIVATE
     PresetBrowserContent.hpp
     EmptyContent.hpp
     AIChatConsoleContent.hpp
+    SpeechModel.hpp
     ScriptingConsoleContent.hpp
     TrackChainContent.hpp
     TrackChainHeaderParts.hpp

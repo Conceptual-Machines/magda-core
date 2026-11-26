@@ -25,6 +25,8 @@ set(TEST_SOURCES
     agents/test_ranged_download.cpp
     agents/test_unigram_tokenizer.cpp
     agents/test_command_model_onnx.cpp
+    agents/test_speech_transcriber.cpp
+    agents/test_user_agents.cpp
     utilities/test_interfaces.cpp
     utilities/test_ranges_helpers.cpp
     midi/test_midi_clip_sync.cpp

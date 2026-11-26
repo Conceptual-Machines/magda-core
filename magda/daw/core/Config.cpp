@@ -264,6 +264,13 @@ juce::var Config::toVar() const {
     // magda::paths::resolve()). Render folder uses the same field as before.
     root->setProperty("dataDir", toJuceString(dataDir));
     root->setProperty("presetsDir", toJuceString(presetsDir));
+    root->setProperty("agentsDir", toJuceString(agentsDir));
+    {
+        juce::DynamicObject::Ptr enabled(new juce::DynamicObject());
+        for (const auto& [alias, fingerprint] : enabledUserAgents)
+            enabled->setProperty(juce::Identifier(toJuceString(alias)), toJuceString(fingerprint));
+        root->setProperty("enabledUserAgents", juce::var(enabled.get()));
+    }
 
     // Render
     root->setProperty("renderFolder", toJuceString(renderFolder));
@@ -371,6 +378,7 @@ juce::var Config::toVar() const {
     root->setProperty("pluginBrowserViewMode", toJuceString(pluginBrowserViewMode));
     root->setProperty("sampleTaggerModelsDir", toJuceString(sampleTaggerModelsDir));
     root->setProperty("commandModelModelsDir", toJuceString(commandModelModelsDir));
+    root->setProperty("speechModelDir", toJuceString(speechModelDir));
     root->setProperty("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
     root->setProperty("mediaDbDir", toJuceString(mediaDbDir));
     root->setProperty("externalAudioEditorPath", toJuceString(externalAudioEditorPath));
@@ -735,6 +743,12 @@ void Config::fromVar(const juce::var& parsed) {
 
     dataDir = getString("dataDir", dataDir);
     presetsDir = getString("presetsDir", presetsDir);
+    agentsDir = getString("agentsDir", agentsDir);
+    enabledUserAgents.clear();
+    if (auto* enabled = obj->getProperty("enabledUserAgents").getDynamicObject())
+        for (const auto& property : enabled->getProperties())
+            enabledUserAgents[property.name.toString().toStdString()] =
+                property.value.toString().toStdString();
     renderFolder = getString("renderFolder", renderFolder);
     renderSampleRate = getDouble("renderSampleRate", renderSampleRate);
     renderBitDepth = getInt("renderBitDepth", renderBitDepth);
@@ -956,6 +970,7 @@ void Config::fromVar(const juce::var& parsed) {
     pluginBrowserViewMode = getString("pluginBrowserViewMode", pluginBrowserViewMode);
     sampleTaggerModelsDir = getString("sampleTaggerModelsDir", sampleTaggerModelsDir);
     commandModelModelsDir = getString("commandModelModelsDir", commandModelModelsDir);
+    speechModelDir = getString("speechModelDir", speechModelDir);
     loadSampleTaggerOnStartup = getBool("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
     mediaDbDir = getString("mediaDbDir", mediaDbDir);
     externalAudioEditorPath = getString("externalAudioEditorPath", externalAudioEditorPath);

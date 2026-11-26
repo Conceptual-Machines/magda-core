@@ -933,6 +933,14 @@ class Config {
         commandModelModelsDir = dir;
     }
 
+    // Folder for the speech-to-text model. Empty = default (dataDir/SpeechToText/models).
+    std::string getSpeechModelDir() const {
+        return speechModelDir;
+    }
+    void setSpeechModelDir(const std::string& dir) {
+        speechModelDir = dir;
+    }
+
     // Load the Sample Tagger encoders + tokenizer eagerly at app startup
     // instead of waiting for the first DB query that needs them. Eats
     // ~700 MB of RAM and a few seconds of init time, but no first-query
@@ -1024,6 +1032,27 @@ class Config {
     }
     void setPresetsDir(const std::string& d) {
         presetsDir = d;
+    }
+
+    /** Override for `userDocumentsDirectory/MAGDA/Agents/`, the user's agent folders (#3443).
+     *  Empty = OS default. */
+    std::string getAgentsDir() const {
+        return agentsDir;
+    }
+    void setAgentsDir(const std::string& d) {
+        agentsDir = d;
+    }
+
+    /** Enabled user agents, alias to the fingerprint of the files the user enabled. */
+    const std::map<std::string, std::string>& getEnabledUserAgents() const {
+        return enabledUserAgents;
+    }
+    void setUserAgentEnabled(const std::string& alias, const std::string& fingerprint,
+                             bool enabled) {
+        if (enabled)
+            enabledUserAgents[alias] = fingerprint;
+        else
+            enabledUserAgents.erase(alias);
     }
 
     double getRenderSampleRate() const {
@@ -1847,6 +1876,7 @@ class Config {
     // Optional override for the command-model ONNX bundle location.
     // Empty = use the default dataDir/CommandModel/models.
     std::string commandModelModelsDir;
+    std::string speechModelDir;
 
     // Eagerly load the Sample Tagger encoders + tokenizer at startup
     // (vs lazy on first query).
@@ -1900,6 +1930,8 @@ class Config {
     // Empty = OS default. Persisted in config.json.
     std::string dataDir;     // userApplicationDataDirectory/MAGDA/
     std::string presetsDir;  // userDocumentsDirectory/MAGDA/Presets/
+    std::string agentsDir;   // userDocumentsDirectory/MAGDA/Agents/
+    std::map<std::string, std::string> enabledUserAgents;
 
     // Render settings
     std::string renderFolder;  // Custom render output folder (empty = renders/ beside source)

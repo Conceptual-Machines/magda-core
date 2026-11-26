@@ -28,6 +28,7 @@
 #include "../../../../agents/mixing_agent.hpp"
 #include "../../../../agents/music_agent.hpp"
 #include "../../../../agents/theme_agent.hpp"
+#include "../../../../agents/user_agents.hpp"
 #include "../../../api/magda_api_live.hpp"
 #include "../../../api/remote_api_host.hpp"
 #include "../../../api/remote_service.hpp"
@@ -71,79 +72,35 @@ namespace {
 juce::String formatClipAsDrummerContext(magda::ClipId clipId);
 juce::String formatSelectedClipsAsDrummerContext();
 
-/**
- * The tool-calling console path (#2295): the surface's agent runs the bounded
- * observe-act runtime, and every call executes through RemoteApiService — the
- * same schema validation, scope enforcement, revision tracking, and audit an
- * MCP client gets, with the ConsoleRouting allowlist as its tool set.
- *
- * Preflight rather than commitment: returns nullopt when the loop is switched
- * off in config, no remote host exists, or the configured provider cannot
- * carry tool calls — and the caller falls through to the DSL workflows. Once
- * the run starts, its outcome is the response, success or not: mutations have
- * gone through the service, so falling back to a second execution path would
- * apply the request twice.
- */
-std::optional<std::string> runAgentToolLoop(magda::AgentSurfaceId surfaceId,
-                                            const std::string& message,
-                                            const std::string& priorConversation,
-                                            const magda::agent::CancellationToken& cancellation) {
-    auto& config = magda::Config::getInstance();
-    if (!config.getAgentToolLoopEnabled())
-        return std::nullopt;
-    // Read from the request thread: safe because the host outlives every
-    // console request thread — it is created at startup and destroyed at
-    // shutdown, after this panel (and its RequestThread) are gone.
-    auto* host = magda::remote::activeHost();
-    if (host == nullptr)
-        return std::nullopt;
-
-    const auto llmConfig = config.getAgentLLMConfig(magda::role::COMMAND);
-    // The on-device command model is an intent tagger, not a tool-calling
-    // model; the DSL path is the one that knows how to drive it. The embedded
-    // llama client likewise refuses any request that carries tools, so
-    // starting the loop with it could only end in a model error — preflight
-    // both and let the DSL workflows take the request instead.
+/// A client that can carry tool calls for the console's provider, or nullptr.
+std::unique_ptr<::llm::LLMClient> toolCallingClient() {
+    const auto llmConfig = magda::Config::getInstance().getAgentLLMConfig(magda::role::COMMAND);
+    // The on-device command model is an intent tagger, and the embedded llama client refuses
+    // any request that carries tools; neither can run the loop.
     if (llmConfig.provider == magda::provider::FAST_INFERENCE ||
         llmConfig.provider == magda::provider::LLAMA_LOCAL)
-        return std::nullopt;
-    auto client = magda::createLLMClient(llmConfig, "tool-loop");
-    if (client == nullptr)
-        return std::nullopt;
+        return nullptr;
+    return magda::createLLMClient(llmConfig, "tool-loop");
+}
 
-    const auto& surface = magda::agentSurface(surfaceId);
-    auto tools = magda::agent::agentToolsForSurface(surface);
-    if (tools.empty())
-        return std::nullopt;
-
-    magda::agent::LlmToolModel model(*client);
-    magda::agent::RemoteAgentToolExecutor executor(host->service(), surface);
-    // Approving here matches what the DSL executors do today — they apply
-    // mutations without a per-step prompt. The hook is the seam where a real
-    // approval UI lands; the surface's `approveMutations` policy is what it
-    // will read.
+/// Run @p definition to the end and format its outcome as the console's reply.
+std::string runAgentDefinition(const magda::agent::AgentDefinition& definition,
+                               magda::agent::ToolExecutor& executor, ::llm::LLMClient& client,
+                               magda::remote::RemoteApiHost& host, const std::string& message,
+                               const std::string& priorConversation,
+                               const magda::agent::CancellationToken& cancellation) {
+    magda::agent::LlmToolModel model(client);
+    // Approving here matches the DSL executors, which apply mutations without a per-step
+    // prompt; the hook is where an approval UI lands.
     magda::agent::AgentRuntime runtime(model, executor, [](const magda::agent::ApprovalRequest&) {
         return magda::agent::ApprovalDecision{};
     });
-
-    magda::agent::AgentDefinition definition;
-    definition.id = "console-" + juce::String(surface.name);
-    definition.systemPrompt = "You are MAGDA's " + juce::String(surface.name) + " agent. " +
-                              juce::String(surface.responsibility);
-    for (const auto& fragment : surface.promptFragments)
-        definition.systemPrompt += "\n" + juce::String(fragment);
-    definition.systemPrompt +=
-        "\nAct by calling tools; inspect state before mutating it. When the work is done, "
-        "reply with a short summary and no further tool calls.";
-    definition.tools = std::move(tools);
-    definition.budget.maxSteps = surface.runPolicy.maxSteps;
-    definition.budget.maxMutations = surface.runPolicy.maxMutations;
 
     magda::agent::AgentRunInput input;
     input.userMessage = priorConversation.empty()
                             ? juce::String(message)
                             : juce::String(priorConversation) + "\nUser request: " + message;
-    input.projectRevision = host->service().currentRevision();
+    input.projectRevision = host.service().currentRevision();
 
     const auto result = runtime.run(definition, input, cancellation);
 
@@ -160,6 +117,91 @@ std::optional<std::string> runAgentToolLoop(magda::AgentSurfaceId surfaceId,
         response += "\n[" + std::to_string(result.mutations) + " change(s) applied in " +
                     std::to_string(result.steps) + " step(s)]";
     return response;
+}
+
+/**
+ * The tool-calling console path (#2295): the surface's agent acts through RemoteApiService with
+ * the ConsoleRouting allowlist as its tool set.
+ *
+ * nullopt is a preflight refusal (loop off, no host, no tool-calling provider) and the DSL
+ * workflows run instead. Once the run starts its outcome is the reply: mutations have gone
+ * through the service, so a fallback would apply the request twice.
+ */
+std::optional<std::string> runAgentToolLoop(magda::AgentSurfaceId surfaceId,
+                                            const std::string& message,
+                                            const std::string& priorConversation,
+                                            const magda::agent::CancellationToken& cancellation) {
+    if (!magda::Config::getInstance().getAgentToolLoopEnabled())
+        return std::nullopt;
+    // The host is created at startup and destroyed after this panel and its request threads.
+    auto* host = magda::remote::activeHost();
+    if (host == nullptr)
+        return std::nullopt;
+    auto client = toolCallingClient();
+    if (client == nullptr)
+        return std::nullopt;
+
+    const auto& surface = magda::agentSurface(surfaceId);
+    auto tools = magda::agent::agentToolsForSurface(surface);
+    if (tools.empty())
+        return std::nullopt;
+
+    magda::agent::AgentDefinition definition;
+    definition.id = "console-" + juce::String(surface.name);
+    definition.systemPrompt = "You are MAGDA's " + juce::String(surface.name) + " agent. " +
+                              juce::String(surface.responsibility);
+    for (const auto& fragment : surface.promptFragments)
+        definition.systemPrompt += "\n" + juce::String(fragment);
+    definition.systemPrompt +=
+        "\nAct by calling tools; inspect state before mutating it. When the work is done, "
+        "reply with a short summary and no further tool calls.";
+    definition.tools = std::move(tools);
+    definition.budget.maxSteps = surface.runPolicy.maxSteps;
+    definition.budget.maxMutations = surface.runPolicy.maxMutations;
+
+    magda::agent::RemoteAgentToolExecutor executor(host->service(), surface);
+    return runAgentDefinition(definition, executor, *client, *host, message, priorConversation,
+                              cancellation);
+}
+
+/**
+ * A message addressed to a user agent (#3443) runs it whatever the tool-loop setting, since it
+ * has no DSL workflow to fall back to. nullopt when no agent folder claims the alias.
+ */
+std::optional<std::string> runUserAgent(const std::string& message,
+                                        const std::string& priorConversation,
+                                        const magda::agent::CancellationToken& cancellation) {
+    const auto alias =
+        juce::String(magda::explicitAgentOverrideFromMessage(message)).toLowerCase().toStdString();
+    if (alias.empty() || magda::agentSurfaceForAlias(alias) != nullptr)
+        return std::nullopt;
+
+    // Read on every request, so an edited folder takes effect without a restart.
+    const auto loads = magda::agent::loadUserAgents(magda::paths::agentsDir());
+    const auto* agent = magda::agent::findUserAgent(loads, alias);
+    const auto handle = "@" + alias;
+    if (agent == nullptr) {
+        if (const auto* failed = magda::agent::findFailedUserAgent(loads, alias))
+            return "Error: " + handle + " did not load. " + failed->error.toStdString();
+        return std::nullopt;
+    }
+    if (!magda::agent::isUserAgentEnabled(*agent))
+        return "Error: " + handle +
+               " is not enabled. Turn it on in Settings > AI > Assistant, under Agents.";
+
+    auto* host = magda::remote::activeHost();
+    if (host == nullptr)
+        return "Error: " + handle + " cannot run: the remote API is not running.";
+    auto client = toolCallingClient();
+    if (client == nullptr)
+        return "Error: " + handle +
+               " needs a provider that calls tools. Choose one in Settings > AI.";
+
+    magda::agent::RemoteAgentToolExecutor executor(host->service(), juce::String(handle),
+                                                   agent->tools);
+    return runAgentDefinition(magda::agent::toAgentDefinition(*agent), executor, *client, *host,
+                              magda::messageWithoutAgentOverride(message), priorConversation,
+                              cancellation);
 }
 }  // namespace
 
@@ -763,9 +805,13 @@ void AIChatConsoleContent::RequestThread::run() {
     // RemoteApiService with the surface allowlist as its tool set, and its
     // summary flows through the same prose channel the mix agent uses. A
     // nullopt is a preflight refusal, and the DSL workflows below run instead.
-    if (auto toolLoopResponse = runAgentToolLoop(
-            surfaceDecision.surface, message, priorContext,
-            magda::agent::CancellationToken([this] { return threadShouldExit(); }))) {
+    const magda::agent::CancellationToken cancellation([this] { return threadShouldExit(); });
+    if (auto userAgentResponse = runUserAgent(message, priorContext, cancellation)) {
+        if (threadShouldExit())
+            return;
+        mixAnalysis = std::move(*userAgentResponse);
+    } else if (auto toolLoopResponse =
+                   runAgentToolLoop(surfaceDecision.surface, message, priorContext, cancellation)) {
         if (threadShouldExit())
             return;
         mixAnalysis = std::move(*toolLoopResponse);

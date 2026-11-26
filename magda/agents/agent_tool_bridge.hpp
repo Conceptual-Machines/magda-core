@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "../daw/api/remote_scopes.hpp"
@@ -46,6 +47,9 @@ namespace magda::agent {
  */
 std::vector<ToolDefinition> agentToolsForSurface(const AgentSurface& surface);
 
+/** @brief agentToolsForSurface over any list of operation names, such as a user agent's. */
+std::vector<ToolDefinition> agentToolsForOperations(const std::vector<std::string>& operations);
+
 /**
  * @brief The scopes the surface's allowlist requires, plus `read`.
  *
@@ -54,6 +58,9 @@ std::vector<ToolDefinition> agentToolsForSurface(const AgentSurface& surface);
  * launch clips even if a handler is misrouted.
  */
 remote::ScopeSet agentScopesForSurface(const AgentSurface& surface);
+
+/** @brief agentScopesForSurface over any list of operation names. */
+remote::ScopeSet agentScopesForOperations(const std::vector<std::string>& operations);
 
 /**
  * @brief `ToolExecutor` over `RemoteApiService`.
@@ -72,14 +79,17 @@ class RemoteAgentToolExecutor : public ToolExecutor {
   public:
     RemoteAgentToolExecutor(remote::RemoteApiService& service, const AgentSurface& surface);
 
+    /** @brief An executor for the agent called @p owner, limited to @p allowlist. */
+    RemoteAgentToolExecutor(remote::RemoteApiService& service, juce::String owner,
+                            std::vector<std::string> allowlist);
+
     ToolResult execute(const ToolExecutionRequest& request,
                        const CancellationToken& cancellation) override;
 
   private:
     remote::RemoteApiService& service_;
-    /// Points into `registeredAgentSurfaces()`, whose storage lives for the
-    /// process, so holding a reference is safe.
-    const AgentSurface& surface_;
+    juce::String owner_;
+    std::vector<std::string> allowlist_;
     remote::ScopeSet scopes_;
     /// Unique per executor, and an executor lives for one agent run. Tool-call
     /// ids are provider-generated and repeat across runs ("call_0"), while the

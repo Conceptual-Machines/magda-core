@@ -137,6 +137,9 @@ AgentBaselineContext buildAgentBaselineContext(const AgentSurface& surface,
 /// or the legacy "[COMMAND: ...]" slash rewrite. Empty means no override.
 std::string explicitAgentOverrideFromMessage(const std::string& message);
 
+/// @p message without the "@alias" or "/agent alias" it starts with, if any.
+std::string messageWithoutAgentOverride(const std::string& message);
+
 struct AgentSurfaceContext {
     ViewMode view = ViewMode::Arrange;
     AgentInvocationSurface invocation = AgentInvocationSurface::ViewDefault;
