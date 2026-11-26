@@ -278,6 +278,8 @@ void ClipMidiSource::chaseClip(juce::MidiBuffer& out, const BlockInfo& block,
             return !inHole(clip, pass.timelineOfContentZero + event.beat);
         },
         scratch_);
+    // In list order, so a chased bank select precedes the program change it belongs to.
+    std::ranges::sort(scratch_);
 
     // By index rather than by iterator, and never through a copy: startNote and
     // endNote do not touch the scratch, and copying a reserved vector on the

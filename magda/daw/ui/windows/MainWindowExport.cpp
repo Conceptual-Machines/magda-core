@@ -591,6 +591,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings,
         std::vector<MidiNote> midiNotes;
         std::vector<MidiCCData> midiCCData;
         std::vector<MidiPitchBendData> midiPitchBendData;
+        std::vector<MidiProgramChangeData> midiProgramChangeData;
     };
     struct TrackMidiData {
         juce::String trackName;
@@ -601,7 +602,8 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings,
     for (const auto& clip : clips) {
         if (!clip.isMidi())
             continue;
-        if (clip.midiNotes.empty() && clip.midiCCData.empty() && clip.midiPitchBendData.empty())
+        if (clip.midiNotes.empty() && clip.midiCCData.empty() && clip.midiPitchBendData.empty() &&
+            clip.midiProgramChangeData.empty())
             continue;
 
         // Check if clip overlaps with range
@@ -615,8 +617,8 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings,
             auto* track = trackManager.getTrack(clip.trackId);
             td.trackName = track ? track->name : "Track";
         }
-        td.clips.push_back(
-            {clipStartBeats, clip.midiNotes, clip.midiCCData, clip.midiPitchBendData});
+        td.clips.push_back({clipStartBeats, clip.midiNotes, clip.midiCCData, clip.midiPitchBendData,
+                            clip.midiProgramChangeData});
     }
 
     DBG("Track data count: " << trackData.size());
@@ -680,7 +682,8 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings,
                                          int channel, double& maxTick) {
             const double lastTick = daw::MidiFileWriter::appendClipInRange(
                 seq, clip.midiNotes, clip.midiCCData, clip.midiPitchBendData,
-                clip.startBeats - capturedRangeStartBeats, rangeLengthBeats, channel);
+                clip.startBeats - capturedRangeStartBeats, rangeLengthBeats, channel,
+                clip.midiProgramChangeData);
             maxTick = std::max(maxTick, lastTick);
         };
 

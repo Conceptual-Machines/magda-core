@@ -176,6 +176,9 @@ class PassWalk {
 
     std::size_t pass_ = 0;
     std::int64_t dropped_ = 0;
+
+    /// This pass's CC 0 and 32 since its last program change, as indices into its cc.
+    std::vector<std::size_t> bankSince_;
 };
 
 /// A note the pass owns, positioned against the pass it started in.
@@ -262,6 +265,7 @@ void PassWalk::add(const RecordedMidiEvent& played) {
     while (pass_ + 1 < takes_.size() && event.sample >= edges_[pass_ + 1]) {
         closePass(pass_);
         ++pass_;
+        bankSince_.clear();
     }
 
     switch (kindOf(event)) {
@@ -297,6 +301,8 @@ void PassWalk::add(const RecordedMidiEvent& played) {
             cc.value = event.data2;
             cc.beatPosition = beatIn(pass_, event.sample);
             cc.curveType = MidiCurveType::Step;
+            if (cc.controller == 0 || cc.controller == 32)
+                bankSince_.push_back(takes_[pass_].cc.size());
             takes_[pass_].cc.push_back(cc);
             break;
         }
@@ -342,7 +348,24 @@ void PassWalk::add(const RecordedMidiEvent& played) {
             break;
         }
 
-        // Program change and system messages still have no model field.
+        // A bank select sent before a program change joins it rather than staying a controller.
+        case MidiKind::programChange: {
+            MidiProgramChangeData change;
+            change.program = event.data1;
+            change.beatPosition = beatIn(pass_, event.sample);
+            auto& cc = takes_[pass_].cc;
+            for (auto index = bankSince_.rbegin(); index != bankSince_.rend(); ++index) {
+                const auto& bank = cc[*index];
+                if (auto& field = bank.controller == 0 ? change.bankMsb : change.bankLsb; field < 0)
+                    field = bank.value;
+                cc.erase(cc.begin() + static_cast<std::ptrdiff_t>(*index));
+            }
+            bankSince_.clear();
+            takes_[pass_].programChanges.push_back(change);
+            break;
+        }
+
+        // System messages have no model field.
         case MidiKind::unsupported:
             ++dropped_;
             break;

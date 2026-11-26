@@ -7,15 +7,43 @@
 
 namespace magda::daw {
 
+namespace {
+
+/** @brief Adds @p change at @p tick: its bank select, then the program, before any note there. */
+void addProgramChange(juce::MidiMessageSequence& seq, const MidiProgramChangeData& change,
+                      int channel, double tick) {
+    const auto add = [&](juce::MidiMessage msg) {
+        msg.setTimeStamp(tick);
+        seq.addEvent(msg);
+    };
+    if (change.bankMsb >= 0)
+        add(juce::MidiMessage::controllerEvent(channel, 0, change.bankMsb));
+    if (change.bankLsb >= 0)
+        add(juce::MidiMessage::controllerEvent(channel, 32, change.bankLsb));
+    add(juce::MidiMessage::programChange(channel, change.program));
+}
+
+}  // namespace
+
 double MidiFileWriter::appendClipInRange(juce::MidiMessageSequence& seq,
                                          const std::vector<MidiNote>& notes,
                                          const std::vector<MidiCCData>& ccData,
                                          const std::vector<MidiPitchBendData>& pitchBendData,
                                          double clipStartBeats, double rangeLengthBeats,
-                                         int channel) {
+                                         int channel,
+                                         const std::vector<MidiProgramChangeData>& programChanges) {
     const double rangeEndTick = rangeLengthBeats * ticksPerQuarter;
     auto toTick = [&](double clipBeats) { return (clipStartBeats + clipBeats) * ticksPerQuarter; };
     double maxTick = 0.0;
+
+    // First, so each lands before a note on the same tick: addEvent keeps insertion order there.
+    for (const auto& change : programChanges) {
+        const double tick = std::max(toTick(change.beatPosition), 0.0);
+        if (tick >= rangeEndTick)
+            continue;
+        addProgramChange(seq, change, channel, tick);
+        maxTick = std::max(maxTick, tick);
+    }
 
     for (const auto& note : notes) {
         const double startTick = toTick(note.startBeat);
@@ -58,8 +86,10 @@ bool MidiFileWriter::writeToFile(const juce::File& outFile, const std::vector<Mi
                                  const std::vector<MidiCCData>& ccData,
                                  const std::vector<MidiPitchBendData>& pitchBendData, double tempo,
                                  const juce::String& nameHint,
-                                 const std::vector<ChordMarker>& chordMarkers) {
-    if ((notes.empty() && ccData.empty() && pitchBendData.empty() && chordMarkers.empty()) ||
+                                 const std::vector<ChordMarker>& chordMarkers,
+                                 const std::vector<MidiProgramChangeData>& programChanges) {
+    if ((notes.empty() && ccData.empty() && pitchBendData.empty() && chordMarkers.empty() &&
+         programChanges.empty()) ||
         tempo <= 0.0 || outFile == juce::File()) {
         return false;
     }
@@ -86,6 +116,12 @@ bool MidiFileWriter::writeToFile(const juce::File& outFile, const std::vector<Mi
     auto timeSig = juce::MidiMessage::timeSignatureMetaEvent(4, 4);
     timeSig.setTimeStamp(0.0);
     seq.addEvent(timeSig);
+
+    for (const auto& change : programChanges) {
+        const double tick = beatsToTicks(change.beatPosition);
+        addProgramChange(seq, change, 1, tick);
+        maxTick = juce::jmax(maxTick, tick);
+    }
 
     // Notes
     for (const auto& note : notes) {

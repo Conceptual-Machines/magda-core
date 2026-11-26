@@ -93,3 +93,27 @@ TEST_CASE("MIDI export moves CC from before the range onto its first tick", "[mi
     REQUIRE(seq.getEventPointer(0)->message.getControllerValue() == 20);
     REQUIRE(seq.getEventTime(0) == 0.0);
 }
+
+TEST_CASE("MIDI export puts a program change and its bank before the note it shares a tick with",
+          "[midi][export][3412]") {
+    magda::MidiProgramChangeData early;
+    early.program = 7;
+    early.bankMsb = 1;
+    early.beatPosition = 0.0;
+    magda::MidiProgramChangeData late = early;
+    late.program = 8;
+    late.beatPosition = 9.0;
+
+    juce::MidiMessageSequence seq;
+    // The clip starts 2 beats before a 4-beat range: the early change lands on its first tick.
+    MidiFileWriter::appendClipInRange(seq, {note(2.0, 1.0, 60)}, {}, {}, -2.0, 4.0, 1,
+                                      {early, late});
+
+    REQUIRE(seq.getNumEvents() == 4);
+    CHECK(seq.getEventPointer(0)->message.isControllerOfType(0));
+    CHECK(seq.getEventPointer(1)->message.getProgramChangeNumber() == 7);
+    CHECK(seq.getEventPointer(1)->message.isProgramChange());
+    CHECK(seq.getEventPointer(2)->message.isNoteOn());
+    for (int i = 0; i < 3; ++i)
+        CHECK(seq.getEventTime(i) == 0.0);
+}

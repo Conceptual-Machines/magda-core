@@ -3,12 +3,15 @@
 
 #include "MidiDrawerComponent.hpp"
 
+#include <algorithm>
+
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../common/SvgButton.hpp"
 #include "BinaryData.h"
 #include "CCLaneComponent.hpp"
 #include "NoteExpressionLaneComponent.hpp"
+#include "ProgramChangeLaneComponent.hpp"
 #include "VelocityLaneComponent.hpp"
 #include "ui/components/common/MagdaAlertWindow.hpp"
 
@@ -91,6 +94,21 @@ MidiDrawerComponent::MidiDrawerComponent() {
 
 MidiDrawerComponent::~MidiDrawerComponent() = default;
 
+juce::Component* MidiDrawerComponent::TabInfo::component() const {
+    if (ccLane)
+        return ccLane.get();
+    return programLane.get();
+}
+
+template <typename Apply> void MidiDrawerComponent::forEachTabLane(Apply&& apply) {
+    for (auto& tab : ccTabs_) {
+        if (tab.ccLane)
+            apply(*tab.ccLane);
+        if (tab.programLane)
+            apply(*tab.programLane);
+    }
+}
+
 void MidiDrawerComponent::setLaneMode(LaneMode mode) {
     laneMode_ = mode;
     for (size_t i = 0; i < laneButtons_.size(); ++i)
@@ -113,10 +131,7 @@ void MidiDrawerComponent::setClip(ClipId clipId) {
     velocityLane_->setClip(clipId);
     for (auto& lane : expressionLanes_)
         lane->setClip(clipId);
-    for (auto& tab : ccTabs_) {
-        if (tab.ccLane)
-            tab.ccLane->setClip(clipId);
-    }
+    forEachTabLane([&](auto& lane) { lane.setClip(clipId); });
 }
 
 void MidiDrawerComponent::setSelectedNoteIndices(const std::vector<size_t>& indices) {
@@ -134,10 +149,7 @@ void MidiDrawerComponent::setPixelsPerBeat(double ppb) {
     velocityLane_->setPixelsPerBeat(ppb);
     for (auto& lane : expressionLanes_)
         lane->setPixelsPerBeat(ppb);
-    for (auto& tab : ccTabs_) {
-        if (tab.ccLane)
-            tab.ccLane->setPixelsPerBeat(ppb);
-    }
+    forEachTabLane([&](auto& lane) { lane.setPixelsPerBeat(ppb); });
 }
 
 void MidiDrawerComponent::setScrollOffset(int offsetX) {
@@ -145,10 +157,7 @@ void MidiDrawerComponent::setScrollOffset(int offsetX) {
     velocityLane_->setScrollOffset(offsetX);
     for (auto& lane : expressionLanes_)
         lane->setScrollOffset(offsetX);
-    for (auto& tab : ccTabs_) {
-        if (tab.ccLane)
-            tab.ccLane->setScrollOffset(offsetX);
-    }
+    forEachTabLane([&](auto& lane) { lane.setScrollOffset(offsetX); });
 }
 
 void MidiDrawerComponent::setLeftPadding(int padding) {
@@ -156,10 +165,7 @@ void MidiDrawerComponent::setLeftPadding(int padding) {
     velocityLane_->setLeftPadding(padding);
     for (auto& lane : expressionLanes_)
         lane->setLeftPadding(padding);
-    for (auto& tab : ccTabs_) {
-        if (tab.ccLane)
-            tab.ccLane->setLeftPadding(padding);
-    }
+    forEachTabLane([&](auto& lane) { lane.setLeftPadding(padding); });
 }
 
 void MidiDrawerComponent::setRelativeMode(bool relative) {
@@ -167,10 +173,7 @@ void MidiDrawerComponent::setRelativeMode(bool relative) {
     velocityLane_->setRelativeMode(relative);
     for (auto& lane : expressionLanes_)
         lane->setRelativeMode(relative);
-    for (auto& tab : ccTabs_) {
-        if (tab.ccLane)
-            tab.ccLane->setRelativeMode(relative);
-    }
+    forEachTabLane([&](auto& lane) { lane.setRelativeMode(relative); });
 }
 
 void MidiDrawerComponent::setClipStartBeats(double startBeats) {
@@ -178,19 +181,13 @@ void MidiDrawerComponent::setClipStartBeats(double startBeats) {
     velocityLane_->setClipStartBeats(startBeats);
     for (auto& lane : expressionLanes_)
         lane->setClipStartBeats(startBeats);
-    for (auto& tab : ccTabs_) {
-        if (tab.ccLane)
-            tab.ccLane->setClipStartBeats(startBeats);
-    }
+    forEachTabLane([&](auto& lane) { lane.setClipStartBeats(startBeats); });
 }
 
 void MidiDrawerComponent::setClipLengthBeats(double lengthBeats) {
     clipLengthBeats_ = lengthBeats;
     velocityLane_->setClipLengthBeats(lengthBeats);
-    for (auto& tab : ccTabs_) {
-        if (tab.ccLane)
-            tab.ccLane->setClipLengthBeats(lengthBeats);
-    }
+    forEachTabLane([&](auto& lane) { lane.setClipLengthBeats(lengthBeats); });
 }
 
 void MidiDrawerComponent::setLoopRegion(double offsetBeats, double lengthBeats, bool enabled) {
@@ -198,20 +195,14 @@ void MidiDrawerComponent::setLoopRegion(double offsetBeats, double lengthBeats, 
     loopLengthBeats_ = lengthBeats;
     loopEnabled_ = enabled;
     velocityLane_->setLoopRegion(offsetBeats, lengthBeats, enabled);
-    for (auto& tab : ccTabs_) {
-        if (tab.ccLane)
-            tab.ccLane->setLoopRegion(offsetBeats, lengthBeats, enabled);
-    }
+    forEachTabLane([&](auto& lane) { lane.setLoopRegion(offsetBeats, lengthBeats, enabled); });
 }
 
 void MidiDrawerComponent::refreshAll() {
     velocityLane_->refreshNotes();
     for (auto& lane : expressionLanes_)
         lane->refreshNotes();
-    for (auto& tab : ccTabs_) {
-        if (tab.ccLane)
-            tab.ccLane->refreshEvents();
-    }
+    forEachTabLane([&](auto& lane) { lane.refreshEvents(); });
 }
 
 // ============================================================================
@@ -252,12 +243,12 @@ void MidiDrawerComponent::resized() {
     }
 
     for (size_t i = 0; i < ccTabs_.size(); ++i) {
-        if (!ccTabs_[i].ccLane)
+        auto* lane = ccTabs_[i].component();
+        if (lane == nullptr)
             continue;
-        ccTabs_[i].ccLane->setVisible(showsCcLanes());
+        lane->setVisible(showsCcLanes());
         if (showsCcLanes())
-            ccTabs_[i].ccLane->setBounds(
-                getLaneRowBounds(static_cast<int>(i)).withTrimmedLeft(leftMargin_));
+            lane->setBounds(getLaneRowBounds(static_cast<int>(i)).withTrimmedLeft(leftMargin_));
     }
 
     updatePbRangeVisibility();
@@ -432,16 +423,15 @@ void MidiDrawerComponent::mouseDown(const juce::MouseEvent& e) {
 // Lane management
 // ============================================================================
 
-void MidiDrawerComponent::syncSettingsToCCLane(CCLaneComponent* lane) {
-    lane->setClip(clipId_);
-    lane->setPixelsPerBeat(pixelsPerBeat_);
-    lane->setScrollOffset(scrollOffsetX_);
-    lane->setLeftPadding(leftPadding_);
-    lane->setRelativeMode(relativeMode_);
-    lane->setClipStartBeats(clipStartBeats_);
-    lane->setClipLengthBeats(clipLengthBeats_);
-    lane->setLoopRegion(loopOffsetBeats_, loopLengthBeats_, loopEnabled_);
-    // Undo commands are handled internally by CCLaneComponent (CurveEditorBase subclass)
+template <typename Lane> void MidiDrawerComponent::syncLaneSettings(Lane& lane) {
+    lane.setClip(clipId_);
+    lane.setPixelsPerBeat(pixelsPerBeat_);
+    lane.setScrollOffset(scrollOffsetX_);
+    lane.setLeftPadding(leftPadding_);
+    lane.setRelativeMode(relativeMode_);
+    lane.setClipStartBeats(clipStartBeats_);
+    lane.setClipLengthBeats(clipLengthBeats_);
+    lane.setLoopRegion(loopOffsetBeats_, loopLengthBeats_, loopEnabled_);
 }
 
 void MidiDrawerComponent::growDrawerForLanes() {
@@ -466,15 +456,8 @@ void MidiDrawerComponent::addCCTab(int ccNumber) {
     tab.ccLane->setCCNumber(ccNumber);
     tab.ccLane->setIsPitchBend(false);
     tab.name = tab.ccLane->getLaneName();
-
-    syncSettingsToCCLane(tab.ccLane.get());
-    addAndMakeVisible(tab.ccLane.get());
-
-    ccTabs_.push_back(std::move(tab));
-    setLaneMode(LaneMode::CC);
-    growDrawerForLanes();
-    if (onLanesChanged)
-        onLanesChanged();
+    syncLaneSettings(*tab.ccLane);
+    addTab(std::move(tab));
 }
 
 void MidiDrawerComponent::addPitchBendTab() {
@@ -490,10 +473,23 @@ void MidiDrawerComponent::addPitchBendTab() {
     tab.ccLane = std::make_unique<CCLaneComponent>();
     tab.ccLane->setIsPitchBend(true);
     tab.name = "Pitch";
+    syncLaneSettings(*tab.ccLane);
+    addTab(std::move(tab));
+}
 
-    syncSettingsToCCLane(tab.ccLane.get());
-    addAndMakeVisible(tab.ccLane.get());
+void MidiDrawerComponent::addProgramChangeTab() {
+    if (std::ranges::any_of(ccTabs_, [](const TabInfo& tab) { return tab.programLane != nullptr; }))
+        return;
 
+    TabInfo tab;
+    tab.programLane = std::make_unique<ProgramChangeLaneComponent>();
+    tab.name = tab.programLane->getLaneName();
+    syncLaneSettings(*tab.programLane);
+    addTab(std::move(tab));
+}
+
+void MidiDrawerComponent::addTab(TabInfo tab) {
+    addAndMakeVisible(tab.component());
     ccTabs_.push_back(std::move(tab));
     setLaneMode(LaneMode::CC);
     growDrawerForLanes();
@@ -505,7 +501,7 @@ void MidiDrawerComponent::removeTab(int ccIdx) {
     if (ccIdx < 0 || ccIdx >= static_cast<int>(ccTabs_.size()))
         return;
 
-    removeChildComponent(ccTabs_[static_cast<size_t>(ccIdx)].ccLane.get());
+    removeChildComponent(ccTabs_[static_cast<size_t>(ccIdx)].component());
     ccTabs_.erase(ccTabs_.begin() + ccIdx);
 
     resized();
@@ -545,6 +541,7 @@ void MidiDrawerComponent::updatePbRangeVisibility() {
 void MidiDrawerComponent::showAddLaneMenu() {
     juce::PopupMenu menu;
     menu.addItem(1, "Pitchbend");
+    menu.addItem(6, "Program Change");
     menu.addSeparator();
     menu.addItem(2, "CC 1 (Mod Wheel)");
     menu.addItem(3, "CC 7 (Volume)");
@@ -569,6 +566,9 @@ void MidiDrawerComponent::showAddLaneMenu() {
                 break;
             case 5:
                 addCCTab(64);
+                break;
+            case 6:
+                addProgramChangeTab();
                 break;
             case 100: {
                 // Show dialog for custom CC number

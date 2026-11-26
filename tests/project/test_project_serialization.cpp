@@ -3973,6 +3973,8 @@ TEST_CASE("Expressive MIDI events and stable ids roundtrip", "[project][serializ
 
     clip.midiChannelPressureData.push_back({80, 2.5, 4});
     clip.midiPolyAftertouchData.push_back({60, 70, 3.0, 5});
+    clip.midiProgramChangeData.push_back({12, 1, 3, 3.5, 6});
+    clip.midiProgramChangeData.push_back({7, -1, -1, 0.0, 7});
     clip.midi().nextEventId = 8;
 
     ClipManager::getInstance().restoreClip(clip);
@@ -4012,7 +4014,33 @@ TEST_CASE("Expressive MIDI events and stable ids roundtrip", "[project][serializ
     REQUIRE(loaded->midiChannelPressureData == std::vector<MidiChannelPressureData>{{80, 2.5, 4}});
     REQUIRE(loaded->midiPolyAftertouchData ==
             std::vector<MidiPolyAftertouchData>{{60, 70, 3.0, 5}});
+    REQUIRE(loaded->midiProgramChangeData ==
+            std::vector<MidiProgramChangeData>{{12, 1, 3, 3.5, 6}, {7, -1, -1, 0.0, 7}});
     REQUIRE(loaded->midi().nextEventId == 8);
+}
+
+TEST_CASE("A MIDI take keeps its program changes through a save",
+          "[project][serialization][3412]") {
+    ClipInfo clip;
+    clip.id = 4;
+    clip.trackId = 1;
+    clip.setMidiContent();
+    clip.setPlacementBeats(0.0, 4.0);
+
+    MidiTake first;
+    first.programChanges.push_back({3, 0, -1, 1.0, 1});
+    MidiTake second;
+    clip.midi().takes = {first, second};
+    clip.midi().currentTakeIndex = 1;
+
+    ClipInfo loaded;
+    const bool decoded =
+        ProjectSerializer::deserializeClipInfo(ProjectSerializer::serializeClipInfo(clip), loaded);
+    INFO(ProjectSerializer::getLastError());
+    REQUIRE(decoded);
+    REQUIRE(loaded.midi().takes.size() == 2);
+    CHECK(loaded.midi().takes[0].programChanges == first.programChanges);
+    CHECK(loaded.midi().takes[1].programChanges.empty());
 }
 
 TEST_CASE("RackInfo panel UI state roundtrip", "[project][serialization][rack][ui_state]") {

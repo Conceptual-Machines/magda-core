@@ -34,6 +34,7 @@ target_sources(magda_daw PRIVATE
     ChordProgressionConverter.cpp
     SessionLaunchService.cpp
     MidiChordMarkers.cpp
+    MidiFileReader.cpp
     MidiFileWriter.cpp
     SelectionManager.cpp
     PasteTargetResolver.cpp
@@ -123,6 +124,7 @@ target_sources(magda_daw PRIVATE
     ClipBatchEdit.hpp
     ClipManager.hpp
     SessionLaunchService.hpp
+    MidiFileReader.hpp
     MidiFileWriter.hpp
     SelectionManager.hpp
     PasteTargetResolver.hpp
