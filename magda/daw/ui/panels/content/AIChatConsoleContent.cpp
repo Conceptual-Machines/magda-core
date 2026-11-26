@@ -73,8 +73,9 @@ juce::String formatClipAsDrummerContext(magda::ClipId clipId);
 juce::String formatSelectedClipsAsDrummerContext();
 
 /// A client that can carry tool calls for the console's provider, or nullptr.
-std::unique_ptr<::llm::LLMClient> toolCallingClient() {
-    const auto llmConfig = magda::Config::getInstance().getAgentLLMConfig(magda::role::COMMAND);
+std::unique_ptr<::llm::LLMClient> toolCallingClient(
+    const magda::Config::AgentLLMConfig& llmConfig =
+        magda::Config::getInstance().getAgentLLMConfig(magda::role::COMMAND)) {
     // The on-device command model is an intent tagger, and the embedded llama client refuses
     // any request that carries tools; neither can run the loop.
     if (llmConfig.provider == magda::provider::FAST_INFERENCE ||
@@ -185,17 +186,15 @@ std::optional<std::string> runUserAgent(const std::string& message,
             return "Error: " + handle + " did not load. " + failed->error.toStdString();
         return std::nullopt;
     }
-    if (!magda::agent::isUserAgentEnabled(*agent))
-        return "Error: " + handle +
-               " is not enabled. Turn it on in Settings > AI > Assistant, under Agents.";
-
     auto* host = magda::remote::activeHost();
     if (host == nullptr)
         return "Error: " + handle + " cannot run: the remote API is not running.";
-    auto client = toolCallingClient();
+    auto client =
+        toolCallingClient(magda::Config::getInstance().getAgentLLMConfig(magda::role::CUSTOM));
     if (client == nullptr)
         return "Error: " + handle +
-               " needs a provider that calls tools. Choose one in Settings > AI.";
+               " needs a model that calls tools. Choose one for Custom agents in Settings > AI > "
+               "Assistant.";
 
     magda::agent::RemoteAgentToolExecutor executor(host->service(), juce::String(handle),
                                                    agent->tools);

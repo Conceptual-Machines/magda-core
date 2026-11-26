@@ -1043,18 +1043,6 @@ class Config {
         agentsDir = d;
     }
 
-    /** Enabled user agents, alias to the fingerprint of the files the user enabled. */
-    const std::map<std::string, std::string>& getEnabledUserAgents() const {
-        return enabledUserAgents;
-    }
-    void setUserAgentEnabled(const std::string& alias, const std::string& fingerprint,
-                             bool enabled) {
-        if (enabled)
-            enabledUserAgents[alias] = fingerprint;
-        else
-            enabledUserAgents.erase(alias);
-    }
-
     double getRenderSampleRate() const {
         return renderSampleRate;
     }
@@ -1141,7 +1129,7 @@ class Config {
         // Faust and Chord were split out of the Music workload after per-agent
         // configs shipped. Keep pre-migration/in-memory configurations working
         // even before they are saved again with the new explicit keys.
-        if (agentRole == "faust" || agentRole == "chord") {
+        if (agentRole == "faust" || agentRole == "chord" || agentRole == "custom") {
             if (auto music = agentInferenceConfigs.find("music");
                 music != agentInferenceConfigs.end())
                 return music->second;
@@ -1931,7 +1919,6 @@ class Config {
     std::string dataDir;     // userApplicationDataDirectory/MAGDA/
     std::string presetsDir;  // userDocumentsDirectory/MAGDA/Presets/
     std::string agentsDir;   // userDocumentsDirectory/MAGDA/Agents/
-    std::map<std::string, std::string> enabledUserAgents;
 
     // Render settings
     std::string renderFolder;  // Custom render output folder (empty = renders/ beside source)
@@ -1967,6 +1954,7 @@ class Config {
         {"chord", {"llm", {"llama_local", "", "", ""}}},
         {"controller", {"llm", {"llama_local", "", "", ""}}},
         {"theme", {"llm", {"llama_local", "", "", ""}}},
+        {"custom", {"llm", {"llama_local", "", "", ""}}},
     };
     std::map<std::string, std::string> aiCredentials;  // provider → API key
     std::string localLlamaUrl = "http://127.0.0.1:8080/v1";

@@ -7,20 +7,15 @@
 
 #include <algorithm>
 #include <array>
-#include <map>
-#include <optional>
 #include <ranges>
 #include <utility>
 
-#include "../../../../agents/agent_tool_bridge.hpp"
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../../agents/llm_config_utils.hpp"
 #include "../../../../agents/llm_presets.hpp"
 #include "../../../../agents/model_downloader.hpp"
 #include "../../../../agents/openai_url.hpp"
 #include "../../../../agents/speech_transcriber.hpp"
-#include "../../../../agents/user_agents.hpp"
-#include "../../../api/remote_scopes.hpp"
 #include "../../../core/AppPaths.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/StringTable.hpp"
@@ -1189,7 +1184,7 @@ class AISettingsPages::ConfigPage : public juce::Component {
         daw::ui::SettingsLookAndFeel::markSectionHeader(mcpSectionLabel_);
         addAndMakeVisible(mcpSectionLabel_);
 
-        faustTitle_.setText("Faust DSP", juce::dontSendNotification);
+        faustTitle_.setText("Faust MCP", juce::dontSendNotification);
         styleLabel(faustTitle_, 13.0f);
         addAndMakeVisible(faustTitle_);
         addAndMakeVisible(faustMcpToggle_);
@@ -1229,13 +1224,14 @@ class AISettingsPages::ConfigPage : public juce::Component {
                                      ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         addAndMakeVisible(advancedHintLabel_);
 
-        static constexpr std::array<std::pair<const char*, const char*>, 6> kRoles = {{
+        static constexpr std::array<std::pair<const char*, const char*>, 7> kRoles = {{
             {magda::role::COMMAND, "Command"},
             {magda::role::MUSIC, "Music"},
             {magda::role::FAUST, "Faust"},
             {magda::role::CHORD, "Chord"},
             {magda::role::CONTROLLER, "Controller"},
             {magda::role::THEME, "Theme"},
+            {magda::role::CUSTOM, "Custom agents"},
         }};
         advancedHintLabel_.setText("Each agent uses its own provider and model. Providers come "
                                    "from the Providers and Local models tabs.",
@@ -1257,7 +1253,14 @@ class AISettingsPages::ConfigPage : public juce::Component {
             addAndMakeVisible(r.modelCombo);
         }
 
-        setupAgentsSection();
+        customAgentsNote_.setText("Agents you write in the Agents folder, set in Paths. Call one "
+                                  "in the AI console with @ and its alias.",
+                                  juce::dontSendNotification);
+        customAgentsNote_.setFont(FontManager::getInstance().getUIFont(11.5f));
+        customAgentsNote_.setColour(juce::Label::textColourId,
+                                    ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        customAgentsNote_.setBorderSize({});
+        addAndMakeVisible(customAgentsNote_);
         updateSetupUI();
     }
 
@@ -1292,7 +1295,6 @@ class AISettingsPages::ConfigPage : public juce::Component {
         faustMcpHint_.setBounds(hintRow.removeFromLeft(juce::jmin(hintW, hintRow.getWidth() - 80)));
         nodeDownloadLink_.setBounds(hintRow.removeFromLeft(80));
 
-        layoutAgents(bounds);
         contentBottom_ = bounds.getY() + 8;
         refreshBadge();
     }
@@ -1341,7 +1343,7 @@ class AISettingsPages::ConfigPage : public juce::Component {
     }
 
     void layoutAdvanced(juce::Rectangle<int>& bounds) {
-        constexpr int nameW = 100;
+        constexpr int nameW = 110;
         constexpr int providerW = 160;
 
         advancedHintLabel_.setBounds(bounds.removeFromTop(28));
@@ -1352,6 +1354,7 @@ class AISettingsPages::ConfigPage : public juce::Component {
             row.removeFromLeft(8);
             r.modelCombo.setBounds(row.reduced(0, 5));
         }
+        customAgentsNote_.setBounds(bounds.removeFromTop(24).withTrimmedLeft(nameW));
     }
 
     static constexpr int kHeaderH = 30;
@@ -1485,12 +1488,14 @@ class AISettingsPages::ConfigPage : public juce::Component {
         const auto providerGroupId = rowProviderGroupId(row);
         row.modelCombo.clear(juce::dontSendNotification);
         if (providerGroupId == magda::provider::LLAMA_LOCAL) {
-            row.modelCombo.addItem("Embedded", 1);
+            // Custom agents call tools, which the embedded model refuses.
+            if (row.role != magda::role::CUSTOM)
+                row.modelCombo.addItem("Embedded", 1);
             row.modelCombo.addItem("Server", 2);
             if (row.role == magda::role::COMMAND)
                 row.modelCombo.addItem("Fast Inference (Command)", 3);
 
-            int selectedId = 1;
+            int selectedId = row.role == magda::role::CUSTOM ? 2 : 1;
             if (desiredProvider == magda::provider::LOCAL_SERVER)
                 selectedId = 2;
             else if (row.role == magda::role::COMMAND &&
@@ -1582,6 +1587,7 @@ class AISettingsPages::ConfigPage : public juce::Component {
         }
 
         advancedHintLabel_.setVisible(advanced);
+        customAgentsNote_.setVisible(advanced);
         for (auto& row : agentRows_) {
             row.nameLabel.setVisible(advanced);
             row.providerCombo.setVisible(advanced);
@@ -1598,7 +1604,6 @@ class AISettingsPages::ConfigPage : public juce::Component {
     // the Cloud page and refresh the local-server summary from the Local page's
     // live selection.
     void refreshOnShow() {
-        refreshAgents();
         refreshProviderCombos();
         refreshAgentProviderCombos();
         if (setupCombo_.getSelectedId() != 2 && modeCombo_.getSelectedId() == 1)
@@ -1607,10 +1612,6 @@ class AISettingsPages::ConfigPage : public juce::Component {
 
     void load(Config& config) {
         auto presetId = config.getAIPreset();
-
-        pendingAgentsDir_ = config.getAgentsDir();
-        enabledAgents_ = config.getEnabledUserAgents();
-        refreshAgents();
 
         // MCP toggle
         auto mcpServers = config.getMCPServers();
@@ -1742,7 +1743,6 @@ class AISettingsPages::ConfigPage : public juce::Component {
 
     void apply(Config& config) {
         applyMcp(config);
-        applyAgents(config);
         if (setupCombo_.getSelectedId() == 2)
             applyAdvanced(config);
         else
@@ -1750,165 +1750,6 @@ class AISettingsPages::ConfigPage : public juce::Component {
     }
 
   private:
-    /// One agent folder: its name and alias, and its tools or why it did not load.
-    struct AgentEntry {
-        std::optional<agent::UserAgent> agent;
-        juce::Label title;
-        juce::Label hint;
-        juce::ToggleButton toggle;
-    };
-
-    void setupAgentsSection() {
-        agentsHeader_.setText("Agents", juce::dontSendNotification);
-        daw::ui::SettingsLookAndFeel::markSectionHeader(agentsHeader_);
-        addAndMakeVisible(agentsHeader_);
-
-        agentsHint_.setText("Agents you write, one folder each with agent.json and prompt.md. "
-                            "Call one in the AI console with @ and its alias. They use the "
-                            "Command agent's provider.",
-                            juce::dontSendNotification);
-        styleHint(agentsHint_, ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-        addAndMakeVisible(agentsHint_);
-
-        agentsFolderTitle_.setText("Folder", juce::dontSendNotification);
-        styleLabel(agentsFolderTitle_, 13.0f);
-        addAndMakeVisible(agentsFolderTitle_);
-
-        agentsFolderValue_.setFont(FontManager::getInstance().getMonoFont(12.0f));
-        agentsFolderValue_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-        addAndMakeVisible(agentsFolderValue_);
-
-        agentsBrowse_.setButtonText("Choose...");
-        agentsBrowse_.onClick = [this] { chooseAgentsFolder(); };
-        addAndMakeVisible(agentsBrowse_);
-
-        agentsReset_.setButtonText("Reset");
-        agentsReset_.onClick = [this] {
-            pendingAgentsDir_.clear();
-            refreshAgents();
-        };
-        addAndMakeVisible(agentsReset_);
-
-        agentsEmpty_.setText("No agents in this folder.", juce::dontSendNotification);
-        styleHint(agentsEmpty_, ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-        addChildComponent(agentsEmpty_);
-    }
-
-    static void styleHint(juce::Label& label, juce::Colour colour) {
-        label.setFont(FontManager::getInstance().getUIFont(11.5f));
-        label.setColour(juce::Label::textColourId, colour);
-        label.setBorderSize({});
-        label.setMinimumHorizontalScale(1.0f);
-    }
-
-    void layoutAgents(juce::Rectangle<int>& bounds) {
-        bounds.removeFromTop(22);
-        agentsHeader_.setBounds(bounds.removeFromTop(kHeaderH));
-        agentsHint_.setBounds(bounds.removeFromTop(24));
-
-        auto folderRow = takeRow(bounds);
-        agentsReset_.setBounds(folderRow.removeFromRight(70).withSizeKeepingCentre(70, 26));
-        folderRow.removeFromRight(6);
-        agentsBrowse_.setBounds(folderRow.removeFromRight(100).withSizeKeepingCentre(100, 26));
-        folderRow.removeFromRight(10);
-        agentsFolderTitle_.setBounds(folderRow.removeFromLeft(110));
-        agentsFolderValue_.setBounds(folderRow);
-
-        if (agentEntries_.empty())
-            agentsEmpty_.setBounds(takeRow(bounds));
-        for (auto& entry : agentEntries_) {
-            auto row = takeRow(bounds, 52);
-            if (entry->toggle.isVisible()) {
-                entry->toggle.setBounds(row.removeFromRight(36).withSizeKeepingCentre(36, 22));
-                row.removeFromRight(10);
-            }
-            entry->title.setBounds(row.removeFromTop(26).withTrimmedTop(6));
-            entry->hint.setBounds(row.removeFromTop(18));
-        }
-    }
-
-    /// Re-read the folder, so an agent added or edited outside MAGDA shows without a restart.
-    void refreshAgents() {
-        const auto folder = paths::agentsDirFor(pendingAgentsDir_);
-        const bool fromEnv = paths::agentsDirOverriddenByEnv();
-        agentsFolderValue_.setText(folder.getFullPathName() +
-                                       (fromEnv ? "  (set by MAGDA_AGENTS_DIR)" : ""),
-                                   juce::dontSendNotification);
-        agentsBrowse_.setEnabled(!fromEnv);
-        agentsReset_.setEnabled(!fromEnv && !pendingAgentsDir_.empty());
-
-        agentEntries_.clear();
-        for (auto& load : agent::loadUserAgents(folder)) {
-            auto entry = std::make_unique<AgentEntry>();
-            styleLabel(entry->title, 13.0f);
-            if (load.agent) {
-                const auto& agent = *load.agent;
-                const auto granted = enabledAgents_.find(agent.alias.toStdString());
-                const bool enabled = granted != enabledAgents_.end() &&
-                                     granted->second == agent.fingerprint.toStdString();
-                const bool changed = granted != enabledAgents_.end() && !enabled;
-
-                entry->title.setText(agent.name + "  @" + agent.alias, juce::dontSendNotification);
-                juce::String hint = changed ? "Changed since it was enabled. " : "";
-                if (agent.description.isNotEmpty())
-                    hint += agent.description + " ";
-                hint += "Tools: " + juce::String(agent.tools.size()) + ". Access: " +
-                        remote::describeScopes(agent::agentScopesForOperations(agent.tools)) + ".";
-                entry->hint.setText(hint, juce::dontSendNotification);
-                juce::StringArray toolNames;
-                for (const auto& tool : agent.tools)
-                    toolNames.add(tool);
-                entry->hint.setTooltip(toolNames.joinIntoString(", "));
-                styleHint(entry->hint,
-                          ActiveTheme::getColour(changed ? ActiveTheme::STATUS_WARNING
-                                                         : ActiveTheme::TEXT_SECONDARY));
-                entry->toggle.setToggleState(enabled, juce::dontSendNotification);
-                addAndMakeVisible(entry->toggle);
-                entry->agent = agent;
-            } else {
-                entry->title.setText(load.folder.getFileName(), juce::dontSendNotification);
-                entry->hint.setText(load.error, juce::dontSendNotification);
-                styleHint(entry->hint, ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
-            }
-            addAndMakeVisible(entry->title);
-            addAndMakeVisible(entry->hint);
-            agentEntries_.push_back(std::move(entry));
-        }
-        agentsEmpty_.setVisible(agentEntries_.empty());
-
-        resized();
-        if (contentBottom_ > getHeight())
-            setSize(getWidth(), contentBottom_);
-    }
-
-    void chooseAgentsFolder() {
-        const auto current = paths::agentsDirFor(pendingAgentsDir_);
-        agentsChooser_ = std::make_unique<juce::FileChooser>(
-            "Choose the folder that holds your agents",
-            current.exists() ? current
-                             : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory));
-        const juce::Component::SafePointer<ConfigPage> self(this);
-        agentsChooser_->launchAsync(
-            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
-            [self](const juce::FileChooser& chooser) {
-                const auto picked = chooser.getResult();
-                if (self == nullptr || !picked.isDirectory())
-                    return;
-                self->pendingAgentsDir_ = picked.getFullPathName().toStdString();
-                self->refreshAgents();
-            });
-    }
-
-    void applyAgents(Config& config) const {
-        if (!paths::agentsDirOverriddenByEnv())
-            config.setAgentsDir(pendingAgentsDir_);
-        for (const auto& entry : agentEntries_)
-            if (entry->agent)
-                config.setUserAgentEnabled(entry->agent->alias.toStdString(),
-                                           entry->agent->fingerprint.toStdString(),
-                                           entry->toggle.getToggleState());
-    }
-
     void applyMcp(Config& config) {
         auto mcpServers = config.getMCPServers();
         bool wantFaustMcp = faustMcpToggle_.getToggleState();
@@ -2021,7 +1862,7 @@ class AISettingsPages::ConfigPage : public juce::Component {
         // tier. Local-server presets intentionally keep one shared model.
         if (auto it = out.find(magda::role::MUSIC); it != out.end())
             for (const auto* inheritedRole :
-                 {magda::role::FAUST, magda::role::CHORD, magda::role::THEME})
+                 {magda::role::FAUST, magda::role::CHORD, magda::role::THEME, magda::role::CUSTOM})
                 if (out.find(inheritedRole) == out.end())
                     out[inheritedRole] = it->second;
         return out;
@@ -2128,7 +1969,7 @@ class AISettingsPages::ConfigPage : public juce::Component {
 
     // Advanced per-agent grid (AgentRow defined near the top of the class).
     juce::Label advancedHintLabel_;
-    std::array<AgentRow, 6> agentRows_;
+    std::array<AgentRow, 7> agentRows_;
 
     // MCP Tools
     juce::Label mcpSectionLabel_;
@@ -2138,13 +1979,7 @@ class AISettingsPages::ConfigPage : public juce::Component {
     juce::Label faustMcpHint_;
     juce::HyperlinkButton nodeDownloadLink_;
 
-    // User agents (#3443). Folder and toggles stay pending until Apply.
-    juce::Label agentsHeader_, agentsHint_, agentsFolderTitle_, agentsFolderValue_, agentsEmpty_;
-    juce::TextButton agentsBrowse_, agentsReset_;
-    std::unique_ptr<juce::FileChooser> agentsChooser_;
-    std::vector<std::unique_ptr<AgentEntry>> agentEntries_;
-    std::string pendingAgentsDir_;
-    std::map<std::string, std::string> enabledAgents_;
+    juce::Label customAgentsNote_;
     int contentBottom_ = 0;
 
     juce::Label modelHeader_;

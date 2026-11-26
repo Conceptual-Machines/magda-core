@@ -107,6 +107,7 @@ inline constexpr const char* FAUST = "faust";
 inline constexpr const char* CHORD = "chord";
 inline constexpr const char* CONTROLLER = "controller";
 inline constexpr const char* THEME = "theme";
+inline constexpr const char* CUSTOM = "custom";  // user agents from the agents folder
 }  // namespace role
 
 // OpenAI models that must go through the Responses API (which also rejects

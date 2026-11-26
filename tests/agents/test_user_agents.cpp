@@ -4,7 +4,6 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/agents/user_agents.hpp"
-#include "magda/daw/core/Config.hpp"
 
 /// @file Reading user agent folders: what loads, and the field each refusal names (#3443).
 
@@ -71,7 +70,6 @@ TEST_CASE("A complete agent folder loads every field", "[agents][user-agents]") 
     CHECK(agent.runPolicy.maxSteps == 12);
     CHECK(agent.runPolicy.maxMutations == 6);
     CHECK(agent.prompt == "Level the vocal.");
-    CHECK(agent.fingerprint.length() == 64);
 }
 
 TEST_CASE("Optional agent fields take the surface defaults", "[agents][user-agents]") {
@@ -136,24 +134,6 @@ TEST_CASE("One alias is one agent, the first folder by name", "[agents][user-age
     CHECK(loads[1].error == R"(agent.json: alias: "level" is already used by a-original)");
     CHECK(findUserAgent(loads, "level") == &*loads[0].agent);
     CHECK(findFailedUserAgent(loads, "b-copy") == &loads[1]);
-}
-
-TEST_CASE("Editing an enabled agent turns it off", "[agents][user-agents]") {
-    AgentsDir dir;
-    const auto folder = dir.write("leveller", kMinimal);
-    const auto before = loadUserAgent(folder).agent.value();
-
-    auto& config = Config::getInstance();
-    config.setUserAgentEnabled("level", before.fingerprint.toStdString(), true);
-    CHECK(isUserAgentEnabled(before));
-
-    folder.getChildFile("prompt.md").replaceWithText("Level the vocal, and delete breaths.");
-    const auto after = loadUserAgent(folder).agent.value();
-    CHECK(after.fingerprint != before.fingerprint);
-    CHECK_FALSE(isUserAgentEnabled(after));
-
-    config.setUserAgentEnabled("level", {}, false);
-    CHECK_FALSE(isUserAgentEnabled(before));
 }
 
 TEST_CASE("A user agent runs with its own tools, budget and prompt", "[agents][user-agents]") {

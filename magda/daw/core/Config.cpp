@@ -265,12 +265,6 @@ juce::var Config::toVar() const {
     root->setProperty("dataDir", toJuceString(dataDir));
     root->setProperty("presetsDir", toJuceString(presetsDir));
     root->setProperty("agentsDir", toJuceString(agentsDir));
-    {
-        juce::DynamicObject::Ptr enabled(new juce::DynamicObject());
-        for (const auto& [alias, fingerprint] : enabledUserAgents)
-            enabled->setProperty(juce::Identifier(toJuceString(alias)), toJuceString(fingerprint));
-        root->setProperty("enabledUserAgents", juce::var(enabled.get()));
-    }
 
     // Render
     root->setProperty("renderFolder", toJuceString(renderFolder));
@@ -744,11 +738,6 @@ void Config::fromVar(const juce::var& parsed) {
     dataDir = getString("dataDir", dataDir);
     presetsDir = getString("presetsDir", presetsDir);
     agentsDir = getString("agentsDir", agentsDir);
-    enabledUserAgents.clear();
-    if (auto* enabled = obj->getProperty("enabledUserAgents").getDynamicObject())
-        for (const auto& property : enabled->getProperties())
-            enabledUserAgents[property.name.toString().toStdString()] =
-                property.value.toString().toStdString();
     renderFolder = getString("renderFolder", renderFolder);
     renderSampleRate = getDouble("renderSampleRate", renderSampleRate);
     renderBitDepth = getInt("renderBitDepth", renderBitDepth);
@@ -788,6 +777,7 @@ void Config::fromVar(const juce::var& parsed) {
                 bool jsonHadFaust = false;
                 bool jsonHadChord = false;
                 bool jsonHadTheme = false;
+                bool jsonHadCustom = false;
 
                 for (const auto& prop : agentsObj->getProperties()) {
                     auto role = prop.name.toString().toStdString();
@@ -834,6 +824,8 @@ void Config::fromVar(const juce::var& parsed) {
                             jsonHadChord = true;
                         if (role == "theme")
                             jsonHadTheme = true;
+                        if (role == "custom")
+                            jsonHadCustom = true;
                     }
                 }
 
@@ -848,6 +840,8 @@ void Config::fromVar(const juce::var& parsed) {
                     agentInferenceConfigs["chord"] = agentInferenceConfigs["music"];
                 if (!jsonHadTheme && jsonHadMusic)
                     agentInferenceConfigs["theme"] = agentInferenceConfigs["music"];
+                if (!jsonHadCustom && jsonHadMusic)
+                    agentInferenceConfigs["custom"] = agentInferenceConfigs["music"];
             }
 
             // Local llama settings

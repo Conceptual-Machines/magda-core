@@ -3,15 +3,12 @@
 
 #include "user_agents.hpp"
 
-#include <juce_cryptography/juce_cryptography.h>
-
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <utility>
 
 #include "../daw/api/remote_api.hpp"
-#include "../daw/core/Config.hpp"
 #include "agent_tool_bridge.hpp"
 
 namespace magda::agent {
@@ -144,14 +141,6 @@ AgentRunPolicy parseBudget(const juce::var& value) {
     return policy;
 }
 
-juce::String fingerprintOf(const juce::String& manifest, const juce::String& prompt) {
-    juce::MemoryBlock bytes;
-    bytes.append(manifest.toRawUTF8(), manifest.getNumBytesAsUTF8());
-    bytes.append("\0", 1);
-    bytes.append(prompt.toRawUTF8(), prompt.getNumBytesAsUTF8());
-    return juce::SHA256(bytes).toHexString();
-}
-
 UserAgent parseAgent(const juce::File& folder) {
     const auto manifestFile = folder.getChildFile(kManifest);
     const auto promptFile = folder.getChildFile(kPrompt);
@@ -186,7 +175,6 @@ UserAgent parseAgent(const juce::File& folder) {
     agent.runPolicy = parseBudget(manifest["budget"]);
     agent.prompt = promptText.trim();
     agent.folder = folder;
-    agent.fingerprint = fingerprintOf(manifestText, promptText);
     return agent;
 }
 
@@ -238,18 +226,6 @@ const UserAgentLoad* findFailedUserAgent(const std::vector<UserAgentLoad>& loads
         if (!load.agent && load.folder.getFileName().toStdString() == alias)
             return &load;
     return nullptr;
-}
-
-bool isUserAgentEnabled(const UserAgent& agent) {
-    const auto& enabled = Config::getInstance().getEnabledUserAgents();
-    const auto found = enabled.find(agent.alias.toStdString());
-    return found != enabled.end() && found->second == agent.fingerprint.toStdString();
-}
-
-void setUserAgentEnabled(const UserAgent& agent, bool enabled) {
-    auto& config = Config::getInstance();
-    config.setUserAgentEnabled(agent.alias.toStdString(), agent.fingerprint.toStdString(), enabled);
-    config.save();
 }
 
 AgentDefinition toAgentDefinition(const UserAgent& agent) {

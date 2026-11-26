@@ -30,8 +30,6 @@ struct UserAgent {
     AgentOutputKind output = AgentOutputKind::ChangeSummary;
     AgentRunPolicy runPolicy;
     juce::File folder;
-    /// SHA-256 of both files. An enable grant holds for this exact content.
-    juce::String fingerprint;
 };
 
 /** @brief One folder's outcome: the agent, or why it did not load. */
@@ -58,10 +56,6 @@ const UserAgent* findUserAgent(const std::vector<UserAgentLoad>& loads, const st
 /** @brief The folder with @p alias that failed to load, or nullptr. */
 const UserAgentLoad* findFailedUserAgent(const std::vector<UserAgentLoad>& loads,
                                          const std::string& alias);
-
-/** @brief True when the user enabled exactly these files; an edit turns the agent off. */
-bool isUserAgentEnabled(const UserAgent& agent);
-void setUserAgentEnabled(const UserAgent& agent, bool enabled);
 
 /** @brief The runtime definition: the prompt, the resolved tools and the budget. */
 AgentDefinition toAgentDefinition(const UserAgent& agent);
