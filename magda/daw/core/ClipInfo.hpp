@@ -194,6 +194,17 @@ struct MidiPolyAftertouchData {
     bool operator==(const MidiPolyAftertouchData&) const = default;
 };
 
+/** @brief One program change; a set bank is sent as CC 0 and CC 32 before it. */
+struct MidiProgramChangeData {
+    int program = 0;            // 0-127
+    int bankMsb = -1;           // 0-127, or -1 for no bank select
+    int bankLsb = -1;           // 0-127, or -1 for no bank select
+    double beatPosition = 0.0;  // Position in beats within clip
+    EventId id = INVALID_EVENT_ID;
+
+    bool operator==(const MidiProgramChangeData&) const = default;
+};
+
 /** The complete editable MIDI-event state of one clip. */
 struct MidiEventState {
     std::vector<MidiNote> notes;
@@ -201,6 +212,7 @@ struct MidiEventState {
     std::vector<MidiPitchBendData> pitchBend;
     std::vector<MidiChannelPressureData> channelPressure;
     std::vector<MidiPolyAftertouchData> polyAftertouch;
+    std::vector<MidiProgramChangeData> programChanges;
     EventId nextEventId = 1;
 
     bool operator==(const MidiEventState&) const = default;
@@ -936,6 +948,7 @@ struct MidiTake {
     std::vector<MidiPitchBendData> pitchBend;
     std::vector<MidiChannelPressureData> channelPressure;
     std::vector<MidiPolyAftertouchData> polyAftertouch;
+    std::vector<MidiProgramChangeData> programChanges;
 
     bool operator==(const MidiTake&) const = default;
 };
@@ -1083,6 +1096,7 @@ struct ClipInfo {
         midiPitchBendData = m.takes[static_cast<size_t>(idx)].pitchBend;
         midiChannelPressureData = m.takes[static_cast<size_t>(idx)].channelPressure;
         midiPolyAftertouchData = m.takes[static_cast<size_t>(idx)].polyAftertouch;
+        midiProgramChangeData = m.takes[static_cast<size_t>(idx)].programChanges;
         ensureMidiEventIds();
     }
 
@@ -1217,6 +1231,7 @@ struct ClipInfo {
     std::vector<MidiPitchBendData> midiPitchBendData;
     std::vector<MidiChannelPressureData> midiChannelPressureData;
     std::vector<MidiPolyAftertouchData> midiPolyAftertouchData;
+    std::vector<MidiProgramChangeData> midiProgramChangeData;
 
     MidiEventState midiEventState() const {
         MidiEventState state;
@@ -1225,6 +1240,7 @@ struct ClipInfo {
         state.pitchBend = midiPitchBendData;
         state.channelPressure = midiChannelPressureData;
         state.polyAftertouch = midiPolyAftertouchData;
+        state.programChanges = midiProgramChangeData;
         state.nextEventId = isMidi() ? midi().nextEventId : 1;
         return state;
     }
@@ -1237,6 +1253,7 @@ struct ClipInfo {
         midiPitchBendData = std::move(state.pitchBend);
         midiChannelPressureData = std::move(state.channelPressure);
         midiPolyAftertouchData = std::move(state.polyAftertouch);
+        midiProgramChangeData = std::move(state.programChanges);
         midi().nextEventId = state.nextEventId;
         ensureMidiEventIds();
     }
@@ -1257,6 +1274,7 @@ struct ClipInfo {
         observe(midiPitchBendData);
         observe(midiChannelPressureData);
         observe(midiPolyAftertouchData);
+        observe(midiProgramChangeData);
 
         // IDs only need to be unique in the active event set. A take mirrors
         // that set while it is active, so identical IDs in inactive takes are
@@ -1276,6 +1294,7 @@ struct ClipInfo {
         assign(midiPitchBendData);
         assign(midiChannelPressureData);
         assign(midiPolyAftertouchData);
+        assign(midiProgramChangeData);
 
         auto& model = midi();
         if (!model.compActive && !model.takes.empty()) {
@@ -1287,6 +1306,7 @@ struct ClipInfo {
             active.pitchBend = midiPitchBendData;
             active.channelPressure = midiChannelPressureData;
             active.polyAftertouch = midiPolyAftertouchData;
+            active.programChanges = midiProgramChangeData;
         }
     }
 
@@ -1471,6 +1491,7 @@ struct ClipInfo {
         midiPitchBendData = src.midiPitchBendData;
         midiChannelPressureData = src.midiChannelPressureData;
         midiPolyAftertouchData = src.midiPolyAftertouchData;
+        midiProgramChangeData = src.midiProgramChangeData;
         chordAnnotations = src.chordAnnotations;
         nextChordGroupId = src.nextChordGroupId;
         timeBend = src.timeBend;
@@ -1485,6 +1506,7 @@ struct ClipInfo {
             midiPitchBendData != src.midiPitchBendData ||
             midiChannelPressureData != src.midiChannelPressureData ||
             midiPolyAftertouchData != src.midiPolyAftertouchData ||
+            midiProgramChangeData != src.midiProgramChangeData ||
             chordAnnotations != src.chordAnnotations || nextChordGroupId != src.nextChordGroupId ||
             !(timeBend == src.timeBend)) {
             return false;

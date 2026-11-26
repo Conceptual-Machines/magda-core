@@ -17,6 +17,7 @@ namespace magda {
 class VelocityLaneComponent;
 class CCLaneComponent;
 class NoteExpressionLaneComponent;
+class ProgramChangeLaneComponent;
 class SvgButton;
 
 /**
@@ -114,7 +115,13 @@ class MidiDrawerComponent : public juce::Component {
         int ccNumber = -1;  // -1 for velocity, >=0 for CC
         bool isVelocity = false;
         std::unique_ptr<CCLaneComponent> ccLane;
+        std::unique_ptr<ProgramChangeLaneComponent> programLane;
+
+        juce::Component* component() const;
     };
+
+    /// Calls @p apply on every added lane, CC and program change alike.
+    template <typename Apply> void forEachTabLane(Apply&& apply);
 
     int leftMargin_ = 0;
 
@@ -162,6 +169,8 @@ class MidiDrawerComponent : public juce::Component {
     // Lane management
     void addCCTab(int ccNumber);
     void addPitchBendTab();
+    void addProgramChangeTab();
+    void addTab(TabInfo tab);
     void removeTab(int ccIdx);
     void growDrawerForLanes();
 
@@ -170,8 +179,8 @@ class MidiDrawerComponent : public juce::Component {
     bool isResizing_ = false;
     int resizeStartHeight_ = 0;
 
-    // Forward settings to a CC lane
-    void syncSettingsToCCLane(CCLaneComponent* lane);
+    /// Forward the drawer's clip, zoom and scroll to a newly added lane.
+    template <typename Lane> void syncLaneSettings(Lane& lane);
 
     void paintOverChildren(juce::Graphics& g) override;
 

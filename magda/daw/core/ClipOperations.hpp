@@ -1212,6 +1212,7 @@ class ClipOperations {
             };
             clip.midiChannelPressureData = flattenPoints(clip.midiChannelPressureData);
             clip.midiPolyAftertouchData = flattenPoints(clip.midiPolyAftertouchData);
+            clip.midiProgramChangeData = flattenPoints(clip.midiProgramChangeData);
 
             clip.loopEnabled = false;
             clip.loopLengthBeats = 0.0;
@@ -1285,6 +1286,7 @@ class ClipOperations {
             };
             clip.midiChannelPressureData = trimPoints(clip.midiChannelPressureData);
             clip.midiPolyAftertouchData = trimPoints(clip.midiPolyAftertouchData);
+            clip.midiProgramChangeData = trimPoints(clip.midiProgramChangeData);
 
             clip.midiTrimOffset = 0.0;
         }

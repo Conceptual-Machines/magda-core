@@ -127,16 +127,18 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
         // A native title bar stops the main window repainting on Windows while the
         // editor is open (#3150).
         setUsingNativeTitleBar(false);
-        setContentOwned(plugin.createEditorAndMakeActive(), true);
-        if (auto* editor = getContentComponent())
-            editor->addKeyListener(&shortcuts_);
-        setResizable(plugin.getActiveEditor() != nullptr && plugin.getActiveEditor()->isResizable(),
-                     false);
-        centreWithSize(getWidth(), getHeight());
-        setVisible(true);
+        // Window setup before the editor goes in: setResizable and, on Linux, setAlwaysOnTop
+        // recreate the native window, taking the plugin's attached child window with it (#3450).
+        auto* editor = plugin.createEditorAndMakeActive();
+        setResizable(editor != nullptr && editor->isResizable(), false);
         // Over MAGDA, so clicking back into the app does not bury it.
         if (editorFloatingWindowHook != nullptr)
             editorFloatingWindowHook(*this);
+        setContentOwned(editor, true);
+        if (editor != nullptr)
+            editor->addKeyListener(&shortcuts_);
+        centreWithSize(getWidth(), getHeight());
+        setVisible(true);
     }
 
     /// The editor goes while the plugin is still there to be told.

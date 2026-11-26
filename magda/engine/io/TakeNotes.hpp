@@ -33,6 +33,7 @@ enum class MidiKind : std::uint8_t {
     pitchBend,
     channelPressure,
     polyAftertouch,
+    programChange,
     unsupported
 };
 
@@ -55,6 +56,9 @@ constexpr MidiKind kindOf(std::uint8_t status, std::uint8_t data2) {
 
         case 0xa0U:
             return MidiKind::polyAftertouch;
+
+        case 0xc0U:
+            return MidiKind::programChange;
 
         case 0xd0U:
             return MidiKind::channelPressure;

@@ -57,7 +57,7 @@ struct RecordedMidiTake {
     /// bytes it carries.
     std::int64_t eventsLost = 0;
 
-    /// Events with no field in the model: program change and system messages.
+    /// Events with no field in the model: system messages.
     std::int64_t messagesDropped = 0;
 
     /// Pass ends that did not fit, which is two loop passes run together.

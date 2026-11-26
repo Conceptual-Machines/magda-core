@@ -1218,6 +1218,7 @@ void JoinClipsCommand::performAction() {
         left->midiPitchBendData = std::move(flattenedLeft.midiPitchBendData);
         left->midiChannelPressureData = std::move(flattenedLeft.midiChannelPressureData);
         left->midiPolyAftertouchData = std::move(flattenedLeft.midiPolyAftertouchData);
+        left->midiProgramChangeData = std::move(flattenedLeft.midiProgramChangeData);
 
         for (const auto& note : flattenedRight.midiNotes) {
             MidiNote adjustedNote = note;
@@ -1246,6 +1247,11 @@ void JoinClipsCommand::performAction() {
             auto adjusted = pressure;
             adjusted.beatPosition += beatOffset;
             left->midiPolyAftertouchData.push_back(adjusted);
+        }
+        for (const auto& change : flattenedRight.midiProgramChangeData) {
+            auto adjusted = change;
+            adjusted.beatPosition += beatOffset;
+            left->midiProgramChangeData.push_back(adjusted);
         }
 
         left->loopEnabled = false;
@@ -2735,6 +2741,7 @@ void FlattenClipStackCommand::execute() {
     std::vector<MidiPitchBendData> mergedPitchBend;
     std::vector<MidiChannelPressureData> mergedChannelPressure;
     std::vector<MidiPolyAftertouchData> mergedPolyAftertouch;
+    std::vector<MidiProgramChangeData> mergedProgramChanges;
 
     for (const auto& member : members) {
         // Unroll first: what a looped clip plays is its expanded note list, and
@@ -2787,6 +2794,14 @@ void FlattenClipStackCommand::execute() {
             moved.beatPosition = timelineBeat - mergedStart;
             mergedPolyAftertouch.push_back(moved);
         }
+        for (const auto& change : flattened.midiProgramChangeData) {
+            const double timelineBeat = flattened.placement.startBeat + change.beatPosition;
+            if (!playsAt(span, timelineBeat))
+                continue;
+            auto moved = change;
+            moved.beatPosition = timelineBeat - mergedStart;
+            mergedProgramChanges.push_back(moved);
+        }
     }
 
     std::sort(mergedNotes.begin(), mergedNotes.end(),
@@ -2810,6 +2825,7 @@ void FlattenClipStackCommand::execute() {
     target->midiPitchBendData = std::move(mergedPitchBend);
     target->midiChannelPressureData = std::move(mergedChannelPressure);
     target->midiPolyAftertouchData = std::move(mergedPolyAftertouch);
+    target->midiProgramChangeData = std::move(mergedProgramChanges);
     target->loopEnabled = false;
     target->midiOffset = 0.0;
     target->midiTrimOffset = 0.0;

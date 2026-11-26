@@ -21,6 +21,7 @@ constexpr std::uint8_t kNoteOn = 0x90;
 constexpr std::uint8_t kNoteOff = 0x80;
 constexpr std::uint8_t kPolyAftertouch = 0xa0;
 constexpr std::uint8_t kControlChange = 0xb0;
+constexpr std::uint8_t kProgramChange = 0xc0;
 constexpr std::uint8_t kChannelPressure = 0xd0;
 constexpr std::uint8_t kPitchWheel = 0xe0;
 
@@ -35,24 +36,26 @@ constexpr int kPitchWheelRest = mpe::kPitchWheelRest;
 constexpr int kMpeFirstMemberChannel = mpe::kFirstMemberChannel;
 constexpr int kMpeLastMemberChannel = mpe::kLastMemberChannel;
 
-/// Ordering at equal beats. Controllers before notes because a bank or program
-/// change has to land before the note it configures; offs before ons because two
-/// notes of one pitch meeting exactly is otherwise a coin toss between a
-/// retrigger and a hung note.
+/// Ordering at equal beats. Controllers, then program changes, before notes: a bank
+/// select has to precede its program, and both the note they configure; offs before
+/// ons because two notes of one pitch meeting exactly is otherwise a coin toss
+/// between a retrigger and a hung note.
 int rankOf(std::uint8_t status) {
     switch (status & 0xf0u) {
         case kControlChange:
             return 0;
-        case kChannelPressure:
+        case kProgramChange:
             return 1;
-        case kPitchWheel:
+        case kChannelPressure:
             return 2;
-        case kNoteOff:
+        case kPitchWheel:
             return 3;
-        case kPolyAftertouch:
-            return 5;  // after a note-on authored at the same beat
-        default:
+        case kNoteOff:
             return 4;
+        case kPolyAftertouch:
+            return 6;  // after a note-on authored at the same beat
+        default:
+            return 5;
     }
 }
 
@@ -489,6 +492,22 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
             -1});
     }
 
+    for (const auto& change : clip.midiProgramChangeData) {
+        const auto bankSelect = [&](std::uint8_t controller, int value) {
+            if (value >= 0)
+                pending.push_back(PendingEvent{
+                    MidiClipEvent{change.beatPosition, statusFor(kControlChange, 1), controller,
+                                  static_cast<std::uint8_t>(std::min(value, 127)), 0.0},
+                    -1});
+        };
+        bankSelect(0, change.bankMsb);
+        bankSelect(32, change.bankLsb);
+        pending.push_back(PendingEvent{
+            MidiClipEvent{change.beatPosition, statusFor(kProgramChange, 1),
+                          static_cast<std::uint8_t>(std::clamp(change.program, 0, 127)), 0, 0.0},
+            -1});
+    }
+
     // ---- Sort, then pair the notes up again ---------------------------------
 
     const auto beatThenRank = [](const PendingEvent& pendingEvent) {
@@ -505,7 +524,8 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
     for (std::size_t i = 0; i < list.events.size(); ++i) {
         const auto& event = list.events[i];
         const auto kind = event.kind();
-        if (kind != kControlChange && kind != kPitchWheel && kind != kChannelPressure)
+        if (kind != kControlChange && kind != kPitchWheel && kind != kChannelPressure &&
+            kind != kProgramChange)
             continue;
 
         // Channel pressure is indexed with the rest. It is per-channel state a
@@ -516,6 +536,7 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
         // start to avoid.
         const auto controller = kind == kPitchWheel        ? MidiControllerStream::kPitchBend
                                 : kind == kChannelPressure ? MidiControllerStream::kChannelPressure
+                                : kind == kProgramChange   ? MidiControllerStream::kProgram
                                                            : static_cast<int>(event.data1);
 
         const auto isThisStream = [&](const MidiControllerStream& stream) {

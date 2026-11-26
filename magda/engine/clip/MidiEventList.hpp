@@ -101,7 +101,7 @@ struct MidiControllerStream {
     /// 1 to 16.
     int channel = 1;
 
-    /// The controller number, or @ref kPitchBend, or @ref kChannelPressure.
+    /// The controller number, or @ref kPitchBend, @ref kChannelPressure or @ref kProgram.
     int controller = 0;
 
     /// Indices into MidiEventList::events, ascending.
@@ -115,6 +115,9 @@ struct MidiControllerStream {
     /// another note's pressure is the same staleness the compile takes care
     /// to avoid at a note's start.
     static constexpr int kChannelPressure = 257;
+
+    /// Program change, chased so a locate past one plays the program it chose.
+    static constexpr int kProgram = 258;
 };
 
 /** The authored poly-aftertouch history for one note/channel pair. */
@@ -159,9 +162,9 @@ struct MidiFoldPass {
  * @brief One MIDI clip's messages and the indexes over them.
  */
 struct MidiEventList {
-    /// Sorted by beat, and at equal beats by kind: controllers, channel pressure,
-    /// pitch bend, note-offs, note-ons, then poly aftertouch. Controllers first since a bank
-    /// or program change has to land before the note it configures; offs
+    /// Sorted by beat, and at equal beats by kind: controllers, program changes, channel
+    /// pressure, pitch bend, note-offs, note-ons, then poly aftertouch. A bank select and
+    /// its program change have to land before the note they configure; offs
     /// before ons since two notes of one pitch
     /// meeting exactly is otherwise a coin toss between a retrigger and a
     /// hung note.

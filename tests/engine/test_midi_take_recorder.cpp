@@ -1021,8 +1021,7 @@ TEST_CASE("A keyboard on one channel other than the first keeps its bend on the 
     CHECK(take.active.notes[1].pitchExpression.empty());
 }
 
-TEST_CASE("Pressure is recorded and unsupported messages are dropped where it can be said",
-          "[engine][io][record][midi][2462]") {
+TEST_CASE("Pressure and program changes are recorded", "[engine][io][record][midi][2462][3412]") {
     Rig rig(takeOf());
     rig.schedule({
         {kBeatSamples, juce::MidiMessage::programChange(1, 7)},
@@ -1035,8 +1034,12 @@ TEST_CASE("Pressure is recorded and unsupported messages are dropped where it ca
     rig.run(kBeatSamples * 2);
 
     const auto take = rig.finish();
-    CHECK(take.messagesDropped == 1);
+    CHECK(take.messagesDropped == 0);
 
+    REQUIRE(take.active.programChanges.size() == 1);
+    CHECK(take.active.programChanges[0].program == 7);
+    CHECK(take.active.programChanges[0].bankMsb == -1);
+    CHECK(take.active.programChanges[0].beatPosition == Catch::Approx(1.0));
     REQUIRE(take.active.channelPressure.size() == 1);
     CHECK(take.active.channelPressure[0].value == 64);
     CHECK(take.active.channelPressure[0].beatPosition == Catch::Approx(1.025));
@@ -1048,6 +1051,27 @@ TEST_CASE("Pressure is recorded and unsupported messages are dropped where it ca
     // What the model does hold is untouched by what it does not.
     CHECK(take.active.notes.size() == 1);
     CHECK(take.eventsLost == 0);
+}
+
+TEST_CASE("A bank select before a program change is recorded as its bank",
+          "[engine][io][record][midi][3412]") {
+    Rig rig(takeOf());
+    rig.schedule({
+        {kBeatSamples, juce::MidiMessage::controllerEvent(1, 7, 100)},
+        {kBeatSamples + 10, juce::MidiMessage::controllerEvent(1, 0, 2)},
+        {kBeatSamples + 20, juce::MidiMessage::controllerEvent(1, 32, 5)},
+        {kBeatSamples + 30, juce::MidiMessage::programChange(1, 40)},
+    });
+    rig.play();
+    rig.run(kBeatSamples * 2);
+
+    const auto take = rig.finish();
+    REQUIRE(take.active.programChanges.size() == 1);
+    CHECK(take.active.programChanges[0].program == 40);
+    CHECK(take.active.programChanges[0].bankMsb == 2);
+    CHECK(take.active.programChanges[0].bankLsb == 5);
+    REQUIRE(take.active.cc.size() == 1);
+    CHECK(take.active.cc[0].controller == 7);
 }
 
 TEST_CASE("A note off at zero velocity ends the note", "[engine][io][record][midi][2462]") {
