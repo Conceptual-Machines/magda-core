@@ -3788,6 +3788,26 @@ OperationRegistry::OperationRegistry() {
             "required":["clipIds"],"additionalProperties":false
         })json"),
         clipOrJobSchema());
+    add("clips.analyzeSpeech",
+        "Find the phrases, breaths and silences of a vocal audio clip, in timeline beats, with "
+        "each "
+        "phrase's loudness; runs as a job",
+        OperationAccess::Read, &handlers::clipsAnalyzeSpeech, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0},
+                "endBeat":{"type":"number","minimum":0},
+                "targetLoudness":{"type":"number","minimum":-70,"maximum":0},
+                "minSilenceSeconds":{"type":"number","minimum":0.02,"maximum":10},
+                "breathMinSeconds":{"type":"number","minimum":0.02,"maximum":5},
+                "breathMaxSeconds":{"type":"number","minimum":0.02,"maximum":5},
+                "paddingSeconds":{"type":"number","minimum":0,"maximum":1},
+                "thresholdDb":{"type":"number","minimum":-120,"maximum":0}
+            },
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        remoteJobSchema());
     add("clips.duplicate", "Duplicate a clip to an arrangement position or session slot",
         OperationAccess::Write, &handlers::clipsDuplicate, operationInputSchema(R"json({
             "type":"object",

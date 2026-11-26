@@ -97,6 +97,25 @@ juce::File writeSample(const juce::File& file, double seconds) {
     return file;
 }
 
+/// One second of silence, a second of a 220 Hz voice, then a second of silence.
+juce::File writeVoice(const juce::File& file) {
+    file.deleteFile();
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatWriter> writer(
+        wav.createWriterFor(new juce::FileOutputStream(file), 48000.0, 1, 24, {}, 0));
+    juce::AudioBuffer<float> buffer(1, 3 * 48000);
+    buffer.clear();
+    for (int i = 48000; i < 2 * 48000; ++i) {
+        const double phase = 2.0 * juce::MathConstants<double>::pi * 220.0 * i / 48000.0;
+        double value = 0.0;
+        for (int h = 1; h <= 20; ++h)
+            value += std::sin(h * phase) / h;
+        buffer.setSample(0, i, static_cast<float>(0.1 * value));
+    }
+    writer->writeFromAudioSampleBuffer(buffer, 0, buffer.getNumSamples());
+    return file;
+}
+
 /// Renders by writing a sample of the range's length, at once, so a render job finishes inline.
 class SampleWritingEngineJobs final : public EngineJobSource {
   public:
@@ -124,6 +143,12 @@ class SampleWritingEngineJobs final : public EngineJobSource {
     void cancelMasterCapture(const juce::String&) override {}
     MasterCaptureSnapshot masterCaptureStatus() const override {
         return {};
+    }
+    EngineJobStartStatus runFileTask(std::function<void()> work, std::shared_ptr<std::atomic_bool>,
+                                     std::function<void()> onComplete) override {
+        work();
+        onComplete();
+        return EngineJobStartStatus::Started;
     }
     void shutdown() override {}
 
@@ -1622,6 +1647,62 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             expect(UndoManager::getInstance().undo());
             expectEquals(clipsOnTrack(), 2);
             expect(ClipManager::getInstance().getClip(static_cast<ClipId>(leftId)) != nullptr);
+            dir.deleteRecursively();
+        }
+
+        beginTest("A vocal clip's phrases come back in timeline beats (#3444)");
+        {
+            Fixture fixture;
+            FlatTempoMap tempo(120.0);
+            fixture.api.setProjectTempoMap([&tempo] { return &tempo; });
+            fixture.service.setEngineJobSource(std::make_shared<SampleWritingEngineJobs>());
+            const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                 .getChildFile("magda-speech-analysis-test");
+            dir.createDirectory();
+            const auto sample = writeVoice(dir.getChildFile("voice.wav"));
+            const auto trackId = static_cast<int>(
+                fixture.run("tracks.create", object({{"name", "Voice"}, {"type", "audio"}}))
+                    .result["id"]);
+            const auto clipId = static_cast<int>(
+                fixture
+                    .run("clips.loadSample",
+                         object({{"samplePath", sample.getFullPathName()},
+                                 {"placement", arrangementDestination(trackId, 4.0)}}))
+                    .result["id"]);
+
+            auto owner = fullyGrantedContext();
+            owner.clientId = "speech-client";
+            // The voice plays from 1 s to 2 s of the file: beats 6 to 8 at 120 BPM.
+            const auto analysed =
+                fixture.run("clips.analyzeSpeech",
+                            object({{"clipId", clipId}, {"targetLoudness", -16.0}}), owner);
+            expect(analysed.ok, analysed.error.message);
+            expect(analysed.result["state"].toString() == "completed",
+                   analysed.result["state"].toString());
+            const auto* phrases = analysed.result["result"]["phrases"].getArray();
+            expect(phrases != nullptr && phrases->size() == 1,
+                   juce::JSON::toString(analysed.result["result"], true));
+            if (phrases != nullptr && phrases->size() == 1) {
+                const auto& phrase = phrases->getReference(0);
+                expectWithinAbsoluteError(static_cast<double>(phrase["startBeat"]), 6.0, 0.1);
+                expectWithinAbsoluteError(static_cast<double>(phrase["endBeat"]), 8.0, 0.1);
+                expectWithinAbsoluteError(static_cast<double>(phrase["gainToTargetDb"]),
+                                          -16.0 - static_cast<double>(phrase["loudness"]), 0.11);
+            }
+
+            const auto later = fixture.run("clips.analyzeSpeech",
+                                           object({{"clipId", clipId}, {"startBeat", 7.0}}), owner);
+            const auto* trimmed = later.result["result"]["phrases"].getArray();
+            expect(trimmed != nullptr && trimmed->size() == 1);
+            if (trimmed != nullptr && trimmed->size() == 1)
+                expectWithinAbsoluteError(
+                    static_cast<double>(trimmed->getReference(0)["startBeat"]), 7.0, 1e-6);
+
+            expect(fixture.run("clips.updateAudio", object({{"clipId", clipId}, {"looping", true}}))
+                       .ok);
+            const auto looped =
+                fixture.run("clips.analyzeSpeech", object({{"clipId", clipId}}), owner);
+            expect(!looped.ok && looped.error.code == ErrorCode::Conflict);
             dir.deleteRecursively();
         }
 

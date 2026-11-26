@@ -478,6 +478,7 @@ target_sources(magda_daw PRIVATE
     WaveformPeakCache.cpp
     analysis/MixAnalysisInput.cpp
     analysis/OfflineMixAnalysis.cpp
+    analysis/SpeechAnalysis.cpp
     MidiBridge.cpp
     midi/ActiveMidiInputs.cpp
     midi/ActiveMidiInputs.hpp

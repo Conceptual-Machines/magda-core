@@ -22,6 +22,7 @@ target_sources(magda_daw PRIVATE
     remote_batch.cpp
     remote_handlers.cpp
     remote_parameter_handlers.cpp
+    remote_speech_analysis.cpp
     remote_scopes.cpp
     remote_clients.cpp
     remote_audit.cpp

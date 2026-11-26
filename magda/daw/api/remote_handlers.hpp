@@ -109,6 +109,7 @@ HandlerResult clipsUpdateAudio(MagdaApi&, const juce::var&, const RequestContext
 HandlerResult clipsSetCrossfade(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsSplit(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsJoin(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult clipsAnalyzeSpeech(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsAddMidiNote(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsListMidiEvents(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsAddMidiEvents(MagdaApi&, const juce::var&, const RequestContext&);

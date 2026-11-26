@@ -113,6 +113,78 @@ class RenderWork final : public std::enable_shared_from_this<RenderWork> {
     bool delivered_ = false;
 };
 
+class FileTask final : public std::enable_shared_from_this<FileTask> {
+  public:
+    FileTask(std::function<void()> work, std::shared_ptr<std::atomic_bool> cancelled,
+             std::function<void()> onComplete, std::function<void(const FileTask*)> onReleased)
+        : work_(std::move(work)),
+          cancelled_(std::move(cancelled)),
+          onComplete_(std::move(onComplete)),
+          onReleased_(std::move(onReleased)) {}
+
+    ~FileTask() {
+        abandon();
+    }
+
+    void start() {
+        const auto self = shared_from_this();
+        worker_ = std::thread([self] {
+            self->work_();
+            const std::weak_ptr<FileTask> weak = self;
+            const auto deliver = [weak] {
+                if (const auto task = weak.lock())
+                    task->deliver();
+            };
+            if (juce::MessageManager::getInstanceWithoutCreating() == nullptr ||
+                !juce::MessageManager::callAsync(deliver))
+                deliver();
+        });
+    }
+
+    void abandon() {
+        if (cancelled_)
+            cancelled_->store(true, std::memory_order_release);
+        if (worker_.joinable()) {
+            if (worker_.get_id() == std::this_thread::get_id())
+                worker_.detach();
+            else
+                worker_.join();
+        }
+        const std::scoped_lock lock(mutex_);
+        delivered_ = true;
+        onComplete_ = {};
+        onReleased_ = {};
+    }
+
+  private:
+    void deliver() {
+        std::function<void()> complete;
+        std::function<void(const FileTask*)> released;
+        {
+            const std::scoped_lock lock(mutex_);
+            if (delivered_)
+                return;
+            delivered_ = true;
+            complete = std::move(onComplete_);
+            released = std::move(onReleased_);
+        }
+        if (worker_.joinable() && worker_.get_id() != std::this_thread::get_id())
+            worker_.join();
+        if (complete)
+            complete();
+        if (released)
+            released(this);
+    }
+
+    std::function<void()> work_;
+    std::shared_ptr<std::atomic_bool> cancelled_;
+    std::function<void()> onComplete_;
+    std::function<void(const FileTask*)> onReleased_;
+    std::thread worker_;
+    std::mutex mutex_;
+    bool delivered_ = false;
+};
+
 class LiveEngineJobSource final : public EngineJobSource,
                                   public std::enable_shared_from_this<LiveEngineJobSource> {
   public:
@@ -240,6 +312,29 @@ class LiveEngineJobSource final : public EngineJobSource,
         return engine_.captureRecentMaster(bars);
     }
 
+    EngineJobStartStatus runFileTask(std::function<void()> work,
+                                     std::shared_ptr<std::atomic_bool> cancelled,
+                                     std::function<void()> onComplete) override {
+        const std::scoped_lock lock(mutex_);
+        if (shutdown_)
+            return EngineJobStartStatus::Unavailable;
+        if (fileTasks_.size() >= kMaxFileTasks)
+            return EngineJobStartStatus::Busy;
+        const std::weak_ptr<LiveEngineJobSource> weak = shared_from_this();
+        auto task = std::make_shared<FileTask>(
+            std::move(work), std::move(cancelled), std::move(onComplete),
+            [weak](const FileTask* done) {
+                if (const auto source = weak.lock()) {
+                    const std::scoped_lock sourceLock(source->mutex_);
+                    std::erase_if(source->fileTasks_,
+                                  [done](const auto& task) { return task.get() == done; });
+                }
+            });
+        fileTasks_.push_back(task);
+        task->start();
+        return EngineJobStartStatus::Started;
+    }
+
     MasterCaptureSnapshot masterCaptureStatus() const override {
         const std::scoped_lock lock(mutex_);
         auto result = capture_;
@@ -252,12 +347,14 @@ class LiveEngineJobSource final : public EngineJobSource,
 
     void shutdown() override {
         std::shared_ptr<RenderWork> render;
+        std::vector<std::shared_ptr<FileTask>> fileTasks;
         {
             const std::scoped_lock lock(mutex_);
             if (shutdown_)
                 return;
             shutdown_ = true;
             render = render_;
+            fileTasks.swap(fileTasks_);
             if (capture_.active)
                 engine_.cancelMasterCapture();
             captureFile_.reset();
@@ -266,6 +363,8 @@ class LiveEngineJobSource final : public EngineJobSource,
         }
         if (render != nullptr)
             render->abandon();
+        for (const auto& task : fileTasks)
+            task->abandon();
         const std::scoped_lock lock(mutex_);
         render_.reset();
     }
@@ -273,7 +372,10 @@ class LiveEngineJobSource final : public EngineJobSource,
   private:
     AudioEngine& engine_;
     mutable std::mutex mutex_;
+    static constexpr std::size_t kMaxFileTasks = 4;
+
     std::shared_ptr<RenderWork> render_;
+    std::vector<std::shared_ptr<FileTask>> fileTasks_;
     std::shared_ptr<juce::TemporaryFile> captureFile_;
     MasterCaptureRequest captureRequest_;
     MasterCaptureSnapshot capture_;
