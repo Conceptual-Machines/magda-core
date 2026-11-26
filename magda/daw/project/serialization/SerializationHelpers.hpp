@@ -3,8 +3,12 @@
 
 #pragma once
 #include <juce_core/juce_core.h>
+#include <juce_graphics/juce_graphics.h>
 
 #include <type_traits>
+
+#include "../../core/ControlTarget.hpp"
+#include "JsonReader.hpp"
 
 namespace magda::ser {
 
@@ -39,37 +43,14 @@ void writeField(juce::DynamicObject* o, const char* k, E v) {
     o->setProperty(k, static_cast<int>(v));
 }
 
-// -- Read overloads -----------------------------------------------------------
-
-inline void readField(const juce::DynamicObject* o, const char* k, int& v) {
-    v = o->getProperty(k);
-}
-inline void readField(const juce::DynamicObject* o, const char* k, double& v) {
-    v = o->getProperty(k);
-}
-inline void readField(const juce::DynamicObject* o, const char* k, float& v) {
-    v = static_cast<float>(static_cast<double>(o->getProperty(k)));
-}
-inline void readField(const juce::DynamicObject* o, const char* k, bool& v) {
-    v = static_cast<bool>(o->getProperty(k));
-}
-inline void readField(const juce::DynamicObject* o, const char* k, juce::String& v) {
-    v = o->getProperty(k).toString();
-}
-
-inline void readField(const juce::DynamicObject* o, const char* k, juce::Colour& v) {
-    v = juce::Colour::fromString(o->getProperty(k).toString());
-}
-
-template <typename E>
-    requires std::is_enum_v<E>
-void readField(const juce::DynamicObject* o, const char* k, E& v) {
-    v = static_cast<E>(static_cast<int>(o->getProperty(k)));
-}
+/** @brief A macro or mod link's target, also what a pre-#1149 single `target` held. */
+void readControlTarget(const ObjectReader& in, ControlTarget& target);
 
 }  // namespace magda::ser
 
 // -- Macros (use inside serialize/deserialize functions) ----------------------
-// Expects local variables: `obj` (DynamicObject*) and `data` (the struct ref)
+// SER expects `obj` (DynamicObject*) and `data`; DESER and DESER_OPT expect `in`
+// (ser::ObjectReader) and `data`. DESER_OPT keeps the struct's default when absent.
 #define SER(field) magda::ser::writeField(obj, #field, data.field)
-#define DESER(field) magda::ser::readField(obj, #field, data.field)
+#define DESER(field) in.required(#field, data.field)
+#define DESER_OPT(field) in.optional(#field, data.field)

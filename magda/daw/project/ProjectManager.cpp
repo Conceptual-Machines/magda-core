@@ -63,6 +63,16 @@ static const char* const kProjectChangedWhileLoading =
 
 namespace {
 
+/** @brief Log why @p file failed to load and return what the user is told. Loading thread. */
+juce::String reportLoadFailure(const juce::File& file) {
+    juce::Logger::writeToLog("Failed to load project " + file.getFullPathName() + ": " +
+                             ProjectSerializer::getLastError());
+    if (ProjectSerializer::getLastLoadFailure() == ProjectLoadFailure::NewerSchema)
+        return "This project was saved with a newer version of MAGDA. Update MAGDA to open it.";
+    return "The project file could not be opened. It may be corrupted or from an "
+           "incompatible version.";
+}
+
 juce::File getWritableTempRoot() {
     auto envTmp = juce::SystemStats::getEnvironmentVariable("TMPDIR", {});
     if (envTmp.isNotEmpty()) {
@@ -631,9 +641,7 @@ bool ProjectManager::loadProject(const juce::File& file,
     // Stage first (file I/O + parse + validate)
     StagedProjectData staged;
     if (!ProjectSerializer::loadAndStage(fileToLoad, staged)) {
-        DBG("Failed to load project: " + ProjectSerializer::getLastError());
-        lastError_ = "The project file could not be opened. It may be corrupted or from an "
-                     "incompatible version.";
+        lastError_ = reportLoadFailure(fileToLoad);
         return false;
     }
 
@@ -847,11 +855,8 @@ void ProjectManager::loadProjectAsync(
             auto staged = std::make_shared<StagedProjectData>();
             bool ok = ProjectSerializer::loadAndStage(fileCopy, *staged, creationSettings);
             juce::String error;
-            if (!ok) {
-                DBG("Failed to load project: " + ProjectSerializer::getLastError());
-                error = "The project file could not be opened. It may be corrupted or from an "
-                        "incompatible version.";
-            }
+            if (!ok)
+                error = reportLoadFailure(fileCopy);
 
             // Bounce back to the message thread for commit + notification
             juce::MessageManager::callAsync([this, staged, ok, error, originalFile,
@@ -929,6 +934,7 @@ void ProjectManager::loadProjectAsyncControlled(
                                finish, startingRevision]() mutable {
         auto staged = std::make_shared<StagedProjectData>();
         if (!ProjectSerializer::loadAndStage(fileToLoad, *staged, creationSettings)) {
+            reportLoadFailure(fileToLoad);
             juce::MessageManager::callAsync([finish] {
                 finish({ControlledLoadStatus::Failed, false, {}});
             });
@@ -1723,6 +1729,7 @@ bool ProjectManager::recoverProject(const RecoveryEntry& entry,
                                     UnsavedChangesPolicy policy) {
     StagedProjectData staged;
     if (!ProjectSerializer::loadAndStage(entry.snapshot, staged)) {
+        reportLoadFailure(entry.snapshot);
         lastError_ = "The autosave could not be recovered. It has been kept so you can try again.";
         return false;
     }

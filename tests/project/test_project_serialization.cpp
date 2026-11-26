@@ -1431,28 +1431,28 @@ TEST_CASE("An older project's parameter selections are read as positions",
 
     // Written before #2638: the lists hold positions in the parameter array,
     // which still carries every slot at load.
-    auto json = std::make_unique<juce::DynamicObject>();
-    json->setProperty("id", 1);
-    json->setProperty("name", "Plugin");
-    json->setProperty("pluginId", "com.example.plugin");
-    json->setProperty("format", static_cast<int>(magda::PluginFormat::VST3));
-
-    juce::Array<juce::var> parameters;
+    DeviceInfo saved;
+    saved.name = "Plugin";
+    saved.pluginId = "com.example.plugin";
+    saved.format = magda::PluginFormat::VST3;
     for (int slot = 2; slot < 6; ++slot) {
-        auto param = std::make_unique<juce::DynamicObject>();
-        param->setProperty("paramIndex", slot);
-        param->setProperty("name", "P" + juce::String(slot));
-        param->setProperty("minValue", 0.0);
-        param->setProperty("maxValue", 1.0);
-        parameters.add(juce::var(param.release()));
+        magda::ParameterInfo param;
+        param.paramIndex = slot;
+        param.name = "P" + juce::String(slot);
+        saved.parameters.push_back(param);
     }
-    json->setProperty("parameters", juce::var(parameters));
-
+    auto savedJson = ProjectSerializer::serializeDeviceInfo(saved);
+    auto* json = savedJson.getDynamicObject();
+    for (const char* key :
+         {"visibleParameterSlots", "miniMixerParameterSlots", "aiSoundDesignerParameterSlots"})
+        json->removeProperty(key);
     json->setProperty("visibleParameters", juce::var(juce::Array<juce::var>{1, 3}));
     json->setProperty("miniMixerParameters", juce::var(juce::Array<juce::var>{0}));
 
     DeviceInfo restored;
-    REQUIRE(ProjectSerializer::deserializeDeviceInfo(juce::var(json.release()), restored));
+    const bool decoded = ProjectSerializer::deserializeDeviceInfo(savedJson, restored);
+    INFO(ProjectSerializer::getLastError());
+    REQUIRE(decoded);
 
     CHECK(restored.visibleParameters == std::vector<int>{3, 5});
     CHECK(restored.miniMixerParameters == std::vector<int>{2});
@@ -2097,7 +2097,7 @@ TEST_CASE("Clip serialization validates type and audio schema", "[project][seria
 
         ProjectInfo loaded;
         REQUIRE_FALSE(ProjectSerializer::deserializeProject(json, loaded));
-        REQUIRE(ProjectSerializer::getLastError().contains("Unknown clip type"));
+        REQUIRE(ProjectSerializer::getLastError() == "clips[0].type: unknown clip type 999");
     }
 
     SECTION("MIDI clip with audio payload is rejected") {
@@ -2113,7 +2113,8 @@ TEST_CASE("Clip serialization validates type and audio schema", "[project][seria
 
         ProjectInfo loaded;
         REQUIRE_FALSE(ProjectSerializer::deserializeProject(json, loaded));
-        REQUIRE(ProjectSerializer::getLastError().contains("MIDI clip contains audio source data"));
+        REQUIRE(ProjectSerializer::getLastError() ==
+                "clips[0].audio: a MIDI clip cannot hold audio");
     }
 
     SECTION("Legacy audioSource payload migrates to the audio model") {
@@ -2412,7 +2413,9 @@ TEST_CASE("Automation serialization reads legacy time-named beat properties",
     REQUIRE(rootObj != nullptr);
     rootObj->setProperty("automation", juce::var(automationObj));
 
-    REQUIRE(ProjectSerializer::deserializeProject(json, info));
+    const bool decoded = ProjectSerializer::deserializeProject(json, info);
+    INFO(ProjectSerializer::getLastError());
+    REQUIRE(decoded);
     const auto& restoredClips = AutomationManager::getInstance().getClips();
     REQUIRE(restoredClips.size() == 1);
     REQUIRE(restoredClips[0].startBeats == Approx(3.0));

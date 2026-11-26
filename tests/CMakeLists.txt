@@ -159,6 +159,7 @@ set(TEST_SOURCES
     midi/test_midi_clip_resize_left.cpp
     clips/test_looped_waveform_tile.cpp
     project/test_project_serialization.cpp
+    project/test_project_decode.cpp
     project/test_recovery_session.cpp
     project/test_track_chain_presets.cpp
     # Real projects and presets saved by released versions (#2079). Model-level:

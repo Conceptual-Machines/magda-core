@@ -12,6 +12,8 @@ target_sources(magda_daw PRIVATE
     serialization/TrackSerializer.cpp
     serialization/ClipSerializer.cpp
     serialization/AutomationModSerializer.cpp
+    serialization/JsonReader.cpp
+    serialization/ProjectMigration.cpp
     # Headers (listed for IDE visibility)
     ProjectInfo.hpp
     ProjectManager.hpp
@@ -22,4 +24,8 @@ target_sources(magda_daw PRIVATE
     serialization/DawProjectXmlAdapter.hpp
     serialization/DawProjectValidator.hpp
     serialization/DawProjectArchive.hpp
+    serialization/JsonReader.hpp
+    serialization/ProjectMigration.hpp
+    serialization/AudioEventWireNames.hpp
+    serialization/SerializationHelpers.hpp
 )

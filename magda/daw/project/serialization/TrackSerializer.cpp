@@ -9,93 +9,13 @@
 #include "../../core/DrumGridPads.hpp"
 #include "../../core/PluginCapabilities.hpp"
 #include "../../core/ViewModeState.hpp"
+#include "ProjectMigration.hpp"
 #include "ProjectSerializer.hpp"
 #include "SerializationHelpers.hpp"
 
 namespace magda {
 
 namespace {
-
-// Pre-0.16 projects stored the Utility device's Width parameter as a 0-2 M/S
-// multiplier; it is now 0-200 %. The old shape is unambiguous in the file
-// (maxValue 2 vs 200), so rescale in place - no version gate needed. The
-// plugin state chunk stores the normalized knob position, which is
-// scale-independent and needs no migration.
-void migrateUtilityWidthToPercent(DeviceInfo& device) {
-    constexpr int kUtilityWidthSlot = 2;  // MagdaUtilityCompiledPlugin::kWidthSlot
-    if (!device.pluginId.equalsIgnoreCase("magda_utility"))
-        return;
-
-    for (auto& param : device.parameters) {
-        if (param.paramIndex != kUtilityWidthSlot || param.maxValue > 2.001f)
-            continue;
-        param.currentValue *= 100.0f;
-        param.minValue = 0.0f;
-        param.maxValue = 200.0f;
-        param.defaultValue = 100.0f;
-        param.unit = technicalText(TechnicalTextToken::Percent);
-    }
-}
-
-// The Utility hides its slot gain fader, its own Gain param being the one gain. A project that
-// set the slot gain folds it into that param, or the trim would apply with nothing to show it.
-void foldUtilitySlotGainIntoGain(DeviceInfo& device) {
-    constexpr int kUtilityGainSlot = 0;  // devices::faust::Utility::kGainSlot
-    if (!device.pluginId.equalsIgnoreCase("magda_utility") || std::abs(device.gainDb) < 1.0e-4f)
-        return;
-
-    auto* gain = device.findParameterByIndex(kUtilityGainSlot);
-    if (gain == nullptr)
-        return;
-    gain->currentValue =
-        std::clamp(gain->currentValue + device.gainDb, gain->minValue, gain->maxValue);
-    device.gainDb = 0.0f;
-    device.gainValue = 1.0f;
-}
-
-/// The slot at @p position of @p device's parameter array, or -1.
-int slotAtPosition(const DeviceInfo& device, int position) {
-    if (position < 0 || position >= static_cast<int>(device.parameters.size()))
-        return -1;
-
-    return device.parameters[static_cast<std::size_t>(position)].paramIndex;
-}
-
-std::vector<int> readInts(const juce::DynamicObject& obj, const char* key) {
-    std::vector<int> values;
-    const auto var = obj.getProperty(key);
-    if (const auto* array = var.getArray())
-        for (const auto& value : *array)
-            values.push_back(static_cast<int>(value));
-
-    return values;
-}
-
-/**
- * @brief The three parameter selections, whichever way the project holds them.
- *
- * Slots from #2638 on. An older project holds positions, translated through
- * the saved array, which still carries every slot at load.
- */
-void readParameterSelections(const juce::DynamicObject& obj, DeviceInfo& device) {
-    const auto selection = [&obj, &device](const char* slotsKey, const char* positionsKey) {
-        auto slots = readInts(obj, slotsKey);
-        if (!slots.empty() || obj.hasProperty(slotsKey))
-            return slots;
-
-        std::vector<int> translated;
-        for (const auto position : readInts(obj, positionsKey))
-            if (const auto slot = slotAtPosition(device, position); slot >= 0)
-                translated.push_back(slot);
-
-        return translated;
-    };
-
-    device.visibleParameters = selection("visibleParameterSlots", "visibleParameters");
-    device.miniMixerParameters = selection("miniMixerParameterSlots", "miniMixerParameters");
-    device.aiSoundDesignerParameters =
-        selection("aiSoundDesignerParameterSlots", "aiSoundDesignerParameters");
-}
 
 void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
     const auto analysisOrderOf = [](const PostFxChainElement& element) {
@@ -255,227 +175,126 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
 }
 
 bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& outTrack) {
-    if (!json.isObject()) {
-        lastError_ = "Track data is not an object";
-        return false;
-    }
+    outTrack = {};
+    return ser::decodeDocument(json, "track", lastError_,
+                               [&outTrack](const ser::ObjectReader& in) { read(in, outTrack); });
+}
 
-    auto* obj = json.getDynamicObject();
+void ProjectSerializer::read(const ser::ObjectReader& in, TrackInfo& outTrack) {
+    in.required("id", outTrack.id);
+    if (int type = 0; in.required("type", type))
+        outTrack.type = trackTypeFromInt(type);
+    in.required("name", outTrack.name);
+    in.required("colour", outTrack.colour);
 
-    outTrack.id = obj->getProperty("id");
-    outTrack.type = trackTypeFromInt(static_cast<int>(obj->getProperty("type")));
-    outTrack.name = obj->getProperty("name").toString();
-    outTrack.colour = stringToColour(obj->getProperty("colour").toString());
+    in.required("parentId", outTrack.parentId);
+    in.readArray("childIds", outTrack.childIds);
 
-    // Hierarchy
-    outTrack.parentId = obj->getProperty("parentId");
-    auto childIdsVar = obj->getProperty("childIds");
-    if (childIdsVar.isArray()) {
-        auto* arr = childIdsVar.getArray();
-        for (const auto& idVar : *arr) {
-            outTrack.childIds.push_back(static_cast<int>(idVar));
-        }
-    }
+    in.required("volume", outTrack.volume);
+    in.required("pan", outTrack.pan);
+    // Absent before automation moved the fader: the fader is where it was left.
+    outTrack.manualVolume = outTrack.volume;
+    outTrack.manualPan = outTrack.pan;
+    in.optional("manualVolume", outTrack.manualVolume);
+    in.optional("manualPan", outTrack.manualPan);
+    in.required("muted", outTrack.muted);
+    in.required("soloed", outTrack.soloed);
+    in.required("recordArmed", outTrack.recordArmed);
+    in.optional("inputMonitor", outTrack.inputMonitor);
+    in.optional("frozen", outTrack.frozen);
+    in.optional("enabled", outTrack.enabled);
+    in.optional("playbackMode", outTrack.playbackMode);
+    in.optional("mixerChannelWidth", outTrack.mixerChannelWidth);
+    in.optional("mixerFaderTopInset", outTrack.mixerFaderTopInset);
+    in.optional("activeSessionClipId", outTrack.activeSessionClipId);
 
-    // Mixer state
-    outTrack.volume = obj->getProperty("volume");
-    outTrack.manualVolume =
-        obj->hasProperty("manualVolume")
-            ? static_cast<float>(static_cast<double>(obj->getProperty("manualVolume")))
-            : outTrack.volume;
-    outTrack.pan = obj->getProperty("pan");
-    outTrack.manualPan =
-        obj->hasProperty("manualPan")
-            ? static_cast<float>(static_cast<double>(obj->getProperty("manualPan")))
-            : outTrack.pan;
-    outTrack.muted = obj->getProperty("muted");
-    outTrack.soloed = obj->getProperty("soloed");
-    outTrack.recordArmed = obj->getProperty("recordArmed");
-
-    // Input monitor mode (backward compatible - defaults to Off)
-    if (obj->hasProperty("inputMonitor")) {
-        outTrack.inputMonitor =
-            static_cast<InputMonitorMode>(static_cast<int>(obj->getProperty("inputMonitor")));
-    }
-
-    // Frozen state (backward compatible - defaults to false)
-    if (obj->hasProperty("frozen")) {
-        outTrack.frozen = static_cast<bool>(obj->getProperty("frozen"));
-    }
-    if (obj->hasProperty("enabled"))
-        outTrack.enabled = static_cast<bool>(obj->getProperty("enabled"));
-    if (obj->hasProperty("playbackMode")) {
-        outTrack.playbackMode =
-            static_cast<TrackPlaybackMode>(static_cast<int>(obj->getProperty("playbackMode")));
-    }
-    if (obj->hasProperty("mixerChannelWidth")) {
-        outTrack.mixerChannelWidth = static_cast<int>(obj->getProperty("mixerChannelWidth"));
-    }
-    if (obj->hasProperty("mixerFaderTopInset")) {
-        outTrack.mixerFaderTopInset = static_cast<int>(obj->getProperty("mixerFaderTopInset"));
-    }
-    if (obj->hasProperty("activeSessionClipId")) {
-        outTrack.activeSessionClipId = static_cast<int>(obj->getProperty("activeSessionClipId"));
-    }
-
-    // View settings per view mode (backward compatible - defaults applied if missing)
-    auto viewSettingsVar = obj->getProperty("viewSettings");
-    if (viewSettingsVar.isObject()) {
-        auto* vsObj = viewSettingsVar.getDynamicObject();
+    if (const auto viewSettings = in.optionalObject("viewSettings")) {
         for (auto mode : {ViewMode::Live, ViewMode::Arrange, ViewMode::Mix, ViewMode::Master}) {
-            auto modeVar = vsObj->getProperty(getViewModeName(mode));
-            if (modeVar.isObject()) {
-                auto* modeObj = modeVar.getDynamicObject();
+            if (const auto modeIn = viewSettings->optionalObject(getViewModeName(mode))) {
                 TrackViewSettings vs;
-                vs.visible = modeObj->getProperty("visible");
-                vs.locked = modeObj->getProperty("locked");
-                vs.collapsed = modeObj->getProperty("collapsed");
-                vs.height = modeObj->getProperty("height");
+                modeIn->required("visible", vs.visible);
+                modeIn->required("locked", vs.locked);
+                modeIn->required("collapsed", vs.collapsed);
+                modeIn->required("height", vs.height);
                 outTrack.viewSettings.set(mode, vs);
             }
         }
     }
 
-    // Routing
-    outTrack.midiInputDevice = obj->getProperty("midiInputDevice").toString();
-    outTrack.midiOutputDevice = obj->getProperty("midiOutputDevice").toString();
-    outTrack.audioInputDevice = obj->getProperty("audioInputDevice").toString();
-    outTrack.audioOutputDevice = obj->getProperty("audioOutputDevice").toString();
-    outTrack.midiInputChannel =
-        juce::jlimit(0, 16, static_cast<int>(obj->getProperty("midiInputChannel")));
-    outTrack.midiOutputChannel =
-        juce::jlimit(0, 16, static_cast<int>(obj->getProperty("midiOutputChannel")));
+    in.required("midiInputDevice", outTrack.midiInputDevice);
+    in.required("midiOutputDevice", outTrack.midiOutputDevice);
+    in.required("audioInputDevice", outTrack.audioInputDevice);
+    in.required("audioOutputDevice", outTrack.audioOutputDevice);
+    if (in.optional("midiInputChannel", outTrack.midiInputChannel))
+        outTrack.midiInputChannel = juce::jlimit(0, 16, outTrack.midiInputChannel);
+    if (in.optional("midiOutputChannel", outTrack.midiOutputChannel))
+        outTrack.midiOutputChannel = juce::jlimit(0, 16, outTrack.midiOutputChannel);
+    in.optional("auxBusIndex", outTrack.auxBusIndex);
 
-    // Aux bus index (defaults to -1 if not present in older project files)
-    if (obj->hasProperty("auxBusIndex")) {
-        outTrack.auxBusIndex = obj->getProperty("auxBusIndex");
+    if (const auto link = in.optionalObject("multiOutLink")) {
+        MultiOutTrackLink multiOut;
+        link->required("sourceTrackId", multiOut.sourceTrackId);
+        link->required("sourceDeviceId", multiOut.sourceDeviceId);
+        link->required("outputPairIndex", multiOut.outputPairIndex);
+        outTrack.multiOutLink = multiOut;
+    }
+    if (const auto link = in.optionalObject("padLink")) {
+        PadChannelLink padLink;
+        link->required("gridId", padLink.gridId);
+        link->required("padId", padLink.padId);
+        outTrack.padLink = padLink;
     }
 
-    // Multi-out link (for MultiOut tracks)
-    auto multiOutLinkVar = obj->getProperty("multiOutLink");
-    if (multiOutLinkVar.isObject()) {
-        auto* moLinkObj = multiOutLinkVar.getDynamicObject();
-        MultiOutTrackLink link;
-        link.sourceTrackId = moLinkObj->getProperty("sourceTrackId");
-        link.sourceDeviceId = moLinkObj->getProperty("sourceDeviceId");
-        link.outputPairIndex = moLinkObj->getProperty("outputPairIndex");
-        outTrack.multiOutLink = link;
-    }
+    in.forEachObject("sends", [&outTrack](const ser::ObjectReader& item) {
+        SendInfo send;
+        read(item, send);
+        outTrack.sends.push_back(send);
+    });
 
-    if (auto padLinkVar = obj->getProperty("padLink"); padLinkVar.isObject()) {
-        auto* padLinkObj = padLinkVar.getDynamicObject();
-        outTrack.padLink =
-            PadChannelLink{padLinkObj->getProperty("gridId"), padLinkObj->getProperty("padId")};
-    }
+    // Missing before the chain power flag and the fader boundary (#2087): both default on,
+    // so a post-FX processor in an older project moves below the fader on load.
+    in.optional("chainEnabled", outTrack.chain.enabled);
+    in.optional("postFxPostFader", outTrack.chain.postFxPostFader);
 
-    // Sends
-    auto sendsVar = obj->getProperty("sends");
-    if (sendsVar.isArray()) {
-        auto* arr = sendsVar.getArray();
-        for (const auto& sendVar : *arr) {
-            SendInfo send;
-            if (!deserializeSendInfo(sendVar, send))
-                return false;
-            outTrack.sends.push_back(send);
-        }
-    }
+    in.forEachObject("chainElements", [&outTrack](const ser::ObjectReader& item) {
+        ChainElement element;
+        read(item, element);
+        outTrack.chain.fxChainElements.push_back(std::move(element));
+    });
+    in.forEachObject("postFxChainElements", [&outTrack](const ser::ObjectReader& item) {
+        DeviceInfo device;
+        read(item, device);
+        outTrack.chain.postFxChainElements.push_back(PostFxChainElement{std::move(device)});
+    });
+    enforcePostFxAnalysisDeviceOrder(outTrack.chain.postFxChainElements);
+    in.forEachObject("mixerAnalysisElements", [&outTrack](const ser::ObjectReader& item) {
+        DeviceInfo device;
+        read(item, device);
+        outTrack.chain.mixerAnalysisElements.push_back(PostFxChainElement{std::move(device)});
+    });
 
-    // Chain elements
-    // Missing in projects saved before the chain power flag -> default true
-    if (!obj->getProperty("chainEnabled").isVoid())
-        outTrack.chain.enabled = static_cast<bool>(obj->getProperty("chainEnabled"));
-
-    // Missing in projects saved before the fader boundary existed (#2087) ->
-    // default post-fader, same as a new track. Those projects were compiled
-    // pre-fader, so a post-FX processor in one moves below the fader on load and
-    // the track sounds different. That is the fix rather than a regression: the
-    // section is post-fader now, and the switch below is how a project says
-    // otherwise.
-    if (!obj->getProperty("postFxPostFader").isVoid())
-        outTrack.chain.postFxPostFader = static_cast<bool>(obj->getProperty("postFxPostFader"));
-
-    auto chainVar = obj->getProperty("chainElements");
-    if (chainVar.isArray()) {
-        auto* arr = chainVar.getArray();
-        for (const auto& elementVar : *arr) {
-            ChainElement element;
-            if (!deserializeChainElement(elementVar, element)) {
-                return false;
-            }
-            outTrack.chain.fxChainElements.push_back(std::move(element));
-        }
-    }
-
-    // Post-fader FX chain elements (backward compatible — absent in older projects)
-    auto postFxVar = obj->getProperty("postFxChainElements");
-    if (postFxVar.isArray()) {
-        auto* arr = postFxVar.getArray();
-        for (const auto& elementVar : *arr) {
-            DeviceInfo device;
-            if (!deserializeDeviceInfo(elementVar, device)) {
-                return false;
-            }
-            outTrack.chain.postFxChainElements.push_back(PostFxChainElement{std::move(device)});
-        }
-        enforcePostFxAnalysisDeviceOrder(outTrack.chain.postFxChainElements);
-    }
-
-    // Mixer-analysis section. Older projects may omit this and let the rail
-    // toggle reconcile the section from scratch on load.
-    auto mixerAnalysisVar = obj->getProperty("mixerAnalysisElements");
-    if (mixerAnalysisVar.isArray()) {
-        auto* arr = mixerAnalysisVar.getArray();
-        for (const auto& elementVar : *arr) {
-            DeviceInfo device;
-            if (!deserializeDeviceInfo(elementVar, device)) {
-                return false;
-            }
-            outTrack.chain.mixerAnalysisElements.push_back(PostFxChainElement{std::move(device)});
-        }
-    }
-
-    // Track-level mods (backward compatible — defaults if not present)
-    auto trackModsVar = obj->getProperty("trackMods");
-    if (trackModsVar.isArray()) {
+    if (in.has("trackMods")) {
         outTrack.mods.clear();
-        auto* arr = trackModsVar.getArray();
-        for (const auto& modVar : *arr) {
+        in.forEachObject("trackMods", [&outTrack](const ser::ObjectReader& item) {
             ModInfo mod(static_cast<int>(outTrack.mods.size()));
-            if (!deserializeModInfo(modVar, mod))
-                return false;
+            read(item, mod);
             outTrack.mods.push_back(mod);
-        }
+        });
     }
-
-    // Track-level macros (backward compatible — defaults if not present)
-    auto trackMacrosVar = obj->getProperty("trackMacros");
-    if (trackMacrosVar.isArray()) {
+    if (in.has("trackMacros")) {
         outTrack.macros.clear();
-        auto* arr = trackMacrosVar.getArray();
-        for (const auto& macroVar : *arr) {
+        in.forEachObject("trackMacros", [&outTrack](const ser::ObjectReader& item) {
             MacroInfo macro;
-            if (!deserializeMacroInfo(macroVar, macro))
-                return false;
+            read(item, macro);
             outTrack.macros.push_back(macro);
-        }
+        });
     }
 
-    outTrack.chainPresetName = obj->getProperty("chainPresetName").toString();
-
-    // Track-level panel UI state (backward compatible — defaults if not present)
-    if (obj->hasProperty("globalModsPanelOpen"))
-        outTrack.globalModsPanelOpen = static_cast<bool>(obj->getProperty("globalModsPanelOpen"));
-    if (obj->hasProperty("globalMacrosPanelOpen"))
-        outTrack.globalMacrosPanelOpen =
-            static_cast<bool>(obj->getProperty("globalMacrosPanelOpen"));
-    if (obj->hasProperty("selectedGlobalModIndex"))
-        outTrack.selectedGlobalModIndex =
-            static_cast<int>(obj->getProperty("selectedGlobalModIndex"));
-    if (obj->hasProperty("selectedGlobalMacroIndex"))
-        outTrack.selectedGlobalMacroIndex =
-            static_cast<int>(obj->getProperty("selectedGlobalMacroIndex"));
-
-    return true;
+    in.optional("chainPresetName", outTrack.chainPresetName);
+    in.optional("globalModsPanelOpen", outTrack.globalModsPanelOpen);
+    in.optional("globalMacrosPanelOpen", outTrack.globalMacrosPanelOpen);
+    in.optional("selectedGlobalModIndex", outTrack.selectedGlobalModIndex);
+    in.optional("selectedGlobalMacroIndex", outTrack.selectedGlobalMacroIndex);
 }
 
 juce::var ProjectSerializer::serializeChainElement(const ChainElement& element) {
@@ -493,32 +312,27 @@ juce::var ProjectSerializer::serializeChainElement(const ChainElement& element) 
 }
 
 bool ProjectSerializer::deserializeChainElement(const juce::var& json, ChainElement& outElement) {
-    if (!json.isObject()) {
-        lastError_ = "Chain element is not an object";
-        return false;
-    }
+    outElement = {};
+    return ser::decodeDocument(json, "element", lastError_,
+                               [&outElement](const auto& in) { read(in, outElement); });
+}
 
-    auto* obj = json.getDynamicObject();
-    juce::String type = obj->getProperty("type").toString();
+void ProjectSerializer::read(const ser::ObjectReader& in, ChainElement& outElement) {
+    juce::String type;
+    if (!in.required("type", type))
+        return;
 
     if (type == "device") {
         DeviceInfo device;
-        if (!deserializeDeviceInfo(obj->getProperty("device"), device)) {
-            return false;
-        }
+        read(in.object("device"), device);
         outElement = std::move(device);
     } else if (type == "rack") {
         RackInfo rack;
-        if (!deserializeRackInfo(obj->getProperty("rack"), rack)) {
-            return false;
-        }
+        read(in.object("rack"), rack);
         outElement = std::make_unique<RackInfo>(std::move(rack));
     } else {
-        lastError_ = "Unknown chain element type: " + type;
-        return false;
+        in.fail("type", "unknown chain element type: " + type);
     }
-
-    return true;
 }
 
 juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
@@ -715,279 +529,161 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
 }
 
 bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo& outDevice) {
-    if (!json.isObject()) {
-        lastError_ = "Device data is not an object";
-        return false;
-    }
+    outDevice = {};
+    return ser::decodeDocument(json, "device", lastError_,
+                               [&outDevice](const ser::ObjectReader& in) { read(in, outDevice); });
+}
 
-    auto* obj = json.getDynamicObject();
+void ProjectSerializer::read(const ser::ObjectReader& raw, DeviceInfo& outDevice) {
+    const auto in = project_migration::upgradeDevice(raw);
 
-    outDevice.id = obj->getProperty("id");
-    outDevice.name = obj->getProperty("name").toString();
-    outDevice.pluginId = obj->getProperty("pluginId").toString();
-    outDevice.manufacturer = obj->getProperty("manufacturer").toString();
-    // A newer build may have written a format this one does not know; fall back
-    // rather than casting an out-of-range int into the enum.
-    const int savedFormat = obj->getProperty("format");
-    outDevice.format = isKnownPluginFormatValue(savedFormat)
-                           ? static_cast<PluginFormat>(savedFormat)
-                           : PluginFormat::VST3;
-    outDevice.isInstrument = obj->getProperty("isInstrument");
-    if (obj->hasProperty("deviceType"))
-        outDevice.deviceType =
-            static_cast<DeviceType>(static_cast<int>(obj->getProperty("deviceType")));
-    else
-        outDevice.deviceType = outDevice.isInstrument ? DeviceType::Instrument : DeviceType::Effect;
-    outDevice.browserCategoryOverride = obj->getProperty("browserCategoryOverride").toString();
-    outDevice.uniqueId = obj->getProperty("uniqueId").toString();
-    outDevice.fileOrIdentifier = obj->getProperty("fileOrIdentifier").toString();
-    outDevice.bypassed = obj->getProperty("bypassed");
-    if (obj->hasProperty("deltaSolo"))
-        outDevice.deltaSolo = static_cast<bool>(obj->getProperty("deltaSolo"));
-    outDevice.expanded = obj->getProperty("expanded");
-    outDevice.modPanelOpen = obj->getProperty("modPanelOpen");
-    outDevice.gainPanelOpen = obj->getProperty("gainPanelOpen");
-    outDevice.paramPanelOpen = obj->getProperty("paramPanelOpen");
-    if (obj->hasProperty("aiPanelOpen"))
-        outDevice.aiPanelOpen = static_cast<bool>(obj->getProperty("aiPanelOpen"));
-    outDevice.presetName = obj->getProperty("presetName").toString();
-    if (obj->hasProperty("faceplateShown"))
-        outDevice.faceplateShown = static_cast<bool>(obj->getProperty("faceplateShown"));
-    if (obj->hasProperty("paramsShown"))
-        outDevice.paramsShown = static_cast<bool>(obj->getProperty("paramsShown"));
+    in.required("id", outDevice.id);
+    in.required("name", outDevice.name);
+    in.required("pluginId", outDevice.pluginId);
+    in.required("manufacturer", outDevice.manufacturer);
+    // A format this build does not know falls back rather than casting out of range.
+    if (int format = 0; in.required("format", format))
+        outDevice.format = isKnownPluginFormatValue(format) ? static_cast<PluginFormat>(format)
+                                                            : PluginFormat::VST3;
+    in.required("isInstrument", outDevice.isInstrument);
+    outDevice.deviceType = outDevice.isInstrument ? DeviceType::Instrument : DeviceType::Effect;
+    in.optional("deviceType", outDevice.deviceType);
+    in.optional("browserCategoryOverride", outDevice.browserCategoryOverride);
+    in.required("uniqueId", outDevice.uniqueId);
+    in.required("fileOrIdentifier", outDevice.fileOrIdentifier);
+    in.required("bypassed", outDevice.bypassed);
+    in.optional("deltaSolo", outDevice.deltaSolo);
+
+    in.optional("expanded", outDevice.expanded);
+    in.optional("modPanelOpen", outDevice.modPanelOpen);
+    in.optional("gainPanelOpen", outDevice.gainPanelOpen);
+    in.optional("paramPanelOpen", outDevice.paramPanelOpen);
+    in.optional("aiPanelOpen", outDevice.aiPanelOpen);
+    in.optional("presetName", outDevice.presetName);
+    in.optional("faceplateShown", outDevice.faceplateShown);
+    in.optional("paramsShown", outDevice.paramsShown);
     if (!outDevice.faceplateShown)
         outDevice.paramsShown = true;
-    if (obj->hasProperty("timeBendShown"))
-        outDevice.timeBendShown = static_cast<bool>(obj->getProperty("timeBendShown"));
-    if (obj->hasProperty("zonesShown"))
-        outDevice.zonesShown = static_cast<bool>(obj->getProperty("zonesShown"));
-    if (obj->hasProperty("oscPanelShown"))
-        outDevice.oscPanelShown = static_cast<bool>(obj->getProperty("oscPanelShown"));
-    if (obj->hasProperty("matrixShown"))
-        outDevice.matrixShown = static_cast<bool>(obj->getProperty("matrixShown"));
-    if (obj->hasProperty("vizShown"))
-        outDevice.vizShown = static_cast<bool>(obj->getProperty("vizShown"));
-    if (obj->hasProperty("outputShown"))
-        outDevice.outputShown = static_cast<bool>(obj->getProperty("outputShown"));
-    if (obj->hasProperty("padPanelShown"))
-        outDevice.padPanelShown = static_cast<bool>(obj->getProperty("padPanelShown"));
-    if (obj->hasProperty("padChainShown"))
-        outDevice.padChainShown = static_cast<bool>(obj->getProperty("padChainShown"));
+    in.optional("timeBendShown", outDevice.timeBendShown);
+    in.optional("zonesShown", outDevice.zonesShown);
+    in.optional("oscPanelShown", outDevice.oscPanelShown);
+    in.optional("matrixShown", outDevice.matrixShown);
+    in.optional("vizShown", outDevice.vizShown);
+    in.optional("outputShown", outDevice.outputShown);
+    in.optional("padPanelShown", outDevice.padPanelShown);
+    in.optional("padChainShown", outDevice.padChainShown);
 
-    // Parameters
-    auto paramsVar = obj->getProperty("parameters");
-    if (paramsVar.isArray()) {
-        auto* arr = paramsVar.getArray();
-        for (const auto& paramVar : *arr) {
-            ParameterInfo param;
-            if (!deserializeParameterInfo(paramVar, param)) {
-                return false;
-            }
-            // Older projects predate an explicit value-domain tag. Their
-            // hosted parameter arrays were already written in the plugin's
-            // normalised domain; internal devices have always used display
-            // values. Infer that historical contract here, where the owning
-            // format is known, and persist it explicitly on the next save.
-            if (const auto* paramObj = paramVar.getDynamicObject();
-                paramObj != nullptr && !paramObj->hasProperty("valueConvention")) {
-                param.valueConvention = outDevice.format == PluginFormat::Internal
-                                            ? ParameterValueConvention::Real
-                                            : ParameterValueConvention::Normalized;
-            }
-            // Builds before the version string was wired to the tag wrote every
-            // parameter with paramIndex -1: the index was its position in the
-            // array and was never stored. Restore it, or nothing that addresses
-            // a parameter by index on a device loaded from one of those files -
-            // saved automation, macro and mod links, the v2 state document -
-            // can match a parameter at all.
-            if (param.paramIndex < 0)
-                param.paramIndex = static_cast<int>(outDevice.parameters.size());
-            outDevice.parameters.push_back(param);
-        }
-    }
+    in.forEachObject("parameters", [&outDevice](const ser::ObjectReader& item) {
+        ParameterInfo param;
+        read(item, param);
+        outDevice.parameters.push_back(param);
+    });
+    in.readArray("visibleParameterSlots", outDevice.visibleParameters);
+    in.readArray("miniMixerParameterSlots", outDevice.miniMixerParameters);
+    in.readArray("aiSoundDesignerParameterSlots", outDevice.aiSoundDesignerParameters);
+    in.optional("aiSoundDesignerPrompt", outDevice.aiSoundDesignerPrompt);
 
-    migrateUtilityWidthToPercent(outDevice);
+    in.required("gainValue", outDevice.gainValue);
+    in.required("gainDb", outDevice.gainDb);
 
-    readParameterSelections(*obj, outDevice);
-    outDevice.aiSoundDesignerPrompt = obj->getProperty("aiSoundDesignerPrompt").toString();
-
-    // Device volume
-    outDevice.gainValue = obj->getProperty("gainValue");
-    outDevice.gainDb = obj->getProperty("gainDb");
-    foldUtilitySlotGainIntoGain(outDevice);
-
-    // Macros
-    auto macrosVar = obj->getProperty("macros");
-    if (macrosVar.isArray()) {
-        auto* arr = macrosVar.getArray();
+    if (in.has("macros")) {
         outDevice.macros.clear();
-        for (const auto& macroVar : *arr) {
+        in.forEachObject("macros", [&outDevice](const ser::ObjectReader& item) {
             MacroInfo macro;
-            if (!deserializeMacroInfo(macroVar, macro)) {
-                return false;
-            }
+            read(item, macro);
             outDevice.macros.push_back(macro);
-        }
+        });
     }
-
-    // Mods
-    auto modsVar = obj->getProperty("mods");
-    if (modsVar.isArray()) {
-        auto* arr = modsVar.getArray();
+    if (in.has("mods")) {
         outDevice.mods.clear();
-        for (const auto& modVar : *arr) {
+        in.forEachObject("mods", [&outDevice](const ser::ObjectReader& item) {
             ModInfo mod;
-            if (!deserializeModInfo(modVar, mod)) {
-                return false;
-            }
+            read(item, mod);
             outDevice.mods.push_back(mod);
-        }
+        });
+    }
+    in.optional("currentParameterPage", outDevice.currentParameterPage);
+
+    if (const auto multiOut = in.optionalObject("multiOut")) {
+        multiOut->required("isMultiOut", outDevice.multiOut.isMultiOut);
+        multiOut->required("totalOutputChannels", outDevice.multiOut.totalOutputChannels);
+        // Older pairs also carry `active` and `trackId`, unread: the child tracks' links
+        // are the one record of which pair drives which track (#2220).
+        multiOut->forEachObject("outputPairs", [&outDevice](const ser::ObjectReader& item) {
+            MultiOutOutputPair pair;
+            item.required("outputIndex", pair.outputIndex);
+            item.required("name", pair.name);
+            item.optional("firstPin", pair.firstPin);
+            item.optional("numChannels", pair.numChannels);
+            outDevice.multiOut.outputPairs.push_back(pair);
+        });
     }
 
-    outDevice.currentParameterPage = obj->getProperty("currentParameterPage");
+    if (in.optional("sidechainPortKind", outDevice.sidechainPort.kind))
+        in.required("sidechainPortChannels", outDevice.sidechainPort.channels);
+    in.optional("canReceiveMidi", outDevice.canReceiveMidi);
+    in.optional("producesMidi", outDevice.producesMidi);
+    in.optional("midiInThru", outDevice.midiInThru);
+    in.optional("audioInputChannels", outDevice.audioInputChannels);
+    // Zero comes from the live plugin or not at all: a saved one would silence the chain.
+    if (int outputs = 0; in.optional("audioOutputChannels", outputs) && outputs > 0)
+        outDevice.audioOutputChannels = outputs;
 
-    // Multi-output config
-    auto multiOutVar = obj->getProperty("multiOut");
-    if (multiOutVar.isObject()) {
-        auto* moObj = multiOutVar.getDynamicObject();
-        outDevice.multiOut.isMultiOut = moObj->getProperty("isMultiOut");
-        outDevice.multiOut.totalOutputChannels = moObj->getProperty("totalOutputChannels");
+    in.optional("pluginState", outDevice.pluginState);
 
-        auto pairsVar = moObj->getProperty("outputPairs");
-        if (pairsVar.isArray()) {
-            auto* pairsArr = pairsVar.getArray();
-            for (const auto& pairVar : *pairsArr) {
-                if (auto* pairObj = pairVar.getDynamicObject()) {
-                    MultiOutOutputPair pair;
-                    pair.outputIndex = pairObj->getProperty("outputIndex");
-                    pair.name = pairObj->getProperty("name").toString();
-                    // A project saved before the ownership flip carries `active`
-                    // and `trackId` here. Both are dropped rather than read: the
-                    // child tracks in the same project carry the links, so the
-                    // assignments come back from them, and a pair the device
-                    // claimed with no child track to match was already an
-                    // orphan (#2220).
-                    if (pairObj->hasProperty("firstPin"))
-                        pair.firstPin = pairObj->getProperty("firstPin");
-                    if (pairObj->hasProperty("numChannels"))
-                        pair.numChannels = pairObj->getProperty("numChannels");
-                    outDevice.multiOut.outputPairs.push_back(pair);
-                }
-            }
-        }
-    }
-
-    // Sidechain / MIDI receive capabilities
-    if (obj->hasProperty("sidechainPortKind")) {
-        outDevice.sidechainPort.kind = static_cast<SidechainPort::Kind>(
-            static_cast<int>(obj->getProperty("sidechainPortKind")));
-        outDevice.sidechainPort.channels = obj->getProperty("sidechainPortChannels");
-    } else if (static_cast<bool>(obj->getProperty("canSidechain"))) {
-        // Projects that predate the declared port, where the only fact saved
-        // was that the device had one (#2329).
-        outDevice.sidechainPort = monoAudioSidechain;
-    }
-    auto canReceiveMidiVar = obj->getProperty("canReceiveMidi");
-    if (!canReceiveMidiVar.isVoid()) {
-        outDevice.canReceiveMidi = static_cast<bool>(canReceiveMidiVar);
-    }
-    auto producesMidiVar = obj->getProperty("producesMidi");
-    if (!producesMidiVar.isVoid()) {
-        outDevice.producesMidi = static_cast<bool>(producesMidiVar);
-    }
-    auto midiInThruVar = obj->getProperty("midiInThru");
-    if (!midiInThruVar.isVoid()) {
-        outDevice.midiInThru = static_cast<bool>(midiInThruVar);
-    }
-    if (obj->hasProperty("audioInputChannels"))
-        outDevice.audioInputChannels = static_cast<int>(obj->getProperty("audioInputChannels"));
-    if (obj->hasProperty("audioOutputChannels")) {
-        // Checked on the way in too, so a hand-edited or older project cannot
-        // silence a chain either. Zero comes from the live plugin or not at all.
-        const auto outputs = static_cast<int>(obj->getProperty("audioOutputChannels"));
-        if (outputs > 0)
-            outDevice.audioOutputChannels = outputs;
-    }
-
-    // Plugin native state
-    if (obj->hasProperty("pluginState"))
-        outDevice.pluginState = obj->getProperty("pluginState").toString();
-
-    // A pad-per-chain device's pads (#2207). A project saved before they moved
-    // into the model has none here and still carries them inside `pluginState`,
-    // so read them out of it once; a project saved since is taken at its word,
-    // including one whose pads were all deleted.
-    auto padsVar = obj->getProperty("pads");
-    if (padsVar.isObject()) {
-        auto pads = std::make_unique<RackInfo>();
-        if (!deserializeRackInfo(padsVar, *pads))
-            return false;
-        outDevice.pads.reset(std::move(pads));
+    // Saved as the rack they are, not inside `pluginState` (#2207).
+    if (const auto pads = in.optionalObject("pads")) {
+        auto rack = std::make_unique<RackInfo>();
+        read(*pads, *rack);
+        outDevice.pads.reset(std::move(rack));
         stampPadRackId(outDevice);
-    } else {
-        migrateLegacyPads(outDevice);
     }
 
-    // Per-instance drum kit rows
-    auto kitVar = obj->getProperty("kitRows");
-    if (kitVar.isArray()) {
-        for (const auto& rowVar : *kitVar.getArray()) {
-            auto* rowObj = rowVar.getDynamicObject();
-            if (rowObj == nullptr || !rowObj->hasProperty("note"))
-                continue;
-            KitRow r;
-            r.noteNumber = juce::jlimit(0, 127, static_cast<int>(rowObj->getProperty("note")));
-            r.label = rowObj->getProperty("label").toString();
-            r.role = rowObj->getProperty("role").toString();
-            outDevice.kitRows.push_back(std::move(r));
-        }
-    }
+    in.forEachObject("kitRows", [&outDevice](const ser::ObjectReader& item) {
+        KitRow row;
+        if (item.required("note", row.noteNumber))
+            row.noteNumber = juce::jlimit(0, 127, row.noteNumber);
+        item.optional("label", row.label);
+        item.optional("role", row.role);
+        outDevice.kitRows.push_back(std::move(row));
+    });
 
-    // Sidechain
-    auto insertVar = obj->getProperty("insert");
-    if (insertVar.isObject()) {
-        auto* insertObj = insertVar.getDynamicObject();
-        outDevice.insert.sendType = static_cast<InsertConfig::Endpoint>(
-            static_cast<int>(insertObj->getProperty("sendType")));
-        outDevice.insert.returnType = static_cast<InsertConfig::Endpoint>(
-            static_cast<int>(insertObj->getProperty("returnType")));
-        outDevice.insert.sendDevice = insertObj->getProperty("sendDevice").toString();
-        outDevice.insert.returnDevice = insertObj->getProperty("returnDevice").toString();
-        outDevice.insert.manualAdjustMs = insertObj->getProperty("manualAdjustMs");
+    if (const auto insert = in.optionalObject("insert")) {
+        auto& config = outDevice.insert;
+        insert->required("sendType", config.sendType);
+        insert->required("returnType", config.returnType);
+        insert->required("sendDevice", config.sendDevice);
+        insert->required("returnDevice", config.returnDevice);
+        insert->required("manualAdjustMs", config.manualAdjustMs);
         // Saved before #3164 there is no channel, so the default's.
-        const int channel = insertObj->getProperty("midiChannel");
-        outDevice.insert.midiChannel = channel >= 1 && channel <= 16 ? channel : 1;
-        outDevice.insert.ccDevice = insertObj->getProperty("ccDevice").toString();
-        outDevice.insert.nextCcParamIndex = insertObj->getProperty("nextCcParamIndex");
-        outDevice.insert.ccSlots.clear();
-        if (const auto* ccSlots = insertObj->getProperty("ccSlots").getArray())
-            for (const auto& slotVar : *ccSlots)
-                outDevice.insert.ccSlots.push_back(
-                    {.paramIndex = slotVar.getProperty("paramIndex", 0),
-                     .ccNumber = juce::jlimit(
-                         0, 127, static_cast<int>(slotVar.getProperty("ccNumber", 0)))});
+        if (int channel = 0; insert->optional("midiChannel", channel))
+            config.midiChannel = channel >= 1 && channel <= 16 ? channel : 1;
+        insert->optional("ccDevice", config.ccDevice);
+        insert->optional("nextCcParamIndex", config.nextCcParamIndex);
+        config.ccSlots.clear();
+        insert->forEachObject("ccSlots", [&config](const ser::ObjectReader& item) {
+            int paramIndex = 0;
+            int ccNumber = 0;
+            item.optional("paramIndex", paramIndex);
+            item.optional("ccNumber", ccNumber);
+            config.ccSlots.push_back(
+                {.paramIndex = paramIndex, .ccNumber = juce::jlimit(0, 127, ccNumber)});
+        });
     }
 
-    auto sidechainVar = obj->getProperty("sidechain");
-    if (sidechainVar.isObject()) {
-        auto* scObj = sidechainVar.getDynamicObject();
-        outDevice.sidechain.type =
-            static_cast<SidechainConfig::Type>(static_cast<int>(scObj->getProperty("type")));
-        outDevice.sidechain.sourceTrackId = scObj->getProperty("sourceTrackId");
-        if (scObj->hasProperty("enabled"))
-            outDevice.sidechain.enabled = static_cast<bool>(scObj->getProperty("enabled"));
-        // Absent in a project that predates them, which is the default each
-        // field carries: post-fader, no trim, not listening.
-        if (scObj->hasProperty("tapPoint"))
-            outDevice.sidechain.tapPoint =
-                static_cast<ModTapPoint>(static_cast<int>(scObj->getProperty("tapPoint")));
-        if (scObj->hasProperty("gainDb"))
-            outDevice.sidechain.gainDb = static_cast<float>(double(scObj->getProperty("gainDb")));
-        outDevice.sidechain.listen = static_cast<bool>(scObj->getProperty("listen"));
+    if (const auto sidechain = in.optionalObject("sidechain")) {
+        auto& config = outDevice.sidechain;
+        sidechain->required("type", config.type);
+        sidechain->required("sourceTrackId", config.sourceTrackId);
+        // Absent in a project that predates them: post-fader, no trim, not listening.
+        sidechain->optional("enabled", config.enabled);
+        sidechain->optional("tapPoint", config.tapPoint);
+        sidechain->optional("gainDb", config.gainDb);
+        sidechain->optional("listen", config.listen);
     }
 
+    project_migration::migrateDevice(outDevice);
     applyCachedCapabilitiesToDevice(outDevice);
-    return true;
 }
 
 juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
@@ -1055,106 +751,75 @@ juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
 }
 
 bool ProjectSerializer::deserializeRackInfo(const juce::var& json, RackInfo& outRack) {
-    if (!json.isObject()) {
-        lastError_ = "Rack data is not an object";
-        return false;
-    }
+    outRack = {};
+    return ser::decodeDocument(json, "rack", lastError_,
+                               [&outRack](const ser::ObjectReader& in) { read(in, outRack); });
+}
 
-    auto* obj = json.getDynamicObject();
+void ProjectSerializer::read(const ser::ObjectReader& in, RackInfo& outRack) {
+    in.required("id", outRack.id);
+    in.required("name", outRack.name);
+    in.optional("presetName", outRack.presetName);
+    in.required("bypassed", outRack.bypassed);
+    in.optional("deltaSolo", outRack.deltaSolo);
+    in.optional("expanded", outRack.expanded);
+    in.optional("modPanelOpen", outRack.modPanelOpen);
+    in.optional("paramPanelOpen", outRack.paramPanelOpen);
+    in.required("volume", outRack.volume);
+    in.required("pan", outRack.pan);
+    if (in.optional("chainSelector", outRack.chainSelector))
+        outRack.chainSelector = juce::jlimit(0.0f, 127.0f, outRack.chainSelector);
 
-    outRack.id = obj->getProperty("id");
-    outRack.name = obj->getProperty("name").toString();
-    outRack.presetName = obj->getProperty("presetName").toString();
-    outRack.bypassed = obj->getProperty("bypassed");
-    if (obj->hasProperty("deltaSolo"))
-        outRack.deltaSolo = static_cast<bool>(obj->getProperty("deltaSolo"));
-    outRack.expanded = obj->getProperty("expanded");
-    if (obj->hasProperty("modPanelOpen"))
-        outRack.modPanelOpen = static_cast<bool>(obj->getProperty("modPanelOpen"));
-    if (obj->hasProperty("paramPanelOpen"))
-        outRack.paramPanelOpen = static_cast<bool>(obj->getProperty("paramPanelOpen"));
-    outRack.volume = obj->getProperty("volume");
-    outRack.pan = obj->getProperty("pan");
-    outRack.chainSelector =
-        juce::jlimit(0.0f, 127.0f, static_cast<float>(obj->getProperty("chainSelector")));
-
-    // Chains
-    auto chainsVar = obj->getProperty("chains");
-    if (chainsVar.isArray()) {
-        auto* arr = chainsVar.getArray();
+    if (in.has("chains")) {
         outRack.chains.clear();
-        for (const auto& chainVar : *arr) {
+        in.forEachObject("chains", [&outRack](const ser::ObjectReader& item) {
             ChainInfo chain;
-            if (!deserializeChainInfo(chainVar, chain)) {
-                return false;
-            }
+            read(item, chain);
             outRack.chains.push_back(std::move(chain));
-        }
+        });
     }
-
-    // Macros
-    auto macrosVar = obj->getProperty("macros");
-    if (macrosVar.isArray()) {
-        auto* arr = macrosVar.getArray();
+    if (in.has("macros")) {
         outRack.macros.clear();
-        for (const auto& macroVar : *arr) {
+        in.forEachObject("macros", [&outRack](const ser::ObjectReader& item) {
             MacroInfo macro;
-            if (!deserializeMacroInfo(macroVar, macro)) {
-                return false;
-            }
+            read(item, macro);
             outRack.macros.push_back(macro);
-        }
+        });
     }
-
-    // Mods
-    auto modsVar = obj->getProperty("mods");
-    if (modsVar.isArray()) {
-        auto* arr = modsVar.getArray();
+    if (in.has("mods")) {
         outRack.mods.clear();
-        for (const auto& modVar : *arr) {
+        in.forEachObject("mods", [&outRack](const ser::ObjectReader& item) {
             ModInfo mod;
-            if (!deserializeModInfo(modVar, mod)) {
-                return false;
-            }
+            read(item, mod);
             outRack.mods.push_back(mod);
-        }
+        });
     }
 
-    outRack.multiband = static_cast<bool>(obj->getProperty("multiband"));
+    outRack.multiband = false;
+    in.optional("multiband", outRack.multiband);
     outRack.crossovers.clear();
-    if (const auto* crossovers = obj->getProperty("crossovers").getArray()) {
-        for (const auto& item : *crossovers) {
-            const int slope = item.getProperty("slope", 24);
-            outRack.crossovers.push_back(
-                {static_cast<float>(item.getProperty("frequencyHz", 1000.0)),
-                 slope == 12   ? CrossoverSlope::Db12
-                 : slope == 48 ? CrossoverSlope::Db48
-                               : CrossoverSlope::Db24});
-        }
-    }
-    outRack.faceplateShown = static_cast<bool>(obj->getProperty("faceplateShown").isVoid()
-                                                   ? juce::var(true)
-                                                   : obj->getProperty("faceplateShown"));
-    outRack.bandsShown =
-        !outRack.faceplateShown ||
-        static_cast<bool>(obj->getProperty("bandsShown").isVoid() ? juce::var(true)
-                                                                  : obj->getProperty("bandsShown"));
-    if (const auto chainShown = obj->getProperty("chainShown"); !chainShown.isVoid())
-        outRack.chainShown = static_cast<bool>(chainShown);
+    in.forEachObject("crossovers", [&outRack](const ser::ObjectReader& item) {
+        float frequencyHz = 1000.0f;
+        int slope = 24;
+        item.optional("frequencyHz", frequencyHz);
+        item.optional("slope", slope);
+        outRack.crossovers.push_back({frequencyHz, slope == 12   ? CrossoverSlope::Db12
+                                                   : slope == 48 ? CrossoverSlope::Db48
+                                                                 : CrossoverSlope::Db24});
+    });
+    outRack.faceplateShown = true;
+    in.optional("faceplateShown", outRack.faceplateShown);
+    bool bandsShown = true;
+    in.optional("bandsShown", bandsShown);
+    outRack.bandsShown = !outRack.faceplateShown || bandsShown;
+    in.optional("chainShown", outRack.chainShown);
     normaliseMultiband(outRack);
 
-    // Sidechain
-    auto sidechainVar = obj->getProperty("sidechain");
-    if (sidechainVar.isObject()) {
-        auto* scObj = sidechainVar.getDynamicObject();
-        outRack.sidechain.type =
-            static_cast<SidechainConfig::Type>(static_cast<int>(scObj->getProperty("type")));
-        outRack.sidechain.sourceTrackId = scObj->getProperty("sourceTrackId");
-        if (scObj->hasProperty("enabled"))
-            outRack.sidechain.enabled = static_cast<bool>(scObj->getProperty("enabled"));
+    if (const auto sidechain = in.optionalObject("sidechain")) {
+        sidechain->required("type", outRack.sidechain.type);
+        sidechain->required("sourceTrackId", outRack.sidechain.sourceTrackId);
+        sidechain->optional("enabled", outRack.sidechain.enabled);
     }
-
-    return true;
 }
 
 juce::var ProjectSerializer::serializeChainInfo(const ChainInfo& chain) {
@@ -1208,78 +873,61 @@ juce::var ProjectSerializer::serializeChainInfo(const ChainInfo& chain) {
 }
 
 bool ProjectSerializer::deserializeChainInfo(const juce::var& json, ChainInfo& outChain) {
-    if (!json.isObject()) {
-        lastError_ = "Chain data is not an object";
-        return false;
-    }
+    outChain = {};
+    return ser::decodeDocument(json, "chain", lastError_,
+                               [&outChain](const ser::ObjectReader& in) { read(in, outChain); });
+}
 
-    auto* obj = json.getDynamicObject();
+void ProjectSerializer::read(const ser::ObjectReader& in, ChainInfo& outChain) {
+    in.required("id", outChain.id);
+    in.required("name", outChain.name);
 
-    outChain.id = obj->getProperty("id");
-    outChain.name = obj->getProperty("name").toString();
+    // Normalised, not trusted: a pad on a bus that reaches no track is silenced, so a saved
+    // value outside the range the buses exist in would lose the audio (#2211).
+    if (in.required("outputIndex", outChain.outputIndex))
+        outChain.outputIndex = juce::jlimit(0, kPadBusCount - 1, outChain.outputIndex);
+    in.required("muted", outChain.muted);
+    in.required("solo", outChain.solo);
+    in.required("bypassed", outChain.bypassed);
+    in.required("volume", outChain.volume);
+    in.required("pan", outChain.pan);
+    in.optional("expanded", outChain.expanded);
 
-    // Normalised on the way in, not trusted. A pad's bus is what the plan
-    // compiler routes from, and it silences a pad on a bus that reaches no
-    // track rather than folding it into the device's mix, so a saved value
-    // outside the range the buses exist in would lose the audio (#2211).
-    outChain.outputIndex =
-        juce::jlimit(0, kPadBusCount - 1, static_cast<int>(obj->getProperty("outputIndex")));
-    outChain.muted = obj->getProperty("muted");
-    outChain.solo = obj->getProperty("solo");
-    outChain.bypassed = obj->getProperty("bypassed");
-    outChain.volume = obj->getProperty("volume");
-    outChain.pan = obj->getProperty("pan");
-    outChain.expanded = obj->getProperty("expanded");
-
-    // Left at ChainInfo's "every note" default when the chain is not keyed by
-    // pitch, which is every chain a project saved before pads moved into the
-    // model (#2207).
-    if (obj->hasProperty("lowNote"))
-        outChain.lowNote = static_cast<int>(obj->getProperty("lowNote"));
-    if (obj->hasProperty("highNote"))
-        outChain.highNote = static_cast<int>(obj->getProperty("highNote"));
-    if (obj->hasProperty("rootNote"))
-        outChain.rootNote = static_cast<int>(obj->getProperty("rootNote"));
+    // Absent for a chain not keyed by pitch, which reads back as answering every note (#2207).
+    in.optional("lowNote", outChain.lowNote);
+    in.optional("highNote", outChain.highNote);
+    in.optional("rootNote", outChain.rootNote);
 
     // Clamped into MIDI's range; an inverted range is kept and plays nothing.
-    if (const auto zonesVar = obj->getProperty("zones"); zonesVar.isObject()) {
-        auto* zones = zonesVar.getDynamicObject();
-        const auto read = [zones](const char* name, int fallback, int low, int high) {
-            return zones->hasProperty(name)
-                       ? juce::jlimit(low, high, static_cast<int>(zones->getProperty(name)))
-                       : fallback;
-        };
+    if (const auto zones = in.optionalObject("zones")) {
         auto& z = outChain.zones;
-        z.keyLow = read("keyLow", z.keyLow, 0, 127);
-        z.keyHigh = read("keyHigh", z.keyHigh, 0, 127);
-        z.keyFadeLow = read("keyFadeLow", z.keyFadeLow, 0, 127);
-        z.keyFadeHigh = read("keyFadeHigh", z.keyFadeHigh, 0, 127);
-        z.velocityLow = read("velocityLow", z.velocityLow, 1, 127);
-        z.velocityHigh = read("velocityHigh", z.velocityHigh, 1, 127);
-        z.velocityFadeLow = read("velocityFadeLow", z.velocityFadeLow, 0, 127);
-        z.velocityFadeHigh = read("velocityFadeHigh", z.velocityFadeHigh, 0, 127);
-        z.roundRobin = static_cast<bool>(zones->getProperty("roundRobin"));
-        z.selectorLow = read("selectorLow", z.selectorLow, 0, 127);
-        z.selectorHigh = read("selectorHigh", z.selectorHigh, 0, 127);
-        z.selectorFadeLow = read("selectorFadeLow", z.selectorFadeLow, 0, 127);
-        z.selectorFadeHigh = read("selectorFadeHigh", z.selectorFadeHigh, 0, 127);
+        const auto readZone = [&zones](const char* name, int& value, int low, int high) {
+            if (zones->optional(name, value))
+                value = juce::jlimit(low, high, value);
+        };
+        readZone("keyLow", z.keyLow, 0, 127);
+        readZone("keyHigh", z.keyHigh, 0, 127);
+        readZone("keyFadeLow", z.keyFadeLow, 0, 127);
+        readZone("keyFadeHigh", z.keyFadeHigh, 0, 127);
+        readZone("velocityLow", z.velocityLow, 1, 127);
+        readZone("velocityHigh", z.velocityHigh, 1, 127);
+        readZone("velocityFadeLow", z.velocityFadeLow, 0, 127);
+        readZone("velocityFadeHigh", z.velocityFadeHigh, 0, 127);
+        zones->optional("roundRobin", z.roundRobin);
+        readZone("selectorLow", z.selectorLow, 0, 127);
+        readZone("selectorHigh", z.selectorHigh, 0, 127);
+        readZone("selectorFadeLow", z.selectorFadeLow, 0, 127);
+        readZone("selectorFadeHigh", z.selectorFadeHigh, 0, 127);
     }
 
-    // Elements
-    auto elementsVar = obj->getProperty("elements");
-    if (elementsVar.isArray()) {
-        auto* arr = elementsVar.getArray();
+    if (in.has("elements")) {
         outChain.elements.clear();
-        for (const auto& elementVar : *arr) {
+        in.forEachObject("elements", [&outChain](const ser::ObjectReader& item) {
             ChainElement element;
-            if (!deserializeChainElement(elementVar, element)) {
-                return false;
-            }
+            read(item, element);
             outChain.elements.push_back(std::move(element));
-        }
+        });
     }
-
-    return true;
 }
 
 juce::var ProjectSerializer::serializeSendInfo(const SendInfo& data) {
@@ -1293,21 +941,13 @@ juce::var ProjectSerializer::serializeSendInfo(const SendInfo& data) {
     return {obj};
 }
 
-bool ProjectSerializer::deserializeSendInfo(const juce::var& json, SendInfo& data) {
-    if (!json.isObject()) {
-        lastError_ = "Send info is not an object";
-        return false;
-    }
-    auto* obj = json.getDynamicObject();
+void ProjectSerializer::read(const ser::ObjectReader& in, SendInfo& data) {
     DESER(busIndex);
     DESER(level);
     DESER(preFader);
     DESER(destTrackId);
-    if (obj->hasProperty("enabled"))
-        DESER(enabled);
-    if (obj->hasProperty("id"))
-        DESER(id);
-    return true;
+    DESER_OPT(enabled);
+    DESER_OPT(id);
 }
 
 }  // namespace magda

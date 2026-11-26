@@ -27,12 +27,15 @@
 #include "../../core/ViewModeState.hpp"
 #include "../ProjectManager.hpp"
 #include "DawProjectArchive.hpp"
+#include "JsonReader.hpp"
 #include "NativeProjectDocumentAdapter.hpp"
+#include "ProjectMigration.hpp"
 #include "core/SamplerDevices.hpp"
 
 namespace magda {
 
 thread_local juce::String ProjectSerializer::lastError_;
+thread_local ProjectLoadFailure ProjectSerializer::lastLoadFailure_ = ProjectLoadFailure::None;
 
 // ============================================================================
 // File I/O with gzip compression
@@ -280,106 +283,6 @@ void allocateStagedPadDeviceIds(std::vector<TrackInfo>& tracks, TrackInfo* maste
         device->id = next++;
 }
 
-/// Read the credits block out of a serialized "project" object.
-///
-/// Shared because loadAndStage() and deserializeProject() parse the same JSON in
-/// two separate passes, and a metadata field that only one of them knew about
-/// would go missing down whichever path the caller happened to take.
-ProjectMetadata readProjectMetadata(juce::DynamicObject& projectObj) {
-    ProjectMetadata metadata;
-
-    // Absent in every project saved before the block existed, and absent again
-    // in any project nobody credited, so no object simply means no credits.
-    if (auto* metadataObj = projectObj.getProperty("metadata").getDynamicObject())
-        for (const auto& field : kProjectMetadataFields)
-            metadata.*field.member = metadataObj->getProperty(field.key).toString();
-
-    return metadata;
-}
-
-ProjectDefaults readProjectDefaults(juce::DynamicObject& projectObj, ProjectDefaults defaults) {
-    // An old project has no defaults object. Seed every value from the current
-    // new-project preferences first, then let whatever the file carries win.
-    auto* defaultsObj = projectObj.getProperty("defaults").getDynamicObject();
-    if (defaultsObj == nullptr)
-        return defaults;
-
-    if (defaultsObj->hasProperty("zoomViewBars"))
-        defaults.zoomViewBars = defaultsObj->getProperty("zoomViewBars");
-    if (defaultsObj->hasProperty("autoCrossfade"))
-        defaults.autoCrossfade = defaultsObj->getProperty("autoCrossfade");
-    if (defaultsObj->hasProperty("overlapPlaysBoth"))
-        defaults.overlapPlaysBoth = defaultsObj->getProperty("overlapPlaysBoth");
-    if (defaultsObj->hasProperty("chordPreview"))
-        defaults.chordPreview = defaultsObj->getProperty("chordPreview");
-    if (defaultsObj->hasProperty("postFxPostFader"))
-        defaults.postFxPostFader = defaultsObj->getProperty("postFxPostFader");
-    if (defaultsObj->hasProperty("clipColourMode"))
-        defaults.clipColourMode = defaultsObj->getProperty("clipColourMode");
-
-    if (defaultsObj->hasProperty("colourPalette")) {
-        const auto paletteVar = defaultsObj->getProperty("colourPalette");
-        const auto* palette = paletteVar.getArray();
-        if (palette == nullptr)
-            return defaults;
-        std::vector<ProjectColourEntry> parsed;
-        parsed.reserve(static_cast<std::size_t>(palette->size()));
-        for (int i = 0; i < palette->size(); ++i) {
-            const auto& item = (*palette)[i];
-            auto encoded = item.toString();
-            auto name = "Colour " + juce::String(i + 1);
-            if (auto* entryObj = item.getDynamicObject()) {
-                encoded = entryObj->getProperty("colour").toString();
-                const auto savedName = entryObj->getProperty("name").toString();
-                if (savedName.isNotEmpty())
-                    name = savedName;
-            }
-            const bool validColour =
-                encoded.length() == 8 && encoded.containsOnly("0123456789abcdefABCDEF");
-            parsed.push_back({validColour ? juce::Colour::fromString(encoded).getARGB()
-                                          : ProjectColourEntry{}.colour,
-                              name});
-        }
-        defaults.colourPalette = std::move(parsed);
-    }
-    return defaults;
-}
-
-void readProjectScenes(juce::DynamicObject& projectObj, ProjectInfo& info) {
-    if (!projectObj.hasProperty("scenes"))
-        return;  // Legacy project: keep the eight historical UI rows.
-
-    info.scenes.clear();
-    info.nextSceneId = 1;
-    std::set<SceneId> ids;
-    if (const auto* scenes = projectObj.getProperty("scenes").getArray()) {
-        for (const auto& value : *scenes) {
-            const auto* object = value.getDynamicObject();
-            if (object == nullptr)
-                continue;
-
-            const auto id = static_cast<SceneId>(static_cast<int>(object->getProperty("id")));
-            if (id < 0 || !ids.insert(id).second)
-                continue;
-
-            ProjectScene scene;
-            scene.id = id;
-            scene.name = object->getProperty("name").toString();
-            const auto colour = object->getProperty("colour").toString();
-            if (colour.isNotEmpty())
-                scene.colourArgb = juce::Colour::fromString(colour).getARGB();
-            info.scenes.push_back(std::move(scene));
-            info.nextSceneId = std::max(info.nextSceneId, id + 1);
-        }
-    }
-
-    if (projectObj.hasProperty("nextSceneId"))
-        info.nextSceneId =
-            std::max(info.nextSceneId,
-                     static_cast<SceneId>(static_cast<int>(projectObj.getProperty("nextSceneId"))));
-    ensureProjectSceneCount(info, 1);
-}
-
 /**
  * Give old/unassigned Session clips one deterministic slot and make sure every
  * referenced scene has durable metadata. A second clip saved into an occupied
@@ -423,14 +326,13 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
 
 bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& outData,
                                      const ProjectCreationSettings& creationSettings) {
+    lastLoadFailure_ = ProjectLoadFailure::Unreadable;
     try {
-        // Check file exists
         if (!file.existsAsFile()) {
             lastError_ = "File does not exist: " + file.getFullPathName();
             return false;
         }
 
-        // Read with gzip decompression
         juce::FileInputStream inputStream(file);
         if (!inputStream.openedOk()) {
             lastError_ = "Failed to open file for reading: " + file.getFullPathName();
@@ -438,241 +340,15 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         }
 
         juce::GZIPDecompressorInputStream gzipStream(inputStream);
-        juce::String jsonString = gzipStream.readEntireStreamAsString();
+        const auto jsonString = gzipStream.readEntireStreamAsString();
 
-        // Parse JSON
-        auto json = juce::JSON::parse(jsonString);
-        if (json.isVoid()) {
-            lastError_ = "Failed to parse JSON";
+        juce::var json;
+        if (const auto parsed = juce::JSON::parse(jsonString, json); parsed.failed()) {
+            lastError_ = "Not valid JSON: " + parsed.getErrorMessage();
             return false;
         }
 
-        // Deserialize project metadata
-        if (!json.isObject()) {
-            lastError_ = "Invalid project JSON: not an object";
-            return false;
-        }
-
-        auto* obj = json.getDynamicObject();
-        if (obj == nullptr) {
-            lastError_ = "Invalid project JSON: null object";
-            return false;
-        }
-
-        // Version check
-        outData.info.version = obj->getProperty("magdaVersion").toString();
-        if (outData.info.version.isEmpty()) {
-            lastError_ = "Missing magdaVersion field";
-            return false;
-        }
-
-        outData.info.createdAt = juce::Time::fromISO8601(obj->getProperty("createdAt").toString());
-
-        // Parse timestamp
-        juce::String timeStr = obj->getProperty("lastModified").toString();
-        if (timeStr.isNotEmpty()) {
-            outData.info.lastModified = juce::Time::fromISO8601(timeStr);
-        }
-
-        // Internal recovery metadata. Ordinary project files omit it.
-        outData.info.autosaveMediaDirectory = obj->getProperty("autosaveMediaDirectory").toString();
-
-        // Parse project settings
-        auto projectVar = obj->getProperty("project");
-        if (!projectVar.isObject()) {
-            lastError_ = "Missing or invalid project settings";
-            return false;
-        }
-
-        auto* projectObj = projectVar.getDynamicObject();
-        outData.info.name = projectObj->getProperty("name").toString();
-        outData.info.tempo = projectObj->getProperty("tempo");
-
-        // Time signature
-        auto timeSigVar = projectObj->getProperty("timeSignature");
-        if (timeSigVar.isArray()) {
-            auto* arr = timeSigVar.getArray();
-            if (arr->size() >= 2) {
-                outData.info.timeSignatureNumerator = (*arr)[0];
-                outData.info.timeSignatureDenominator = (*arr)[1];
-            }
-        }
-
-        outData.info.projectLength = projectObj->getProperty("projectLength");
-
-        if (projectObj->hasProperty("sampleRate"))
-            outData.info.sampleRate = projectObj->getProperty("sampleRate");
-        outData.info.timelineLengthBars = creationSettings.timelineLengthBars;
-        if (projectObj->hasProperty("timelineLengthBars"))
-            outData.info.timelineLengthBars = projectObj->getProperty("timelineLengthBars");
-        outData.info.defaults = readProjectDefaults(*projectObj, creationSettings.defaults);
-        if (projectObj->hasProperty("savedWithEngine"))
-            outData.info.savedWithEngine = projectObj->getProperty("savedWithEngine").toString();
-        if (projectObj->hasProperty("renderBitDepth"))
-            outData.info.renderBitDepth = projectObj->getProperty("renderBitDepth");
-        if (projectObj->hasProperty("bounceBitDepth"))
-            outData.info.bounceBitDepth = projectObj->getProperty("bounceBitDepth");
-        if (projectObj->hasProperty("keyRoot"))
-            outData.info.keyRoot = projectObj->getProperty("keyRoot");
-        if (projectObj->hasProperty("keyQuality"))
-            outData.info.keyQuality = projectObj->getProperty("keyQuality");
-
-        outData.info.metadata = readProjectMetadata(*projectObj);
-        readProjectScenes(*projectObj, outData.info);
-
-        // Named timeline markers
-        outData.info.markers.clear();
-        auto markersVar = projectObj->getProperty("markers");
-        if (markersVar.isArray()) {
-            auto* markersArray = markersVar.getArray();
-            for (const auto& markerVar : *markersArray) {
-                if (!markerVar.isObject())
-                    continue;
-
-                auto* markerObj = markerVar.getDynamicObject();
-                ProjectTimelineMarker marker;
-                marker.id = static_cast<int>(markerObj->getProperty("id"));
-                marker.positionBeats = static_cast<double>(markerObj->getProperty("positionBeats"));
-                marker.name = markerObj->getProperty("name").toString();
-
-                auto colourString = markerObj->getProperty("colour").toString();
-                if (colourString.isNotEmpty())
-                    marker.colourArgb = stringToColour(colourString).getARGB();
-
-                if (marker.id > 0)
-                    outData.info.markers.push_back(marker);
-            }
-        }
-
-        // Loop settings
-        auto loopVar = projectObj->getProperty("loop");
-        if (loopVar.isObject()) {
-            auto* loopObj = loopVar.getDynamicObject();
-            outData.info.loopEnabled = loopObj->getProperty("enabled");
-            outData.info.loopStartBeats = loopObj->getProperty("startBeats");
-            outData.info.loopEndBeats = loopObj->getProperty("endBeats");
-        }
-
-        // Zoom/scroll state
-        auto zoomVar = projectObj->getProperty("zoom");
-        if (zoomVar.isObject()) {
-            auto* zoomObj = zoomVar.getDynamicObject();
-            outData.info.horizontalZoom = zoomObj->getProperty("horizontalZoom");
-            outData.info.verticalZoom = zoomObj->getProperty("verticalZoom");
-            outData.info.scrollX = zoomObj->getProperty("scrollX");
-            outData.info.scrollY = zoomObj->getProperty("scrollY");
-            DBG("ZOOM DESERIALIZE (loadAndStage): hz=" << outData.info.horizontalZoom
-                                                       << " scrollX=" << outData.info.scrollX
-                                                       << " scrollY=" << outData.info.scrollY);
-        } else {
-            DBG("ZOOM DESERIALIZE (loadAndStage): no zoom object in project JSON");
-        }
-
-        // Active view mode
-        if (projectObj->hasProperty("activeView")) {
-            outData.info.activeView = static_cast<int>(projectObj->getProperty("activeView"));
-        }
-
-        // Stage tracks, clips, and automation
-        const auto fromProject = [&file](const juce::String& path) {
-            return fromProjectPath(file, path);
-        };
-        mapSamplerSources(obj->getProperty("tracks"), fromProject);
-        mapSamplerSources(obj->getProperty("masterTrack"), fromProject);
-        if (!deserializeTracksToStaging(obj->getProperty("tracks"), outData.tracks)) {
-            return false;
-        }
-
-        // Parsed only. Installing them is a commit-phase job: this runs on a
-        // background thread, the staging steps below can still fail, and the
-        // still-open project's clips are reading the live pool meanwhile.
-        deserializeSourcesToStaging(obj->getProperty("sources"), outData.sources, file);
-
-        auto clips = obj->getProperty("clips");
-        mapTakePaths(clips,
-                     [&file](const juce::String& path) { return fromProjectPath(file, path); });
-        if (!deserializeClipsToStaging(clips, outData.clips, outData.info.tempo,
-                                       &outData.legacySources)) {
-            return false;
-        }
-        reconcileProjectScenes(outData.info, outData.clips);
-
-        if (!deserializeAutomationToStaging(obj->getProperty("automation"), outData.automationLanes,
-                                            outData.automationClips)) {
-            return false;
-        }
-
-        // Deserialize master track if present (backward-compatible: old projects won't have it)
-        auto masterTrackVar = obj->getProperty("masterTrack");
-        if (masterTrackVar.isObject()) {
-            auto mt = std::make_unique<TrackInfo>();
-            if (deserializeTrackInfo(masterTrackVar, *mt)) {
-                outData.masterTrack = std::move(mt);
-            } else {
-                DBG("WARNING: Failed to deserialize masterTrack data - master plugins will be "
-                    "lost");
-            }
-        }
-
-        // Retired stock Tracktion effects load as their compiled successors.
-        // Runs on the staged model, so the project is already canonical by the
-        // time anything is committed or re-saved.
-        legacy_devices::migrateRetiredDevicesInProject(outData.tracks, outData.masterTrack.get(),
-                                                       outData.automationLanes,
-                                                       outData.automationClips);
-
-        // Then the Chord Engine's declared role (#2427). It was created as a
-        // DeviceType::MIDI device, which is the role of one that produces MIDI,
-        // and it produces none. Before the parameter migrations for no reason
-        // of its own; it touches nothing they read.
-        legacy_devices::normalizeChordEngineRoleInProject(outData.tracks,
-                                                          outData.masterTrack.get());
-
-        // Then any device that renumbered its parameters, so a saved link still
-        // addresses the parameter it was made against (#2079). After the
-        // aliases: a device rewritten onto its successor is already the
-        // successor by the time its indices are looked up.
-        device_param_migrations::applyParamIndexMigrations(
-            outData.tracks, outData.masterTrack.get(), outData.automationLanes,
-            outData.automationClips);
-        // Then any choice list that grew, before its saved length is lost.
-        device_param_migrations::applyChoiceGrowths(outData.tracks, outData.masterTrack.get(),
-                                                    outData.automationLanes,
-                                                    outData.automationClips);
-
-        // Then an id for every pad device saved before pads had them. On the
-        // staged model, not at commit: a pad with no id cannot be keyed, so the
-        // plan refuses it, and everything that reads a staged project without
-        // committing one -- the null-diff survey, the corpus tests -- would see
-        // a Drum Grid with no pads at all (#2207).
-        allocateStagedPadDeviceIds(outData.tracks, outData.masterTrack.get());
-
-        // Then the pad addresses saved before pad ownership was a step type.
-        // After the id allocation above, because a pad chain is matched by the
-        // id of the device that owns it (#2219).
-        pad_paths::migrateLegacyPadPaths(outData.tracks, outData.masterTrack.get(),
-                                         outData.automationLanes);
-
-        // Then the retired duplicate parameter record (#2317): hydrate what
-        // the model's parameter array is missing out of the old document's
-        // `params`, once, before either engine projection is built. After the
-        // aliases and index migrations so ids and indices are current.
-        daw::audio::device_state_hydration::hydrateStagedProject(
-            outData.tracks, outData.masterTrack.get(), outData.info.version);
-
-        // Then the pads' mixer channels (#3010), which is also where a pad on a
-        // bus moves onto one. After the pad ids, which the channels link by.
-        migratePadChannels(outData.tracks);
-
-        // Parameter aliases (UserProject layer -- opaque pass-through to AliasRegistry)
-        if (obj->hasProperty("paramAliases"))
-            outData.info.paramAliases = obj->getProperty("paramAliases");
-
-        // Project-scope bindings (opaque pass-through to BindingRegistry)
-        if (obj->hasProperty("projectBindings"))
-            outData.info.projectBindings = obj->getProperty("projectBindings");
-
-        return true;
+        return stageProject(json, file, creationSettings, outData);
 
     } catch (const std::exception& e) {
         lastError_ = "Exception while loading: " + juce::String(e.what());
@@ -681,6 +357,241 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         lastError_ = "Unknown exception while loading";
         return false;
     }
+}
+
+bool ProjectSerializer::stageProject(const juce::var& json, const juce::File& projectFile,
+                                     const ProjectCreationSettings& creationSettings,
+                                     StagedProjectData& outData) {
+    outData = StagedProjectData{};
+    ser::DecodeLog log;
+    const ser::ObjectReader doc(json, {}, log);
+    const auto malformed = [&log] {
+        lastError_ = log.summary();
+        lastLoadFailure_ = ProjectLoadFailure::Malformed;
+        return false;
+    };
+    if (!doc.isValid())
+        return malformed();
+
+    // Before anything else reads the document: a newer one must not be read as this one.
+    int schemaVersion = 1;  // v1 wrote no key
+    if (doc.optional("schemaVersion", schemaVersion) && schemaVersion < 1)
+        doc.fail("schemaVersion", "not a schema version: " + juce::String(schemaVersion));
+    if (!log.ok())
+        return malformed();
+    if (schemaVersion > kProjectSchemaVersion) {
+        lastError_ = "Saved with project schema " + juce::String(schemaVersion) +
+                     "; this build reads up to " + juce::String(kProjectSchemaVersion);
+        lastLoadFailure_ = ProjectLoadFailure::NewerSchema;
+        return false;
+    }
+
+    auto& info = outData.info;
+    if (doc.required("magdaVersion", info.version) && info.version.isEmpty())
+        doc.fail("magdaVersion", "empty");
+    juce::String createdAt;
+    doc.optional("createdAt", createdAt);
+    info.createdAt = juce::Time::fromISO8601(createdAt);
+    if (juce::String lastModified;
+        doc.optional("lastModified", lastModified) && lastModified.isNotEmpty())
+        info.lastModified = juce::Time::fromISO8601(lastModified);
+    // Internal recovery metadata. Ordinary project files omit it.
+    doc.optional("autosaveMediaDirectory", info.autosaveMediaDirectory);
+    readProjectSettings(project_migration::upgradeProjectSettings(doc.object("project")), info,
+                        creationSettings);
+
+    const auto fromProject = [&projectFile](const juce::String& path) {
+        return fromProjectPath(projectFile, path);
+    };
+    mapSamplerSources(doc.get("tracks"), fromProject);
+    mapSamplerSources(doc.get("masterTrack"), fromProject);
+    doc.forEachObject(
+        "tracks",
+        [&outData](const ser::ObjectReader& item) {
+            TrackInfo track;
+            read(item, track);
+            outData.tracks.push_back(std::move(track));
+        },
+        true);
+
+    // Parsed only. Installing them is a commit-phase job: this can run on a background
+    // thread, and the still-open project's clips are reading the live pool meanwhile.
+    readSources(doc, outData.sources, projectFile);
+
+    auto clips = doc.get("clips");
+    mapTakePaths(clips, fromProject);
+    doc.forEachObject(
+        "clips",
+        [&outData](const ser::ObjectReader& item) {
+            ClipInfo clip;
+            read(item, clip, outData.info.tempo, &outData.legacySources);
+            outData.clips.push_back(std::move(clip));
+        },
+        true);
+
+    readAutomation(doc, outData.automationLanes, outData.automationClips);
+
+    if (const auto master = doc.optionalObject("masterTrack")) {
+        auto track = std::make_unique<TrackInfo>();
+        read(*master, *track);
+        outData.masterTrack = std::move(track);
+    }
+
+    if (!log.ok())
+        return malformed();
+
+    reconcileProjectScenes(info, outData.clips);
+
+    // Retired stock Tracktion effects load as their compiled successors. Runs on the
+    // staged model, so the project is already canonical by the time anything is committed
+    // or re-saved.
+    legacy_devices::migrateRetiredDevicesInProject(outData.tracks, outData.masterTrack.get(),
+                                                   outData.automationLanes,
+                                                   outData.automationClips);
+
+    // Then the Chord Engine's declared role (#2427): created as a MIDI device, it produces
+    // none. Touches nothing the parameter migrations read.
+    legacy_devices::normalizeChordEngineRoleInProject(outData.tracks, outData.masterTrack.get());
+
+    // Then any device that renumbered its parameters, so a saved link still addresses the
+    // parameter it was made against (#2079). After the aliases: a rewritten device is
+    // already its successor by the time its indices are looked up.
+    device_param_migrations::applyParamIndexMigrations(outData.tracks, outData.masterTrack.get(),
+                                                       outData.automationLanes,
+                                                       outData.automationClips);
+    // Then any choice list that grew, before its saved length is lost.
+    device_param_migrations::applyChoiceGrowths(outData.tracks, outData.masterTrack.get(),
+                                                outData.automationLanes, outData.automationClips);
+
+    // Then an id for every pad device saved before pads had them, on the staged model:
+    // a pad with no id cannot be keyed, so anything reading a staged project without
+    // committing it would see a Drum Grid with no pads (#2207).
+    allocateStagedPadDeviceIds(outData.tracks, outData.masterTrack.get());
+
+    // Then the pad addresses saved before pad ownership was a step type. After the ids,
+    // because a pad chain is matched by the id of the device that owns it (#2219).
+    pad_paths::migrateLegacyPadPaths(outData.tracks, outData.masterTrack.get(),
+                                     outData.automationLanes);
+
+    // Then the retired duplicate parameter record (#2317), once, before either engine
+    // projection is built. After the aliases and index migrations so ids are current.
+    daw::audio::device_state_hydration::hydrateStagedProject(
+        outData.tracks, outData.masterTrack.get(), info.version);
+
+    // Then the pads' mixer channels (#3010), which is also where a pad on a bus moves onto
+    // one. After the pad ids, which the channels link by.
+    migratePadChannels(outData.tracks);
+
+    // Opaque pass-throughs to AliasRegistry and BindingRegistry.
+    if (doc.has("paramAliases"))
+        info.paramAliases = doc.get("paramAliases");
+    if (doc.has("projectBindings"))
+        info.projectBindings = doc.get("projectBindings");
+
+    lastError_.clear();
+    lastLoadFailure_ = ProjectLoadFailure::None;
+    return true;
+}
+
+void ProjectSerializer::readProjectSettings(const ser::ObjectReader& in, ProjectInfo& info,
+                                            const ProjectCreationSettings& creationSettings) {
+    in.required("name", info.name);
+    in.required("tempo", info.tempo);
+    std::vector<int> timeSignature;
+    in.readArray("timeSignature", timeSignature, true);
+    if (timeSignature.size() >= 2) {
+        info.timeSignatureNumerator = timeSignature[0];
+        info.timeSignatureDenominator = timeSignature[1];
+    } else if (in.has("timeSignature")) {
+        in.fail("timeSignature", "expected a numerator and a denominator");
+    }
+    in.required("projectLength", info.projectLength);
+    in.optional("sampleRate", info.sampleRate);
+    info.timelineLengthBars = creationSettings.timelineLengthBars;
+    in.optional("timelineLengthBars", info.timelineLengthBars);
+    in.optional("savedWithEngine", info.savedWithEngine);
+    in.optional("renderBitDepth", info.renderBitDepth);
+    in.optional("bounceBitDepth", info.bounceBitDepth);
+    in.optional("keyRoot", info.keyRoot);
+    in.optional("keyQuality", info.keyQuality);
+
+    // An old project has no defaults object: the current new-project preferences stand in.
+    info.defaults = creationSettings.defaults;
+    if (const auto defaults = in.optionalObject("defaults")) {
+        auto& d = info.defaults;
+        defaults->optional("zoomViewBars", d.zoomViewBars);
+        defaults->optional("autoCrossfade", d.autoCrossfade);
+        defaults->optional("overlapPlaysBoth", d.overlapPlaysBoth);
+        defaults->optional("chordPreview", d.chordPreview);
+        defaults->optional("postFxPostFader", d.postFxPostFader);
+        defaults->optional("clipColourMode", d.clipColourMode);
+        if (defaults->has("colourPalette")) {
+            std::vector<ProjectColourEntry> palette;
+            defaults->forEachObject("colourPalette", [&palette](const ser::ObjectReader& item) {
+                ProjectColourEntry entry;
+                entry.name = "Colour " + juce::String(static_cast<int>(palette.size()) + 1);
+                // An unreadable colour keeps its slot with the default colour.
+                if (juce::String colour; item.optional("colour", colour) && colour.length() == 8 &&
+                                         colour.containsOnly("0123456789abcdefABCDEF"))
+                    entry.colour = juce::Colour::fromString(colour).getARGB();
+                if (juce::String name; item.optional("name", name) && name.isNotEmpty())
+                    entry.name = name;
+                palette.push_back(entry);
+            });
+            d.colourPalette = std::move(palette);
+        }
+    }
+
+    // Absent until a project is credited, so no object means no credits.
+    info.metadata = {};
+    if (const auto metadata = in.optionalObject("metadata"))
+        for (const auto& field : kProjectMetadataFields)
+            metadata->optional(field.key, info.metadata.*field.member);
+
+    // A project from before scenes were saved keeps the eight historical rows.
+    if (in.has("scenes")) {
+        info.scenes.clear();
+        info.nextSceneId = 1;
+        std::set<SceneId> ids;
+        in.forEachObject("scenes", [&info, &ids](const ser::ObjectReader& item) {
+            ProjectScene scene;
+            if (!item.required("id", scene.id) || scene.id < 0 || !ids.insert(scene.id).second)
+                return;
+            item.optional("name", scene.name);
+            if (juce::Colour colour; item.optional("colour", colour))
+                scene.colourArgb = colour.getARGB();
+            info.nextSceneId = std::max(info.nextSceneId, scene.id + 1);
+            info.scenes.push_back(std::move(scene));
+        });
+        if (SceneId next = 0; in.optional("nextSceneId", next))
+            info.nextSceneId = std::max(info.nextSceneId, next);
+        ensureProjectSceneCount(info, 1);
+    }
+
+    info.markers.clear();
+    in.forEachObject("markers", [&info](const ser::ObjectReader& item) {
+        ProjectTimelineMarker marker;
+        item.required("id", marker.id);
+        item.required("positionBeats", marker.positionBeats);
+        item.required("name", marker.name);
+        if (juce::Colour colour; item.optional("colour", colour))
+            marker.colourArgb = colour.getARGB();
+        if (marker.id > 0)
+            info.markers.push_back(marker);
+    });
+
+    if (const auto loop = in.optionalObject("loop")) {
+        loop->required("enabled", info.loopEnabled);
+        loop->required("startBeats", info.loopStartBeats);
+        loop->required("endBeats", info.loopEndBeats);
+    }
+    if (const auto zoom = in.optionalObject("zoom")) {
+        zoom->required("horizontalZoom", info.horizontalZoom);
+        zoom->required("verticalZoom", info.verticalZoom);
+        zoom->required("scrollX", info.scrollX);
+        zoom->required("scrollY", info.scrollY);
+    }
+    in.optional("activeView", info.activeView);
 }
 
 void ProjectSerializer::commitStaged(StagedProjectData& data) {
@@ -886,219 +797,12 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info,
 }
 
 bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& outInfo) {
-    if (!json.isObject()) {
-        lastError_ = "Invalid project JSON: not an object";
+    StagedProjectData staged;
+    if (!stageProject(json, {}, ProjectManager::captureCreationSettingsFromConfig(), staged))
         return false;
-    }
 
-    auto* obj = json.getDynamicObject();
-    if (obj == nullptr) {
-        lastError_ = "Invalid project JSON: null object";
-        return false;
-    }
-
-    // Version check
-    outInfo.version = obj->getProperty("magdaVersion").toString();
-    if (outInfo.version.isEmpty()) {
-        lastError_ = "Missing magdaVersion field";
-        return false;
-    }
-
-    outInfo.createdAt = juce::Time::fromISO8601(obj->getProperty("createdAt").toString());
-
-    // Parse timestamp
-    juce::String timeStr = obj->getProperty("lastModified").toString();
-    if (timeStr.isNotEmpty()) {
-        outInfo.lastModified = juce::Time::fromISO8601(timeStr);
-    }
-    outInfo.autosaveMediaDirectory = obj->getProperty("autosaveMediaDirectory").toString();
-
-    // Parse project settings
-    auto projectVar = obj->getProperty("project");
-    if (!projectVar.isObject()) {
-        lastError_ = "Missing or invalid project settings";
-        return false;
-    }
-
-    auto* projectObj = projectVar.getDynamicObject();
-    outInfo.name = projectObj->getProperty("name").toString();
-    outInfo.tempo = projectObj->getProperty("tempo");
-
-    // Time signature
-    auto timeSigVar = projectObj->getProperty("timeSignature");
-    if (timeSigVar.isArray()) {
-        auto* arr = timeSigVar.getArray();
-        if (arr->size() >= 2) {
-            outInfo.timeSignatureNumerator = (*arr)[0];
-            outInfo.timeSignatureDenominator = (*arr)[1];
-        }
-    }
-
-    outInfo.projectLength = projectObj->getProperty("projectLength");
-
-    if (projectObj->hasProperty("sampleRate"))
-        outInfo.sampleRate = projectObj->getProperty("sampleRate");
-    auto creationSettings = ProjectManager::captureCreationSettingsFromConfig();
-    outInfo.timelineLengthBars = creationSettings.timelineLengthBars;
-    if (projectObj->hasProperty("timelineLengthBars"))
-        outInfo.timelineLengthBars = projectObj->getProperty("timelineLengthBars");
-    outInfo.defaults = readProjectDefaults(*projectObj, std::move(creationSettings.defaults));
-    if (projectObj->hasProperty("savedWithEngine"))
-        outInfo.savedWithEngine = projectObj->getProperty("savedWithEngine").toString();
-    if (projectObj->hasProperty("renderBitDepth"))
-        outInfo.renderBitDepth = projectObj->getProperty("renderBitDepth");
-    if (projectObj->hasProperty("bounceBitDepth"))
-        outInfo.bounceBitDepth = projectObj->getProperty("bounceBitDepth");
-    if (projectObj->hasProperty("keyRoot"))
-        outInfo.keyRoot = projectObj->getProperty("keyRoot");
-    if (projectObj->hasProperty("keyQuality"))
-        outInfo.keyQuality = projectObj->getProperty("keyQuality");
-
-    outInfo.metadata = readProjectMetadata(*projectObj);
-    readProjectScenes(*projectObj, outInfo);
-
-    // Named timeline markers
-    outInfo.markers.clear();
-    auto markersVar = projectObj->getProperty("markers");
-    if (markersVar.isArray()) {
-        auto* markersArray = markersVar.getArray();
-        for (const auto& markerVar : *markersArray) {
-            if (!markerVar.isObject())
-                continue;
-
-            auto* markerObj = markerVar.getDynamicObject();
-            ProjectTimelineMarker marker;
-            marker.id = static_cast<int>(markerObj->getProperty("id"));
-            marker.positionBeats = static_cast<double>(markerObj->getProperty("positionBeats"));
-            marker.name = markerObj->getProperty("name").toString();
-
-            auto colourString = markerObj->getProperty("colour").toString();
-            if (colourString.isNotEmpty())
-                marker.colourArgb = stringToColour(colourString).getARGB();
-
-            if (marker.id > 0)
-                outInfo.markers.push_back(marker);
-        }
-    }
-
-    // Loop settings
-    auto loopVar = projectObj->getProperty("loop");
-    if (loopVar.isObject()) {
-        auto* loopObj = loopVar.getDynamicObject();
-        outInfo.loopEnabled = loopObj->getProperty("enabled");
-        outInfo.loopStartBeats = loopObj->getProperty("startBeats");
-        outInfo.loopEndBeats = loopObj->getProperty("endBeats");
-    }
-
-    // Zoom/scroll state
-    auto zoomVar = projectObj->getProperty("zoom");
-    if (zoomVar.isObject()) {
-        auto* zoomObj = zoomVar.getDynamicObject();
-        outInfo.horizontalZoom = zoomObj->getProperty("horizontalZoom");
-        outInfo.verticalZoom = zoomObj->getProperty("verticalZoom");
-        outInfo.scrollX = zoomObj->getProperty("scrollX");
-        outInfo.scrollY = zoomObj->getProperty("scrollY");
-        DBG("ZOOM DESERIALIZE: hz=" << outInfo.horizontalZoom << " scrollX=" << outInfo.scrollX
-                                    << " scrollY=" << outInfo.scrollY);
-    } else {
-        DBG("ZOOM DESERIALIZE: no zoom object in project JSON");
-    }
-
-    // Active view mode
-    if (projectObj->hasProperty("activeView")) {
-        outInfo.activeView = static_cast<int>(projectObj->getProperty("activeView"));
-    }
-
-    // ATOMIC DESERIALIZATION: Validate and stage ALL components before modifying any state.
-    // This ensures that if any component fails to deserialize, we don't leave the project
-    // in a partially-loaded, inconsistent state.
-
-    // Stage 1: Deserialize all components into temporary collections (validation phase)
-    std::vector<TrackInfo> stagedTracks;
-    std::vector<ClipInfo> stagedClips;
-    std::vector<AutomationLaneInfo> stagedAutomation;
-    std::vector<AutomationClipInfo> stagedAutomationClips;
-
-    if (!deserializeTracksToStaging(obj->getProperty("tracks"), stagedTracks)) {
-        return false;  // Failed - no state modified
-    }
-
-    std::vector<Source> stagedSources;
-    deserializeSourcesToStaging(obj->getProperty("sources"), stagedSources);
-
-    std::vector<Source> stagedLegacySources;
-    if (!deserializeClipsToStaging(obj->getProperty("clips"), stagedClips, outInfo.tempo,
-                                   &stagedLegacySources)) {
-        return false;  // Failed - no state modified
-    }
-    reconcileProjectScenes(outInfo, stagedClips);
-
-    if (!deserializeAutomationToStaging(obj->getProperty("automation"), stagedAutomation,
-                                        stagedAutomationClips)) {
-        return false;  // Failed - no state modified
-    }
-
-    // The master track is staged here rather than after the commit below, so
-    // the migration pass sees it: a lane targeting a retired effect on the
-    // master has to be pruned in the same pass that rewrites the device, or it
-    // survives holding a paramIndex into a parameter list that no longer exists.
-    auto masterTrackVar = obj->getProperty("masterTrack");
-    TrackInfo stagedMasterTrack;
-    const bool hasMasterTrack =
-        masterTrackVar.isObject() && deserializeTrackInfo(masterTrackVar, stagedMasterTrack);
-
-    // Retired stock Tracktion effects load as their compiled successors.
-    legacy_devices::migrateRetiredDevicesInProject(stagedTracks,
-                                                   hasMasterTrack ? &stagedMasterTrack : nullptr,
-                                                   stagedAutomation, stagedAutomationClips);
-
-    // Then any device that renumbered its parameters (#2079).
-    device_param_migrations::applyParamIndexMigrations(
-        stagedTracks, hasMasterTrack ? &stagedMasterTrack : nullptr, stagedAutomation,
-        stagedAutomationClips);
-    device_param_migrations::applyChoiceGrowths(stagedTracks,
-                                                hasMasterTrack ? &stagedMasterTrack : nullptr,
-                                                stagedAutomation, stagedAutomationClips);
-
-    // Then the pad addresses saved before pad ownership was a step type (#2219).
-    pad_paths::migrateLegacyPadPaths(stagedTracks, hasMasterTrack ? &stagedMasterTrack : nullptr,
-                                     stagedAutomation);
-
-    // Then the retired duplicate parameter record (#2317), same as loadAndStage.
-    daw::audio::device_state_hydration::hydrateStagedProject(
-        stagedTracks, hasMasterTrack ? &stagedMasterTrack : nullptr, outInfo.version);
-
-    // Then the pads' mixer channels (#3010), same as loadAndStage.
-    migratePadChannels(stagedTracks);
-
-    // Stage 2: All components validated successfully - now commit to managers atomically
-    installStagedSources(stagedSources, stagedLegacySources, stagedClips);
-    ClipOperations::wrapFreeLoops(stagedClips, outInfo.tempo);
-    commitStagedData(stagedTracks, stagedClips, stagedAutomation, stagedAutomationClips);
-    resolveStagedSources(stagedSources);
-
-    // Restore master track chain elements (plugins on the master bus)
-    if (hasMasterTrack) {
-        auto& tm = TrackManager::getInstance();
-        if (auto* masterTrack = tm.getTrack(MASTER_TRACK_ID)) {
-            tm.setTrackAudioOutput(MASTER_TRACK_ID, stagedMasterTrack.audioOutputDevice);
-            masterTrack->chain.fxChainElements = std::move(stagedMasterTrack.chain.fxChainElements);
-            masterTrack->chain.postFxChainElements =
-                std::move(stagedMasterTrack.chain.postFxChainElements);
-            masterTrack->chain.mixerAnalysisElements =
-                std::move(stagedMasterTrack.chain.mixerAnalysisElements);
-            for (const auto& element : masterTrack->chain.fxChainElements) {
-                if (isDevice(element))
-                    tm.ensureDeviceIdAbove(getDevice(element).id);
-            }
-            for (const auto& element : masterTrack->chain.postFxChainElements)
-                tm.ensurePostFxDeviceIdAbove(element.device.id);
-            for (const auto& element : masterTrack->chain.mixerAnalysisElements)
-                tm.ensureMixerAnalysisDeviceIdAbove(element.device.id);
-            tm.notifyTrackDevicesChanged(MASTER_TRACK_ID);
-        }
-    }
-
+    outInfo = staged.info;
+    commitStaged(staged);
     return true;
 }
 
@@ -1236,27 +940,29 @@ juce::var ProjectSerializer::serializeSources(const juce::File& projectFile) {
     return {sourcesArray};
 }
 
-void ProjectSerializer::deserializeSourcesToStaging(const juce::var& json, std::vector<Source>& out,
+bool ProjectSerializer::deserializeSourcesToStaging(const juce::var& json, std::vector<Source>& out,
                                                     const juce::File& projectFile) {
-    if (!json.isArray())
-        return;
+    auto* holder = new juce::DynamicObject();
+    holder->setProperty("sources", json);
+    return ser::decodeDocument(
+        juce::var(holder), {}, lastError_,
+        [&](const ser::ObjectReader& doc) { readSources(doc, out, projectFile); });
+}
 
-    for (const auto& entry : *json.getArray()) {
-        auto* sourceObj = entry.getDynamicObject();
-        if (sourceObj == nullptr)
-            continue;
+void ProjectSerializer::readSources(const ser::ObjectReader& doc, std::vector<Source>& out,
+                                    const juce::File& projectFile) {
+    doc.forEachObject("sources", [&out, &projectFile](const ser::ObjectReader& item) {
         Source source;
-        source.id = sourceObj->getProperty("id");
-        source.filePath =
-            fromProjectPath(projectFile, sourceObj->getProperty("filePath").toString());
-        source.durationSeconds = sourceObj->getProperty("durationSeconds");
-        source.sampleRate = sourceObj->getProperty("sampleRate");
-        source.detectedBpm = sourceObj->getProperty("detectedBpm");
-        source.detectedKeyRoot = sourceObj->getProperty("detectedKeyRoot").toString().toStdString();
-        source.detectedKeyScale =
-            sourceObj->getProperty("detectedKeyScale").toString().toStdString();
+        item.required("id", source.id);
+        if (juce::String path; item.required("filePath", path))
+            source.filePath = fromProjectPath(projectFile, path);
+        item.required("durationSeconds", source.durationSeconds);
+        item.required("sampleRate", source.sampleRate);
+        item.optional("detectedBpm", source.detectedBpm);
+        item.optional("detectedKeyRoot", source.detectedKeyRoot);
+        item.optional("detectedKeyScale", source.detectedKeyScale);
         out.push_back(std::move(source));
-    }
+    });
 }
 
 SourceId ProjectSerializer::stageLegacySource(std::vector<Source>& legacySources,
@@ -1394,127 +1100,27 @@ juce::var ProjectSerializer::serializeAutomation() {
 // Component-level deserialization
 // ============================================================================
 
-bool ProjectSerializer::deserializeTracksToStaging(const juce::var& json,
-                                                   std::vector<TrackInfo>& outTracks) {
-    if (!json.isArray()) {
-        lastError_ = "Tracks data is not an array";
-        return false;
-    }
-
-    auto* arr = json.getArray();
-    outTracks.clear();
-    outTracks.reserve(arr->size());
-
-    // Deserialize all tracks into staging vector (validation phase)
-    for (const auto& trackVar : *arr) {
-        TrackInfo track;
-        if (!deserializeTrackInfo(trackVar, track)) {
-            return false;  // Failed - staging vector discarded
-        }
-        outTracks.push_back(std::move(track));
-    }
-
-    return true;
-}
-
-bool ProjectSerializer::deserializeClipsToStaging(const juce::var& json,
-                                                  std::vector<ClipInfo>& outClips,
-                                                  double projectTempo,
-                                                  std::vector<Source>* legacySources) {
-    if (!json.isArray()) {
-        lastError_ = "Clips data is not an array";
-        return false;
-    }
-
-    auto* arr = json.getArray();
+void ProjectSerializer::readAutomation(const ser::ObjectReader& doc,
+                                       std::vector<AutomationLaneInfo>& outLanes,
+                                       std::vector<AutomationClipInfo>& outClips) {
+    outLanes.clear();
     outClips.clear();
-    outClips.reserve(arr->size());
+    // Absent in projects saved before automation existed.
+    const auto automation = project_migration::upgradeAutomation(doc.get("automation"));
+    if (automation.isVoid())
+        return;
 
-    // Deserialize all clips into staging vector (validation phase)
-    for (const auto& clipVar : *arr) {
-        ClipInfo clip;
-        if (!deserializeClipInfo(clipVar, clip, projectTempo, legacySources)) {
-            return false;  // Failed - staging vector discarded
-        }
+    const ser::ObjectReader in(automation, doc.pathOf("automation"), doc.log());
+    in.forEachObject("lanes", [&outLanes](const ser::ObjectReader& item) {
+        AutomationLaneInfo lane;
+        read(item, lane);
+        outLanes.push_back(std::move(lane));
+    });
+    in.forEachObject("clips", [&outClips](const ser::ObjectReader& item) {
+        AutomationClipInfo clip;
+        read(item, clip);
         outClips.push_back(std::move(clip));
-    }
-
-    return true;
-}
-
-bool ProjectSerializer::deserializeAutomationToStaging(const juce::var& json,
-                                                       std::vector<AutomationLaneInfo>& outLanes,
-                                                       std::vector<AutomationClipInfo>& outClips) {
-    // Handle missing automation key gracefully for backward compatibility.
-    // Older project files created before automation support won't have this key.
-    if (json.isVoid()) {
-        outLanes.clear();
-        outClips.clear();
-        return true;
-    }
-
-    // New format: object with "lanes" and "clips" arrays
-    if (json.isObject()) {
-        auto* obj = json.getDynamicObject();
-        if (obj == nullptr) {
-            lastError_ = "Automation data object is invalid";
-            return false;
-        }
-
-        // Deserialize lanes
-        auto lanesVar = obj->getProperty("lanes");
-        if (lanesVar.isArray()) {
-            auto* lanesArr = lanesVar.getArray();
-            outLanes.clear();
-            outLanes.reserve(lanesArr->size());
-            for (const auto& laneVar : *lanesArr) {
-                AutomationLaneInfo lane;
-                if (!deserializeAutomationLaneInfo(laneVar, lane)) {
-                    return false;
-                }
-                outLanes.push_back(std::move(lane));
-            }
-        }
-
-        // Deserialize clips
-        auto clipsVar = obj->getProperty("clips");
-        if (clipsVar.isArray()) {
-            auto* clipsArr = clipsVar.getArray();
-            outClips.clear();
-            outClips.reserve(clipsArr->size());
-            for (const auto& clipVar : *clipsArr) {
-                AutomationClipInfo clip;
-                if (!deserializeAutomationClipInfo(clipVar, clip)) {
-                    return false;
-                }
-                outClips.push_back(std::move(clip));
-            }
-        }
-
-        return true;
-    }
-
-    // Legacy format: plain array of lanes (no clips)
-    if (json.isArray()) {
-        auto* arr = json.getArray();
-
-        outLanes.clear();
-        outLanes.reserve(arr->size());
-        outClips.clear();
-
-        for (const auto& laneVar : *arr) {
-            AutomationLaneInfo lane;
-            if (!deserializeAutomationLaneInfo(laneVar, lane)) {
-                return false;
-            }
-            outLanes.push_back(std::move(lane));
-        }
-
-        return true;
-    }
-
-    lastError_ = "Automation data has unexpected format";
-    return false;
+    });
 }
 
 // ============================================================================
