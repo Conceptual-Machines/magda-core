@@ -342,11 +342,15 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
                     juce::Array<juce::var> polyAftertouch;
                     for (const auto& event : take.polyAftertouch)
                         polyAftertouch.add(serializeMidiPolyAftertouchData(event));
+                    juce::Array<juce::var> programChanges;
+                    for (const auto& event : take.programChanges)
+                        programChanges.add(serializeMidiProgramChangeData(event));
                     takeObj->setProperty("notes", juce::var(notes));
                     takeObj->setProperty("cc", juce::var(ccs));
                     takeObj->setProperty("pitchBend", juce::var(pbs));
                     takeObj->setProperty("channelPressure", juce::var(pressure));
                     takeObj->setProperty("polyAftertouch", juce::var(polyAftertouch));
+                    takeObj->setProperty("programChanges", juce::var(programChanges));
                     takesArray.add(juce::var(takeObj));
                 }
                 midiObj->setProperty("takes", juce::var(takesArray));
@@ -459,6 +463,13 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
         for (const auto& aftertouch : clip.midiPolyAftertouchData)
             aftertouchArray.add(serializeMidiPolyAftertouchData(aftertouch));
         obj->setProperty("midiPolyAftertouchData", juce::var(aftertouchArray));
+    }
+
+    if (!clip.midiProgramChangeData.empty()) {
+        juce::Array<juce::var> changeArray;
+        for (const auto& change : clip.midiProgramChangeData)
+            changeArray.add(serializeMidiProgramChangeData(change));
+        obj->setProperty("midiProgramChangeData", juce::var(changeArray));
     }
 
     // Chord annotations
@@ -599,8 +610,9 @@ void ProjectSerializer::read(const ser::ObjectReader& raw, ClipInfo& outClip, do
 
     readMidiEvents(in, outClip.midiNotes, outClip.midiCCData, outClip.midiPitchBendData,
                    outClip.midiChannelPressureData, outClip.midiPolyAftertouchData,
+                   outClip.midiProgramChangeData,
                    {"midiNotes", "midiCCData", "midiPitchBendData", "midiChannelPressureData",
-                    "midiPolyAftertouchData"});
+                    "midiPolyAftertouchData", "midiProgramChangeData"});
 
     in.forEachObject("chordAnnotations", [&outClip](const ser::ObjectReader& item) {
         ClipInfo::ChordAnnotation annotation;
@@ -621,9 +633,10 @@ void ProjectSerializer::readMidiContent(const ser::ObjectReader& in, MidiClipMod
 
     in.forEachObject("takes", [&midi](const ser::ObjectReader& item) {
         MidiTake take;
-        readMidiEvents(item, take.notes, take.cc, take.pitchBend, take.channelPressure,
-                       take.polyAftertouch,
-                       {"notes", "cc", "pitchBend", "channelPressure", "polyAftertouch"});
+        readMidiEvents(
+            item, take.notes, take.cc, take.pitchBend, take.channelPressure, take.polyAftertouch,
+            take.programChanges,
+            {"notes", "cc", "pitchBend", "channelPressure", "polyAftertouch", "programChanges"});
         midi.takes.push_back(std::move(take));
     });
     if (!midi.takes.empty() && in.optional("currentTakeIndex", midi.currentTakeIndex))
@@ -647,6 +660,7 @@ void ProjectSerializer::readMidiEvents(const ser::ObjectReader& in, std::vector<
                                        std::vector<MidiPitchBendData>& pitchBend,
                                        std::vector<MidiChannelPressureData>& pressure,
                                        std::vector<MidiPolyAftertouchData>& aftertouch,
+                                       std::vector<MidiProgramChangeData>& programChanges,
                                        const MidiEventKeys& keys) {
     const auto readInto = [&in](const char* key, auto& out) {
         in.forEachObject(key, [&out](const ser::ObjectReader& item) {
@@ -660,6 +674,7 @@ void ProjectSerializer::readMidiEvents(const ser::ObjectReader& in, std::vector<
     readInto(keys.pitchBend, pitchBend);
     readInto(keys.channelPressure, pressure);
     readInto(keys.polyAftertouch, aftertouch);
+    readInto(keys.programChanges, programChanges);
 }
 
 namespace {
@@ -828,6 +843,27 @@ juce::var ProjectSerializer::serializeMidiPolyAftertouchData(const MidiPolyAfter
 void ProjectSerializer::read(const ser::ObjectReader& in, MidiPolyAftertouchData& data) {
     DESER(noteNumber);
     DESER(value);
+    DESER(beatPosition);
+    DESER_OPT(id);
+}
+
+juce::var ProjectSerializer::serializeMidiProgramChangeData(const MidiProgramChangeData& data) {
+    auto* obj = new juce::DynamicObject();
+    SER(program);
+    if (data.bankMsb >= 0)
+        SER(bankMsb);
+    if (data.bankLsb >= 0)
+        SER(bankLsb);
+    SER(beatPosition);
+    if (data.id != INVALID_EVENT_ID)
+        obj->setProperty("id", data.id);
+    return {obj};
+}
+
+void ProjectSerializer::read(const ser::ObjectReader& in, MidiProgramChangeData& data) {
+    DESER(program);
+    DESER_OPT(bankMsb);
+    DESER_OPT(bankLsb);
     DESER(beatPosition);
     DESER_OPT(id);
 }

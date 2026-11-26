@@ -52,9 +52,9 @@ struct StagedProjectData {
  *   support for 1 is permanent.
  * 3: ordered Session scenes carry stable ids, names and colours (#2835).
  *
- * A file declaring a newer version is refused (#2323), so bump this only for a change
- * an older reader would lose data on, not for a new optional field. Builds before the
- * gate ignore it and load such a file lossily.
+ * A file declaring a newer version is refused (#2323), so bump this only when the layout
+ * changes so an older reader would misread it, not for a new optional field. Builds
+ * before the gate ignore it and load such a file lossily.
  */
 constexpr int kProjectSchemaVersion = 3;
 
@@ -339,12 +339,14 @@ class ProjectSerializer {
         const char* pitchBend;
         const char* channelPressure;
         const char* polyAftertouch;
+        const char* programChanges;
     };
     static void readMidiEvents(const ser::ObjectReader& in, std::vector<MidiNote>& notes,
                                std::vector<MidiCCData>& cc,
                                std::vector<MidiPitchBendData>& pitchBend,
                                std::vector<MidiChannelPressureData>& pressure,
                                std::vector<MidiPolyAftertouchData>& aftertouch,
+                               std::vector<MidiProgramChangeData>& programChanges,
                                const MidiEventKeys& keys);
     static void readMidiContent(const ser::ObjectReader& in, MidiClipModel& midi);
     static void read(const ser::ObjectReader& in, MidiNote& out);
@@ -352,6 +354,7 @@ class ProjectSerializer {
     static void read(const ser::ObjectReader& in, MidiPitchBendData& out);
     static void read(const ser::ObjectReader& in, MidiChannelPressureData& out);
     static void read(const ser::ObjectReader& in, MidiPolyAftertouchData& out);
+    static void read(const ser::ObjectReader& in, MidiProgramChangeData& out);
     static void read(const ser::ObjectReader& in, AutomationLaneInfo& out);
     static void read(const ser::ObjectReader& in, AutomationClipInfo& out);
     static void read(const ser::ObjectReader& in, AutomationPoint& out);
@@ -373,6 +376,7 @@ class ProjectSerializer {
     static juce::var serializeMidiPitchBendData(const MidiPitchBendData& data);
     static juce::var serializeMidiChannelPressureData(const MidiChannelPressureData& data);
     static juce::var serializeMidiPolyAftertouchData(const MidiPolyAftertouchData& data);
+    static juce::var serializeMidiProgramChangeData(const MidiProgramChangeData& data);
     static juce::var serializeSendInfo(const SendInfo& data);
     static juce::var serializeMacroLink(const MacroLink& data);
     static juce::var serializeModLink(const ModLink& data);

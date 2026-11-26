@@ -7,6 +7,7 @@ target_sources(magda_daw_app PRIVATE
     MidiTakeLanesComponent.cpp
     VelocityLaneComponent.cpp
     CCLaneComponent.cpp
+    ProgramChangeLaneComponent.cpp
     NoteExpressionLaneComponent.cpp
     MidiDrawerComponent.cpp
     MidiEditTool.cpp
@@ -19,6 +20,7 @@ target_sources(magda_daw_app PRIVATE
     PitchFoldMap.hpp
     VelocityLaneComponent.hpp
     CCLaneComponent.hpp
+    ProgramChangeLaneComponent.hpp
     NoteExpressionLaneComponent.hpp
     MidiDrawerComponent.hpp
     MidiEditTool.hpp

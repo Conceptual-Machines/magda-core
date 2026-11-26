@@ -28,6 +28,7 @@
 #include "core/ClipCommands.hpp"
 #include "core/ClipPlacementPolicy.hpp"
 #include "core/MidiChordMarkers.hpp"
+#include "core/MidiFileReader.hpp"
 #include "core/PasteTargetResolver.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TempoUtils.hpp"
@@ -58,103 +59,11 @@ void focusClipEditorTab(ClipId clipId) {
     }
 }
 
-struct ImportedMidiTrack {
-    juce::String name;
-    std::vector<MidiNote> notes;
-    std::vector<MidiCCData> controllers;
-    std::vector<MidiPitchBendData> pitchBends;
-    double endBeat = 0.0;
-};
-
-struct ImportedMidiFile {
-    std::vector<ImportedMidiTrack> tracks;
-    double lengthBeats = 0.0;
-    double beatsInBar = 4.0;
-};
-
-std::optional<ImportedMidiFile> readMidiTracks(const juce::File& file, double projectTempo) {
-    auto stream = file.createInputStream();
-    juce::MidiFile midi;
-    if (stream == nullptr || !midi.readFrom(*stream))
-        return std::nullopt;
-
-    ImportedMidiFile imported;
-    juce::MidiMessageSequence signatures;
-    midi.findAllTimeSigEvents(signatures);
-    signatures.sort();
-    if (signatures.getNumEvents() > 0) {
-        int numerator = 4, denominator = 4;
-        signatures.getEventPointer(0)->message.getTimeSignatureInfo(numerator, denominator);
-        if (numerator > 0 && denominator > 0)
-            imported.beatsInBar = magda::beatsPerBar(numerator, denominator);
-    }
-    const auto format = midi.getTimeFormat();
-    // SMPTE files carry clock ticks instead of musical ticks.
-    const double beatsPerTick = format > 0 ? 1.0 / format : projectTempo / 60.0;
-    if (format <= 0)
-        midi.convertTimestampTicksToSeconds();
-    // End-of-track markers preserve trailing silence, including conductor-only tracks.
-    imported.lengthBeats = midi.getLastTimestamp() * beatsPerTick;
-
-    for (int trackIndex = 0; trackIndex < midi.getNumTracks(); ++trackIndex) {
-        const auto* source = midi.getTrack(trackIndex);
-        if (source == nullptr)
-            continue;
-        juce::String name;
-        for (int i = 0; i < source->getNumEvents(); ++i) {
-            const auto& message = source->getEventPointer(i)->message;
-            if (message.isTrackNameEvent())
-                name = message.getTextFromTextMetaEvent();
-        }
-        for (int channel = 1; channel <= 16; ++channel) {
-            juce::MidiMessageSequence sequence;
-            source->extractMidiChannelMessages(channel, sequence, false);
-            sequence.updateMatchedPairs();
-            ImportedMidiTrack track;
-            track.name = name;
-            track.endBeat = sequence.getEndTime() * beatsPerTick;
-            for (int i = 0; i < sequence.getNumEvents(); ++i) {
-                const auto* event = sequence.getEventPointer(i);
-                const auto& message = event->message;
-                const auto beat = message.getTimeStamp() * beatsPerTick;
-                if (message.isNoteOn()) {
-                    MidiNote note;
-                    note.noteNumber = message.getNoteNumber();
-                    note.velocity = message.getVelocity();
-                    note.startBeat = beat;
-                    note.lengthBeats = event->noteOffObject != nullptr
-                                           ? (event->noteOffObject->message.getTimeStamp() -
-                                              message.getTimeStamp()) *
-                                                 beatsPerTick
-                                           : 1.0;
-                    track.notes.push_back(note);
-                } else if (message.isController()) {
-                    MidiCCData cc;
-                    cc.controller = message.getControllerNumber();
-                    cc.value = message.getControllerValue();
-                    cc.beatPosition = beat;
-                    track.controllers.push_back(cc);
-                } else if (message.isPitchWheel()) {
-                    MidiPitchBendData bend;
-                    bend.value = message.getPitchWheelValue();
-                    bend.beatPosition = beat;
-                    track.pitchBends.push_back(bend);
-                }
-            }
-            if (track.notes.empty() && track.controllers.empty() && track.pitchBends.empty())
-                continue;
-            imported.lengthBeats = std::max(imported.lengthBeats, track.endBeat);
-            imported.tracks.push_back(std::move(track));
-        }
-    }
-    return imported;
-}
-
 std::vector<FileDropGhost> makeMidiDropGhosts(const juce::File& midiFile, double tempoBPM) {
     std::vector<FileDropGhost> ghosts;
 
     const double tempo = isValidBpm(tempoBPM) ? tempoBPM : DEFAULT_BPM;
-    const auto imported = readMidiTracks(midiFile, tempo);
+    const auto imported = daw::readMidiTracks(midiFile, tempo);
     if (!imported || imported->tracks.empty()) {
         ghosts.push_back({midiFile.getFileNameWithoutExtension(), 4.0});
         return ghosts;
@@ -3787,7 +3696,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
             if (!midiFile.existsAsFile())
                 continue;
 
-            const auto imported = readMidiTracks(midiFile, projectTempo);
+            const auto imported = daw::readMidiTracks(midiFile, projectTempo);
             if (!imported || imported->tracks.empty())
                 continue;
 
@@ -3862,6 +3771,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                 clip->midiNotes = list->notes;
                 clip->midiCCData = list->controllers;
                 clip->midiPitchBendData = list->pitchBends;
+                clip->midiProgramChangeData = list->programChanges;
 
                 // Set beat-based placement and name from MIDI track/file.
                 clip->setPlacementBeats((dropTime * projectTempo) / 60.0, lengthBeats);

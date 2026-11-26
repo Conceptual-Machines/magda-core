@@ -271,6 +271,8 @@ const char* trackTypeToLuaString(TrackType t) {
             return "pad";
         case TrackType::Separator:
             return "separator";
+        case TrackType::Chord:
+            return "chord";
     }
     return "audio";
 }

@@ -40,6 +40,7 @@ using magda::MidiNoteExpressionPoint;
 using magda::MidiPitchBendData;
 using magda::MidiPitchExpressionPoint;
 using magda::MidiPolyAftertouchData;
+using magda::MidiProgramChangeData;
 using magda::engine::BlockInfo;
 using magda::engine::ClipLane;
 using magda::engine::ClipMidiSource;
@@ -160,6 +161,9 @@ class Recorder {
     }
     std::vector<Captured> polyAftertouch() const {
         return ofKind([](const juce::MidiMessage& m) { return m.isAftertouch(); });
+    }
+    std::vector<Captured> programChanges() const {
+        return ofKind([](const juce::MidiMessage& m) { return m.isProgramChange(); });
     }
 
     std::vector<Captured> captured;
@@ -325,6 +329,35 @@ TEST_CASE("Authored pressure events compile in note-safe order", "[engine][clip]
     CHECK(list.events[2].data2 == 70);
     CHECK(list.controllers.size() == 1);
     CHECK(list.polyAftertouch.size() == 1);
+}
+
+TEST_CASE("A program change lands after its bank select and before the note",
+          "[engine][clip][midi][3412]") {
+    auto clip = makeMidiClip(1, 0.0, 4.0);
+    clip.midiNotes.push_back(note(60, 1.0, 1.0));
+    clip.midiProgramChangeData.push_back(MidiProgramChangeData{12, 1, 3, 1.0});
+
+    const auto list = compileMidiEvents(clip, 0.0);
+    REQUIRE(list.events.size() == 5);
+    CHECK(list.events[0].kind() == 0xb0u);
+    CHECK(list.events[0].data1 == 0);
+    CHECK(list.events[0].data2 == 1);
+    CHECK(list.events[1].kind() == 0xb0u);
+    CHECK(list.events[1].data1 == 32);
+    CHECK(list.events[1].data2 == 3);
+    CHECK(list.events[2].kind() == 0xc0u);
+    CHECK(list.events[2].data1 == 12);
+    CHECK(list.events[3].isNoteOn());
+}
+
+TEST_CASE("A program change without a bank sends no bank select", "[engine][clip][midi][3412]") {
+    auto clip = makeMidiClip(1, 0.0, 4.0);
+    clip.midiProgramChangeData.push_back(MidiProgramChangeData{5, -1, -1, 0.5});
+
+    const auto list = compileMidiEvents(clip, 0.0);
+    REQUIRE(list.events.size() == 1);
+    CHECK(list.events[0].kind() == 0xc0u);
+    CHECK(list.events[0].data1 == 5);
 }
 
 // =============================================================================
@@ -1110,6 +1143,33 @@ TEST_CASE("Locating into a note chases authored pressure", "[engine][clip][midi]
     REQUIRE(recorder.polyAftertouch().size() == 1);
     CHECK(recorder.polyAftertouch().front().message.getNoteNumber() == 60);
     CHECK(recorder.polyAftertouch().front().message.getAfterTouchValue() == 70);
+}
+
+TEST_CASE("A locate past a program change sends the bank and program it chose",
+          "[engine][clip][midi][3412]") {
+    auto clip = makeMidiClip(1, 0.0, 8.0);
+    clip.midiProgramChangeData.push_back(MidiProgramChangeData{7, -1, -1, 0.0});
+    clip.midiProgramChangeData.push_back(MidiProgramChangeData{12, 2, -1, 2.0});
+    clip.midiNotes.push_back(note(60, 3.0, 1.0));
+
+    Rig rig;
+    rig.publish({clip});
+
+    Recorder recorder;
+    rig.locate(blockOf(2.5), recorder);
+
+    REQUIRE(recorder.programChanges().size() == 1);
+    CHECK(recorder.programChanges().front().message.getProgramChangeNumber() == 12);
+    REQUIRE(recorder.controllers().size() == 1);
+    CHECK(recorder.controllers().front().message.getControllerNumber() == 0);
+    CHECK(recorder.controllers().front().message.getControllerValue() == 2);
+
+    // The bank select reaches the synth before the program it belongs to.
+    const auto bank = std::ranges::find_if(
+        recorder.captured, [](const auto& entry) { return entry.message.isController(); });
+    const auto program = std::ranges::find_if(
+        recorder.captured, [](const auto& entry) { return entry.message.isProgramChange(); });
+    CHECK(bank < program);
 }
 
 TEST_CASE("Locating into an expressive note reconstructs its bend on its own channel",

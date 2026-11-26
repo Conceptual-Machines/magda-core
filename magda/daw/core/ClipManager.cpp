@@ -598,6 +598,7 @@ ClipId ClipManager::createRecordedMidiClip(TrackId trackId, RecordedMidiClipData
     clip.midiPitchBendData = std::move(recording.active.pitchBend);
     clip.midiChannelPressureData = std::move(recording.active.channelPressure);
     clip.midiPolyAftertouchData = std::move(recording.active.polyAftertouch);
+    clip.midiProgramChangeData = std::move(recording.active.programChanges);
     clip.midi() = std::move(recording.takeModel);
     clip.ensureMidiEventIds();
     if (view == ClipView::Session) {
@@ -899,6 +900,7 @@ void rebuildMidiComp(ClipInfo& clip) {
     std::vector<MidiPitchBendData> pb;
     std::vector<MidiChannelPressureData> pressure;
     std::vector<MidiPolyAftertouchData> polyAftertouch;
+    std::vector<MidiProgramChangeData> programChanges;
 
     const int numTakes = static_cast<int>(midi.takes.size());
     const auto namesATake = [numTakes](const MidiCompSection& section) {
@@ -914,6 +916,8 @@ void rebuildMidiComp(ClipInfo& clip) {
                               pressure);
         appendEventsInSection(take.polyAftertouch, &MidiPolyAftertouchData::beatPosition, section,
                               polyAftertouch);
+        appendEventsInSection(take.programChanges, &MidiProgramChangeData::beatPosition, section,
+                              programChanges);
     }
 
     clip.midiNotes = std::move(notes);
@@ -921,6 +925,7 @@ void rebuildMidiComp(ClipInfo& clip) {
     clip.midiPitchBendData = std::move(pb);
     clip.midiChannelPressureData = std::move(pressure);
     clip.midiPolyAftertouchData = std::move(polyAftertouch);
+    clip.midiProgramChangeData = std::move(programChanges);
     clip.ensureMidiEventIds();
 }
 
@@ -942,6 +947,7 @@ void syncActiveMidiTake(ClipInfo& clip) {
     take.pitchBend = clip.midiPitchBendData;
     take.channelPressure = clip.midiChannelPressureData;
     take.polyAftertouch = clip.midiPolyAftertouchData;
+    take.programChanges = clip.midiProgramChangeData;
 }
 }  // namespace
 
@@ -3872,6 +3878,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
                     newClip->midiPitchBendData = clipData.midiPitchBendData;
                     newClip->midiChannelPressureData = clipData.midiChannelPressureData;
                     newClip->midiPolyAftertouchData = clipData.midiPolyAftertouchData;
+                    newClip->midiProgramChangeData = clipData.midiProgramChangeData;
                 }
 
                 // Copy audio properties — but NOT when pasting arrangement→session,
