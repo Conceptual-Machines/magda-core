@@ -34,9 +34,13 @@ const remote::OperationDescriptor* resolvableOperation(const std::string& name) 
 }  // namespace
 
 std::vector<ToolDefinition> agentToolsForSurface(const AgentSurface& surface) {
+    return agentToolsForOperations(surface.toolAllowlist);
+}
+
+std::vector<ToolDefinition> agentToolsForOperations(const std::vector<std::string>& operations) {
     std::vector<ToolDefinition> tools;
-    tools.reserve(surface.toolAllowlist.size());
-    for (const auto& name : surface.toolAllowlist) {
+    tools.reserve(operations.size());
+    for (const auto& name : operations) {
         const auto* operation = resolvableOperation(name);
         if (operation == nullptr)
             continue;
@@ -51,8 +55,12 @@ std::vector<ToolDefinition> agentToolsForSurface(const AgentSurface& surface) {
 }
 
 remote::ScopeSet agentScopesForSurface(const AgentSurface& surface) {
+    return agentScopesForOperations(surface.toolAllowlist);
+}
+
+remote::ScopeSet agentScopesForOperations(const std::vector<std::string>& operations) {
     remote::ScopeSet scopes{remote::Scope::Read};
-    for (const auto& name : surface.toolAllowlist) {
+    for (const auto& name : operations) {
         const auto* operation = resolvableOperation(name);
         if (operation != nullptr)
             scopes.add(operation->requiredScope);
@@ -62,9 +70,15 @@ remote::ScopeSet agentScopesForSurface(const AgentSurface& surface) {
 
 RemoteAgentToolExecutor::RemoteAgentToolExecutor(remote::RemoteApiService& service,
                                                  const AgentSurface& surface)
+    : RemoteAgentToolExecutor(service, juce::String(surface.name), surface.toolAllowlist) {}
+
+RemoteAgentToolExecutor::RemoteAgentToolExecutor(remote::RemoteApiService& service,
+                                                 juce::String owner,
+                                                 std::vector<std::string> allowlist)
     : service_(service),
-      surface_(surface),
-      scopes_(agentScopesForSurface(surface)),
+      owner_(std::move(owner)),
+      allowlist_(std::move(allowlist)),
+      scopes_(agentScopesForOperations(allowlist_)),
       runNamespace_(juce::Uuid().toDashedString()) {}
 
 ToolResult RemoteAgentToolExecutor::execute(const ToolExecutionRequest& request,
@@ -84,14 +98,13 @@ ToolResult RemoteAgentToolExecutor::execute(const ToolExecutionRequest& request,
                 .mutated = false};
     };
 
-    const bool allowed =
-        std::ranges::contains(surface_.toolAllowlist, request.call.name.toStdString());
+    const bool allowed = std::ranges::contains(allowlist_, request.call.name.toStdString());
     if (!allowed)
-        return failure("tool_not_allowed", "Operation '" + request.call.name + "' is not in the " +
-                                               surface_.name + " surface's allowlist");
+        return failure("tool_not_allowed", "Operation '" + request.call.name + "' is not in " +
+                                               owner_ + "'s allowlist");
 
     remote::RequestContext context;
-    context.clientId = "agent:" + juce::String(surface_.name);
+    context.clientId = "agent:" + owner_;
     context.clientName = "magda-agent";
     context.transport = "in-app";
     context.requestId = runNamespace_ + "/" + request.call.id;

@@ -31,3 +31,6 @@
 [submodule "third_party/link"]
 	path = third_party/link
 	url = https://github.com/Ableton/link.git
+[submodule "third_party/whisper.cpp"]
+	path = third_party/whisper.cpp
+	url = https://github.com/ggml-org/whisper.cpp.git

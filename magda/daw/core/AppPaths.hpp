@@ -5,6 +5,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include <string>
+
 // Centralised filesystem path resolution for MAGDA's per-user files.
 //
 // Three configurable roots (resolved in this order — first non-empty wins):
@@ -34,6 +36,12 @@ juce::File presetsDir();
 
 /** Default destination for rendered audio. */
 juce::File renderDir();
+
+/** The user's agent folders, one agent each (#3443). Read live, not from the resolved snapshot. */
+juce::File agentsDir();
+
+/** agentsDir() for a Config value not yet applied, such as a pending Settings edit. */
+juce::File agentsDirFor(const std::string& configured);
 
 /** OS-default appdata root (`~/Library/Application Support/MAGDA` on macOS).
  *  Returned regardless of override — needed because the config file itself
@@ -109,5 +117,6 @@ void resolve();
 bool dataDirOverriddenByEnv();
 bool presetsDirOverriddenByEnv();
 bool renderDirOverriddenByEnv();
+bool agentsDirOverriddenByEnv();
 
 }  // namespace magda::paths

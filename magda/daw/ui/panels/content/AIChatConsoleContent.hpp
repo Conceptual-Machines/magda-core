@@ -334,6 +334,10 @@ class AIChatConsoleContent : public PanelContent,
     using SlashCommand = magda::daw::ui::SlashCommand;
     std::unique_ptr<magda::daw::ui::SlashCommandRegistry> slashRegistry_;
     void buildSlashCommands();
+    void syncUserAgentCommands();
+    juce::StringArray userAgentCommands_;        // loaded agents, run as /alias <request>
+    juce::StringArray userAgentFolderCommands_;  // every command the folder added
+    juce::String userAgentCommandsKey_;
     void showSlashAutocomplete(const juce::String& filter);
     void insertSlashCommand(const juce::String& command);
     void showAutocomplete(const juce::String& filter);

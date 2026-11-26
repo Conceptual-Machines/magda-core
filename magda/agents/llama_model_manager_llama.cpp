@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include "ggml_backends.hpp"
 #include "llama_model_manager.hpp"
 
 namespace magda {
@@ -56,11 +57,7 @@ bool LlamaModelManager::loadModel(const Config& config, std::string* errorMessag
         model_ = nullptr;
     }
 
-#ifdef GGML_BACKEND_DL
-    // Windows and Linux load the CPU and Vulkan backends from the app's folder.
-    static std::once_flag backendsLoaded;
-    std::call_once(backendsLoaded, [] { ggml_backend_load_all(); });
-#endif
+    loadGgmlBackends();
 
     // Load model
     auto modelParams = llama_model_default_params();

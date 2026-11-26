@@ -15,6 +15,7 @@
 #include "../../../../agents/llm_presets.hpp"
 #include "../../../../agents/model_downloader.hpp"
 #include "../../../../agents/openai_url.hpp"
+#include "../../../../agents/speech_transcriber.hpp"
 #include "../../../core/AppPaths.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/StringTable.hpp"
@@ -22,6 +23,7 @@
 #include "../../../media_db/MediaModelDownloader.hpp"
 #include "../../../stem_separation/DemucsSeparator.hpp"
 #include "../../../stem_separation/StemModelDownloader.hpp"
+#include "../../panels/content/SpeechModel.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/DialogLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
@@ -1182,7 +1184,7 @@ class AISettingsPages::ConfigPage : public juce::Component {
         daw::ui::SettingsLookAndFeel::markSectionHeader(mcpSectionLabel_);
         addAndMakeVisible(mcpSectionLabel_);
 
-        faustTitle_.setText("Faust DSP", juce::dontSendNotification);
+        faustTitle_.setText("Faust MCP", juce::dontSendNotification);
         styleLabel(faustTitle_, 13.0f);
         addAndMakeVisible(faustTitle_);
         addAndMakeVisible(faustMcpToggle_);
@@ -1222,13 +1224,14 @@ class AISettingsPages::ConfigPage : public juce::Component {
                                      ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         addAndMakeVisible(advancedHintLabel_);
 
-        static constexpr std::array<std::pair<const char*, const char*>, 6> kRoles = {{
+        static constexpr std::array<std::pair<const char*, const char*>, 7> kRoles = {{
             {magda::role::COMMAND, "Command"},
             {magda::role::MUSIC, "Music"},
             {magda::role::FAUST, "Faust"},
             {magda::role::CHORD, "Chord"},
             {magda::role::CONTROLLER, "Controller"},
             {magda::role::THEME, "Theme"},
+            {magda::role::CUSTOM, "Custom agents"},
         }};
         advancedHintLabel_.setText("Each agent uses its own provider and model. Providers come "
                                    "from the Providers and Local models tabs.",
@@ -1250,6 +1253,14 @@ class AISettingsPages::ConfigPage : public juce::Component {
             addAndMakeVisible(r.modelCombo);
         }
 
+        customAgentsNote_.setText("Agents you write in the Agents folder, set in Paths. Call one "
+                                  "in the AI console with / and its alias.",
+                                  juce::dontSendNotification);
+        customAgentsNote_.setFont(FontManager::getInstance().getUIFont(11.5f));
+        customAgentsNote_.setColour(juce::Label::textColourId,
+                                    ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        customAgentsNote_.setBorderSize({});
+        addAndMakeVisible(customAgentsNote_);
         updateSetupUI();
     }
 
@@ -1283,7 +1294,14 @@ class AISettingsPages::ConfigPage : public juce::Component {
         auto hintRow = row.removeFromTop(18);
         faustMcpHint_.setBounds(hintRow.removeFromLeft(juce::jmin(hintW, hintRow.getWidth() - 80)));
         nodeDownloadLink_.setBounds(hintRow.removeFromLeft(80));
+
+        contentBottom_ = bounds.getY() + 8;
         refreshBadge();
+    }
+
+    /** @brief The height the page needs, from its last layout. */
+    int preferredHeight() const {
+        return contentBottom_;
     }
 
     void paint(juce::Graphics& g) override {
@@ -1325,7 +1343,7 @@ class AISettingsPages::ConfigPage : public juce::Component {
     }
 
     void layoutAdvanced(juce::Rectangle<int>& bounds) {
-        constexpr int nameW = 100;
+        constexpr int nameW = 110;
         constexpr int providerW = 160;
 
         advancedHintLabel_.setBounds(bounds.removeFromTop(28));
@@ -1336,6 +1354,7 @@ class AISettingsPages::ConfigPage : public juce::Component {
             row.removeFromLeft(8);
             r.modelCombo.setBounds(row.reduced(0, 5));
         }
+        customAgentsNote_.setBounds(bounds.removeFromTop(24).withTrimmedLeft(nameW));
     }
 
     static constexpr int kHeaderH = 30;
@@ -1469,12 +1488,14 @@ class AISettingsPages::ConfigPage : public juce::Component {
         const auto providerGroupId = rowProviderGroupId(row);
         row.modelCombo.clear(juce::dontSendNotification);
         if (providerGroupId == magda::provider::LLAMA_LOCAL) {
-            row.modelCombo.addItem("Embedded", 1);
+            // Custom agents call tools, which the embedded model refuses.
+            if (row.role != magda::role::CUSTOM)
+                row.modelCombo.addItem("Embedded", 1);
             row.modelCombo.addItem("Server", 2);
             if (row.role == magda::role::COMMAND)
                 row.modelCombo.addItem("Fast Inference (Command)", 3);
 
-            int selectedId = 1;
+            int selectedId = row.role == magda::role::CUSTOM ? 2 : 1;
             if (desiredProvider == magda::provider::LOCAL_SERVER)
                 selectedId = 2;
             else if (row.role == magda::role::COMMAND &&
@@ -1566,6 +1587,7 @@ class AISettingsPages::ConfigPage : public juce::Component {
         }
 
         advancedHintLabel_.setVisible(advanced);
+        customAgentsNote_.setVisible(advanced);
         for (auto& row : agentRows_) {
             row.nameLabel.setVisible(advanced);
             row.providerCombo.setVisible(advanced);
@@ -1840,7 +1862,7 @@ class AISettingsPages::ConfigPage : public juce::Component {
         // tier. Local-server presets intentionally keep one shared model.
         if (auto it = out.find(magda::role::MUSIC); it != out.end())
             for (const auto* inheritedRole :
-                 {magda::role::FAUST, magda::role::CHORD, magda::role::THEME})
+                 {magda::role::FAUST, magda::role::CHORD, magda::role::THEME, magda::role::CUSTOM})
                 if (out.find(inheritedRole) == out.end())
                     out[inheritedRole] = it->second;
         return out;
@@ -1947,7 +1969,7 @@ class AISettingsPages::ConfigPage : public juce::Component {
 
     // Advanced per-agent grid (AgentRow defined near the top of the class).
     juce::Label advancedHintLabel_;
-    std::array<AgentRow, 6> agentRows_;
+    std::array<AgentRow, 7> agentRows_;
 
     // MCP Tools
     juce::Label mcpSectionLabel_;
@@ -1956,6 +1978,9 @@ class AISettingsPages::ConfigPage : public juce::Component {
     juce::ToggleButton faustMcpToggle_;
     juce::Label faustMcpHint_;
     juce::HyperlinkButton nodeDownloadLink_;
+
+    juce::Label customAgentsNote_;
+    int contentBottom_ = 0;
 
     juce::Label modelHeader_;
     ComboSegments setupSegments_{setupCombo_};
@@ -2748,6 +2773,198 @@ class AISettingsPages::CommandModelPage : public juce::Component {
 };
 
 // ============================================================================
+// SpeechModelPage: the local speech-to-text model
+// ============================================================================
+
+class AISettingsPages::SpeechModelPage : public juce::Component, private juce::ChangeListener {
+  public:
+    SpeechModelPage() {
+        blurbLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        blurbLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+        blurbLabel_.setJustificationType(juce::Justification::topLeft);
+        blurbLabel_.setText(
+            "This model changes recorded speech into text. It runs on this computer, so the "
+            "audio stays here. Load it before you use it, so the first transcription is quick.",
+            juce::dontSendNotification);
+        addAndMakeVisible(blurbLabel_);
+
+        locationCaption_.setText("Model location", juce::dontSendNotification);
+        styleLabel(locationCaption_);
+        addAndMakeVisible(locationCaption_);
+
+        locationField_.setReadOnly(true);
+        styleEditor(locationField_, "");
+        addAndMakeVisible(locationField_);
+
+        browseButton_.setButtonText("Browse...");
+        browseButton_.onClick = [this] { browseForLocation(); };
+        addAndMakeVisible(browseButton_);
+
+        resetLocationButton_.setButtonText("Reset");
+        resetLocationButton_.onClick = [] { setLocation({}); };
+        addAndMakeVisible(resetLocationButton_);
+
+        nameLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+        addAndMakeVisible(nameLabel_);
+
+        const auto url = SpeechTranscriber::modelUrl();
+        sourceLink_ =
+            std::make_unique<juce::HyperlinkButton>(url.replace("https://", ""), juce::URL(url));
+        sourceLink_->setFont(FontManager::getInstance().getUIFont(11.0f), false,
+                             juce::Justification::centredLeft);
+        sourceLink_->setColour(juce::HyperlinkButton::textColourId,
+                               ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        addAndMakeVisible(*sourceLink_);
+
+        progressBar_.setColour(juce::ProgressBar::backgroundColourId,
+                               ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
+        progressBar_.setColour(juce::ProgressBar::foregroundColourId,
+                               ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        progressBar_.setPercentageDisplay(false);
+        addAndMakeVisible(progressBar_);
+
+        actionButton_.onClick = [] {
+            auto& model = daw::ui::SpeechModel::getInstance();
+            if (model.isDownloading())
+                model.cancelDownload();
+            else if (model.isDownloaded())
+                model.remove();
+            else
+                model.download();
+        };
+        addAndMakeVisible(actionButton_);
+
+        loadButton_.onClick = [] {
+            auto& model = daw::ui::SpeechModel::getInstance();
+            if (model.isLoaded())
+                model.unload();
+            else
+                model.load();
+        };
+        addAndMakeVisible(loadButton_);
+
+        daw::ui::SpeechModel::getInstance().addChangeListener(this);
+        refreshStatus();
+    }
+
+    ~SpeechModelPage() override {
+        daw::ui::SpeechModel::getInstance().removeChangeListener(this);
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(12);
+        blurbLabel_.setBounds(bounds.removeFromTop(56));
+        bounds.removeFromTop(8);
+
+        auto locRow = bounds.removeFromTop(24);
+        locationCaption_.setBounds(locRow.removeFromLeft(110));
+        resetLocationButton_.setBounds(locRow.removeFromRight(70).reduced(0, 1));
+        locRow.removeFromRight(4);
+        browseButton_.setBounds(locRow.removeFromRight(90).reduced(0, 1));
+        locRow.removeFromRight(4);
+        locationField_.setBounds(locRow.reduced(0, 1));
+        bounds.removeFromTop(12);
+
+        nameLabel_.setBounds(bounds.removeFromTop(30));
+        sourceLink_->setBounds(bounds.removeFromTop(16));
+        bounds.removeFromTop(4);
+        progressBar_.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(6);
+        auto row = bounds.removeFromTop(26);
+        actionButton_.setBounds(row.removeFromLeft(200));
+        row.removeFromLeft(8);
+        loadButton_.setBounds(row.removeFromLeft(120));
+    }
+
+    void load(const magda::Config&) {
+        refreshStatus();
+    }
+    // Download, load and remove act immediately; nothing batches up for OK.
+    void apply(magda::Config&) const {}
+
+  private:
+    void changeListenerCallback(juce::ChangeBroadcaster*) override {
+        refreshStatus();
+    }
+
+    /// A model loaded from the old folder is unloaded, so what shows matches the new one.
+    static void setLocation(const juce::String& folder) {
+        auto& config = magda::Config::getInstance();
+        config.setSpeechModelDir(folder.toStdString());
+        config.save();
+        auto& model = daw::ui::SpeechModel::getInstance();
+        model.unload();
+        model.notify();
+    }
+
+    void browseForLocation() {
+        const auto current = SpeechTranscriber::modelsDir();
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            "Choose a folder for the speech model",
+            current.exists() ? current
+                             : juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+        fileChooser_->launchAsync(
+            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+            [](const juce::FileChooser& chooser) {
+                if (const auto picked = chooser.getResult(); picked.isDirectory())
+                    setLocation(picked.getFullPathName());
+            });
+    }
+
+    void refreshStatus() {
+        const auto& model = daw::ui::SpeechModel::getInstance();
+        const bool downloading = model.isDownloading();
+        const bool downloaded = model.isDownloaded();
+        const bool busy = model.isBusy();
+        const bool loaded = model.isLoaded();
+
+        juce::String state;
+        if (downloading)
+            state = "Downloading.";
+        else if (busy)
+            state = model.isLoading() ? "Loading..." : "Unloading...";
+        else if (model.lastError().isNotEmpty())
+            state = model.lastError();
+        else if (!downloaded)
+            state = "Not installed.";
+        else
+            state = loaded ? "Loaded." : "Installed, not loaded.";
+        nameLabel_.setText("Whisper small (English) - " + state, juce::dontSendNotification);
+
+        locationField_.setText(SpeechTranscriber::modelsDir().getFullPathName(),
+                               juce::dontSendNotification);
+        browseButton_.setEnabled(!downloading && !busy);
+        resetLocationButton_.setEnabled(!downloading && !busy);
+
+        progressValue_ = model.downloadProgress();
+        progressBar_.setVisible(downloading);
+
+        const auto sizeMb = juce::String(SpeechTranscriber::kModelBytes / (1024 * 1024));
+        actionButton_.setButtonText(downloading  ? "Cancel"
+                                    : downloaded ? "Remove"
+                                                 : "Download (" + sizeMb + " MB)");
+        actionButton_.setEnabled(!busy);
+        loadButton_.setButtonText(loaded ? "Unload" : "Load");
+        loadButton_.setEnabled(downloaded && !downloading && !busy);
+    }
+
+    juce::Label blurbLabel_;
+    juce::Label locationCaption_;
+    juce::TextEditor locationField_;
+    juce::TextButton browseButton_;
+    juce::TextButton resetLocationButton_;
+    std::unique_ptr<juce::FileChooser> fileChooser_;
+    juce::Label nameLabel_;
+    std::unique_ptr<juce::HyperlinkButton> sourceLink_;
+    // ProgressBar holds a reference to the value; declare the value first.
+    double progressValue_ = 0.0;
+    juce::ProgressBar progressBar_{progressValue_};
+    juce::TextButton actionButton_;
+    juce::TextButton loadButton_;
+};
+
+// ============================================================================
 // ModelDownloadsPage — one place for every optional downloadable model.
 //
 // The category selector keeps the individual model workflows compact while
@@ -2758,12 +2975,13 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
   public:
     ModelDownloadsPage(LocalPage& localPage, SampleTaggerPage* samplePage,
                        BeatTrackerPage* beatPage, StemSeparationPage* stemsPage,
-                       CommandModelPage* commandPage)
+                       CommandModelPage* commandPage, SpeechModelPage* speechPage)
         : localPage_(localPage),
           samplePage_(samplePage),
           beatPage_(beatPage),
           stemsPage_(stemsPage),
-          commandPage_(commandPage) {
+          commandPage_(commandPage),
+          speechPage_(speechPage) {
         modelHeader_.setText("Model", juce::dontSendNotification);
         daw::ui::SettingsLookAndFeel::markSectionHeader(modelHeader_);
         addAndMakeVisible(modelHeader_);
@@ -2781,6 +2999,8 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
             categoryCombo_.addItem("Stem separation", kStems);
         if (commandPage_ != nullptr)
             categoryCombo_.addItem("Command model", kCommandModel);
+        if (speechPage_ != nullptr)
+            categoryCombo_.addItem("Speech to text", kSpeech);
         categoryCombo_.setSelectedId(kLocal, juce::dontSendNotification);
         categoryCombo_.onChange = [this]() { updateVisiblePage(); };
         styleCombo(categoryCombo_);
@@ -2795,6 +3015,8 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
             addAndMakeVisible(*stemsPage_);
         if (commandPage_ != nullptr)
             addAndMakeVisible(*commandPage_);
+        if (speechPage_ != nullptr)
+            addAndMakeVisible(*speechPage_);
         updateVisiblePage();
     }
 
@@ -2819,6 +3041,8 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
             stemsPage_->setBounds(bounds);
         if (commandPage_ != nullptr)
             commandPage_->setBounds(bounds);
+        if (speechPage_ != nullptr)
+            speechPage_->setBounds(bounds);
     }
 
     // Preserve existing callers that deep-link to the former download tabs.
@@ -2839,7 +3063,7 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
     }
 
   private:
-    enum Category { kLocal = 1, kSampleAnalyzer, kBeatTracker, kStems, kCommandModel };
+    enum Category { kLocal = 1, kSampleAnalyzer, kBeatTracker, kStems, kCommandModel, kSpeech };
 
     void updateVisiblePage() {
         const int category = categoryCombo_.getSelectedId();
@@ -2852,6 +3076,8 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
             stemsPage_->setVisible(category == kStems);
         if (commandPage_ != nullptr)
             commandPage_->setVisible(category == kCommandModel);
+        if (speechPage_ != nullptr)
+            speechPage_->setVisible(category == kSpeech);
         resized();
     }
 
@@ -2867,6 +3093,7 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
     BeatTrackerPage* beatPage_;
     StemSeparationPage* stemsPage_;
     CommandModelPage* commandPage_;
+    SpeechModelPage* speechPage_;
     juce::Label categoryLabel_;
     juce::ComboBox categoryCombo_;
 };
@@ -2891,9 +3118,11 @@ AISettingsPages::AISettingsPages() {
     if constexpr (magda::media::clapBackendAvailable()) {
         commandModelPage_ = std::make_unique<CommandModelPage>();
     }
-    modelDownloadsPage_ =
-        std::make_unique<ModelDownloadsPage>(*localPage_, samplePage_.get(), beatTrackerPage_.get(),
-                                             stemsPage_.get(), commandModelPage_.get());
+    if (SpeechTranscriber::isAvailable())
+        speechPage_ = std::make_unique<SpeechModelPage>();
+    modelDownloadsPage_ = std::make_unique<ModelDownloadsPage>(
+        *localPage_, samplePage_.get(), beatTrackerPage_.get(), stemsPage_.get(),
+        commandModelPage_.get(), speechPage_.get());
 
     configPage_->cloudPage = cloudPage_.get();
     configPage_->localPage = localPage_.get();
@@ -2907,6 +3136,10 @@ juce::Component& AISettingsPages::cloudPage() {
 
 juce::Component& AISettingsPages::configPage() {
     return *configPage_;
+}
+
+int AISettingsPages::configPreferredHeight() const {
+    return configPage_->preferredHeight();
 }
 
 juce::Component& AISettingsPages::modelsPage() {
@@ -2943,6 +3176,8 @@ void AISettingsPages::load(Config& config) {
         stemsPage_->load(config);
     if (commandModelPage_)
         commandModelPage_->load(config);
+    if (speechPage_)
+        speechPage_->load(config);
 }
 
 void AISettingsPages::apply(Config& config) {
@@ -2969,7 +3204,8 @@ class AISection : public SettingsSection {
     }
     // The page changed most comes first.
     std::vector<Tab> getTabs() override {
-        return {{"Assistant", &pages_.configPage(), {}, &pages_.configToolbar()},
+        return {{"Assistant", &pages_.configPage(),
+                 [this](int) { return pages_.configPreferredHeight(); }, &pages_.configToolbar()},
                 {"Providers", &pages_.cloudPage(), {}, &pages_.cloudToolbar()},
                 {"Local models", &pages_.modelsPage(), {}, &pages_.modelsToolbar()}};
     }

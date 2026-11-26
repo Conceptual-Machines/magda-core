@@ -34,6 +34,11 @@ void SlashCommandRegistry::add(SlashCommand cmd) {
     commands_.push_back(std::move(cmd));
 }
 
+void SlashCommandRegistry::remove(const juce::String& name) {
+    std::erase_if(commands_,
+                  [&](const SlashCommand& cmd) { return cmd.name.equalsIgnoreCase(name); });
+}
+
 const SlashCommand* SlashCommandRegistry::find(const juce::String& name) const {
     for (const auto& cmd : commands_)
         if (cmd.name.equalsIgnoreCase(name))

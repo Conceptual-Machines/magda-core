@@ -114,6 +114,17 @@ juce::File renderDir() {
     return snapshot()->render;
 }
 
+juce::File agentsDirFor(const std::string& configured) {
+    const auto fallback = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                              .getChildFile("MAGDA")
+                              .getChildFile("Agents");
+    return resolveOne(envVar("MAGDA_AGENTS_DIR"), configured, fallback).file;
+}
+
+juce::File agentsDir() {
+    return agentsDirFor(Config::getInstance().getAgentsDir());
+}
+
 juce::File alwaysOSDefault() {
     return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
         .getChildFile("MAGDA");
@@ -270,6 +281,10 @@ bool presetsDirOverriddenByEnv() {
 
 bool renderDirOverriddenByEnv() {
     return snapshot()->renderFromEnv;
+}
+
+bool agentsDirOverriddenByEnv() {
+    return envVar("MAGDA_AGENTS_DIR").isNotEmpty();
 }
 
 }  // namespace magda::paths

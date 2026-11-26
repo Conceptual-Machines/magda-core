@@ -16,6 +16,8 @@ set(AGENTS_SOURCES
     fast_inference_policy.cpp
     agent_tool_bridge.hpp
     agent_tool_bridge.cpp
+    user_agents.hpp
+    user_agents.cpp
     llm_tool_model.hpp
     llm_tool_model.cpp
     console_agent_orchestrator.hpp
@@ -62,6 +64,8 @@ set(AGENTS_SOURCES
     llama_local_client.hpp
     llama_local_client.cpp
     llm_client_factory.hpp
+    speech_transcriber.hpp
+    speech_transcriber.cpp
     model_downloader.hpp
     model_downloader.cpp
     ranged_download.hpp
@@ -113,10 +117,16 @@ target_link_libraries(magda_agents
 )
 
 if(MAGDA_LOCAL_LLM)
-    target_sources(magda_agents PRIVATE llama_model_manager_llama.cpp)
-    target_link_libraries(magda_agents PRIVATE llama ggml)
+    target_sources(magda_agents PRIVATE
+        ggml_backends.hpp
+        ggml_backends.cpp
+        llama_model_manager_llama.cpp
+        speech_transcriber_whisper.cpp)
+    target_link_libraries(magda_agents PRIVATE llama whisper ggml)
 else()
-    target_sources(magda_agents PRIVATE llama_model_manager_stub.cpp)
+    target_sources(magda_agents PRIVATE
+        llama_model_manager_stub.cpp
+        speech_transcriber_stub.cpp)
 endif()
 
 # Include directories

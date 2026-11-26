@@ -72,6 +72,7 @@ class SlashCommandRegistry {
     explicit SlashCommandRegistry(ChatSink chatSink);
 
     void add(SlashCommand cmd);
+    void remove(const juce::String& name);
     const SlashCommand* find(const juce::String& name) const;
     const std::vector<SlashCommand>& all() const {
         return commands_;

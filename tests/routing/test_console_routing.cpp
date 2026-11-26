@@ -249,3 +249,13 @@ TEST_CASE("unknown override falls back without widening scope", "[console_routin
     REQUIRE_FALSE(decision.overrideRecognized);
     REQUIRE_FALSE(decision.usedExplicitOverride);
 }
+
+TEST_CASE("A message loses the agent override it starts with", "[console_routing]") {
+    CHECK(magda::messageWithoutAgentOverride("@level split this take") == "split this take");
+    CHECK(magda::messageWithoutAgentOverride("  /agent level   split this take") ==
+          "split this take");
+    CHECK(magda::messageWithoutAgentOverride("@level") == "");
+    CHECK(magda::messageWithoutAgentOverride("/agent level") == "");
+    CHECK(magda::messageWithoutAgentOverride("split @level this") == "split @level this");
+    CHECK(magda::messageWithoutAgentOverride("/agents list") == "/agents list");
+}

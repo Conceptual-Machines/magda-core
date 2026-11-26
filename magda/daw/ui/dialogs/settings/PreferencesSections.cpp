@@ -2278,11 +2278,23 @@ class PathsPage : public juce::Component {
         };
         addAndMakeVisible(captureReset_);
         refreshCaptureFolder();
+
+        agentsBrowse_.onClick = [this]() { browseForAgentsLocation(); };
+        addAndMakeVisible(agentsBrowse_);
+        agentsReveal_.onClick = [this]() {
+            revealConfigured(agentsDir_, magda::paths::agentsDirFor({}));
+        };
+        addAndMakeVisible(agentsReveal_);
+        agentsReset_.onClick = [this]() {
+            agentsDir_.clear();
+            showStates();
+        };
+        addAndMakeVisible(agentsReset_);
         restyle();
     }
 
     static int getPreferredHeight(int) {
-        return 16 + 3 * 30 + 2 * 22 + 4 * kRowH + kLinkRowH + 2 * kRowH + kRowH + 16;
+        return 16 + 3 * 30 + 2 * 22 + 5 * kRowH + kLinkRowH + 2 * kRowH + kRowH + 16;
     }
 
     void resized() override {
@@ -2312,6 +2324,7 @@ class PathsPage : public juce::Component {
         row(Row::Kind::Data, kRowH, {&dataReset_, &dataReveal_, &dataBrowse_});
         row(Row::Kind::Presets, kRowH, {&presetsReset_, &presetsReveal_, &presetsBrowse_});
         row(Row::Kind::Capture, kRowH, {&captureReset_, &captureReveal_, &captureBrowse_});
+        row(Row::Kind::Agents, kRowH, {&agentsReset_, &agentsReveal_, &agentsBrowse_});
         row(Row::Kind::Render, kLinkRowH, {&renderLink_});
 
         bounds.removeFromTop(22);
@@ -2358,6 +2371,13 @@ class PathsPage : public juce::Component {
                     path = captureDir_.empty() ? tr("preferences.paths.system_temp")
                                                : juce::String(captureDir_);
                     state = stateText(!captureDir_.empty());
+                    break;
+                case Row::Kind::Agents:
+                    title = tr("preferences.paths.row.agents");
+                    note = tr("preferences.paths.desc.agents");
+                    path = magda::paths::agentsDirFor(agentsDir_).getFullPathName();
+                    state =
+                        stateText(!agentsDir_.empty() || magda::paths::agentsDirOverriddenByEnv());
                     break;
                 case Row::Kind::Render:
                     title = tr("preferences.paths.row.render");
@@ -2452,6 +2472,7 @@ class PathsPage : public juce::Component {
         editorPath_ = config.getExternalAudioEditorPath();
         dbDir_ = config.getMediaDbDir();
         captureDir_ = config.getCaptureDir();
+        agentsDir_ = config.getAgentsDir();
         updateDisplay();
         refreshMediaLibrarySettings();
         refreshCaptureFolder();
@@ -2463,6 +2484,8 @@ class PathsPage : public juce::Component {
         config.setExternalAudioEditorPath(editorPath_);
         config.setMediaDbDir(dbDir_);
         config.setCaptureDir(captureDir_);
+        if (!magda::paths::agentsDirOverriddenByEnv())
+            config.setAgentsDir(agentsDir_);
     }
 
     void markPathsCommitted() {
@@ -2691,6 +2714,27 @@ class PathsPage : public juce::Component {
                                   });
     }
 
+    void browseForAgentsLocation() {
+        const auto current = magda::paths::agentsDirFor(agentsDir_);
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            "Choose the folder that holds your agents",
+            current.isDirectory()
+                ? current
+                : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory));
+
+        juce::Component::SafePointer<PathsPage> self(this);
+        fileChooser_->launchAsync(juce::FileBrowserComponent::openMode |
+                                      juce::FileBrowserComponent::canSelectDirectories,
+                                  [self](const juce::FileChooser& fc) {
+                                      const auto picked = fc.getResult();
+                                      auto* page = self.getComponent();
+                                      if (!picked.isDirectory() || page == nullptr)
+                                          return;
+                                      page->agentsDir_ = picked.getFullPathName().toStdString();
+                                      page->showStates();
+                                  });
+    }
+
     void browseForDbLocation() {
         const auto currentDir = juce::File(juce::String(
             magda::media::MediaDbContext::getInstance().dbPath().parent_path().string()));
@@ -2817,6 +2861,8 @@ class PathsPage : public juce::Component {
     std::string editorPath_;
     std::string dbDir_;
     std::string captureDir_;
+    std::string agentsDir_;
+    juce::TextButton agentsBrowse_, agentsReveal_, agentsReset_;
 
     juce::Label editorHeader_;
     juce::Label editorLocationCaption_;
@@ -2842,7 +2888,7 @@ class PathsPage : public juce::Component {
     std::unique_ptr<juce::FileChooser> fileChooser_;
 
     struct Row {
-        enum class Kind { Data, Presets, Capture, Render, Database, Index, Editor };
+        enum class Kind { Data, Presets, Capture, Agents, Render, Database, Index, Editor };
         Kind kind;
         juce::Rectangle<int> bounds;
     };
@@ -2870,11 +2916,14 @@ class PathsPage : public juce::Component {
         dbHeader_.setText(tr("preferences.paths.section.media_db"), juce::dontSendNotification);
         editorHeader_.setText(tr("preferences.paths.section.apps"), juce::dontSendNotification);
 
-        for (auto* reveal : {&dataReveal_, &presetsReveal_, &captureReveal_, &dbReveal_})
+        for (auto* reveal :
+             {&dataReveal_, &presetsReveal_, &captureReveal_, &agentsReveal_, &dbReveal_})
             reveal->setButtonText(tr("preferences.button.reveal"));
-        for (auto* change : {&dataBrowse_, &presetsBrowse_, &captureBrowse_, &dbBrowse_})
+        for (auto* change :
+             {&dataBrowse_, &presetsBrowse_, &captureBrowse_, &agentsBrowse_, &dbBrowse_})
             change->setButtonText(trEllipsis("preferences.button.change"));
-        for (auto* reset : {&dataReset_, &presetsReset_, &captureReset_, &dbReset_}) {
+        for (auto* reset :
+             {&dataReset_, &presetsReset_, &captureReset_, &agentsReset_, &dbReset_}) {
             reset->setButtonText(tr("preferences.button.use_default"));
             magda::daw::ui::SettingsLookAndFeel::markLinkButton(*reset);
         }
@@ -2904,6 +2953,8 @@ class PathsPage : public juce::Component {
         dataReset_.setVisible(!dataPath_.empty());
         presetsReset_.setVisible(!presetsPath_.empty());
         captureReset_.setVisible(!captureDir_.empty());
+        agentsReset_.setVisible(!agentsDir_.empty() && !magda::paths::agentsDirOverriddenByEnv());
+        agentsBrowse_.setEnabled(!magda::paths::agentsDirOverriddenByEnv());
         dbReset_.setVisible(!dbDir_.empty());
         editorReset_.setVisible(!editorPath_.empty());
         resized();

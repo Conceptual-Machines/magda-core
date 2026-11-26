@@ -422,6 +422,32 @@ std::string explicitAgentOverrideFromMessage(const std::string& message) {
     return {};
 }
 
+std::string messageWithoutAgentOverride(const std::string& message) {
+    constexpr const char* kSpace = " \t\r\n";
+    const auto first = message.find_first_not_of(kSpace);
+    if (first == std::string::npos)
+        return message;
+
+    auto tokenEnd = std::string::npos;
+    if (message[first] == '@') {
+        tokenEnd = message.find_first_of(kSpace, first + 1);
+    } else if (message.compare(first, 6, "/agent") == 0 &&
+               (first + 6 == message.size() ||
+                std::isspace(static_cast<unsigned char>(message[first + 6])) != 0)) {
+        const auto value = message.find_first_not_of(kSpace, first + 6);
+        if (value == std::string::npos)
+            return {};
+        tokenEnd = message.find_first_of(kSpace, value);
+    } else {
+        return message;
+    }
+
+    if (tokenEnd == std::string::npos)
+        return {};
+    const auto rest = message.find_first_not_of(kSpace, tokenEnd);
+    return rest == std::string::npos ? std::string{} : message.substr(rest);
+}
+
 AgentSurfaceDecision resolveAgentSurface(const AgentSurfaceContext& context) {
     if (!context.explicitOverride.empty()) {
         if (const auto* surface = agentSurfaceForAlias(context.explicitOverride))

@@ -933,6 +933,14 @@ class Config {
         commandModelModelsDir = dir;
     }
 
+    // Folder for the speech-to-text model. Empty = default (dataDir/SpeechToText/models).
+    std::string getSpeechModelDir() const {
+        return speechModelDir;
+    }
+    void setSpeechModelDir(const std::string& dir) {
+        speechModelDir = dir;
+    }
+
     // Load the Sample Tagger encoders + tokenizer eagerly at app startup
     // instead of waiting for the first DB query that needs them. Eats
     // ~700 MB of RAM and a few seconds of init time, but no first-query
@@ -1026,6 +1034,15 @@ class Config {
         presetsDir = d;
     }
 
+    /** Override for `userDocumentsDirectory/MAGDA/Agents/`, the user's agent folders (#3443).
+     *  Empty = OS default. */
+    std::string getAgentsDir() const {
+        return agentsDir;
+    }
+    void setAgentsDir(const std::string& d) {
+        agentsDir = d;
+    }
+
     double getRenderSampleRate() const {
         return renderSampleRate;
     }
@@ -1112,7 +1129,7 @@ class Config {
         // Faust and Chord were split out of the Music workload after per-agent
         // configs shipped. Keep pre-migration/in-memory configurations working
         // even before they are saved again with the new explicit keys.
-        if (agentRole == "faust" || agentRole == "chord") {
+        if (agentRole == "faust" || agentRole == "chord" || agentRole == "custom") {
             if (auto music = agentInferenceConfigs.find("music");
                 music != agentInferenceConfigs.end())
                 return music->second;
@@ -1847,6 +1864,7 @@ class Config {
     // Optional override for the command-model ONNX bundle location.
     // Empty = use the default dataDir/CommandModel/models.
     std::string commandModelModelsDir;
+    std::string speechModelDir;
 
     // Eagerly load the Sample Tagger encoders + tokenizer at startup
     // (vs lazy on first query).
@@ -1900,6 +1918,7 @@ class Config {
     // Empty = OS default. Persisted in config.json.
     std::string dataDir;     // userApplicationDataDirectory/MAGDA/
     std::string presetsDir;  // userDocumentsDirectory/MAGDA/Presets/
+    std::string agentsDir;   // userDocumentsDirectory/MAGDA/Agents/
 
     // Render settings
     std::string renderFolder;  // Custom render output folder (empty = renders/ beside source)
@@ -1935,6 +1954,7 @@ class Config {
         {"chord", {"llm", {"llama_local", "", "", ""}}},
         {"controller", {"llm", {"llama_local", "", "", ""}}},
         {"theme", {"llm", {"llama_local", "", "", ""}}},
+        {"custom", {"llm", {"llama_local", "", "", ""}}},
     };
     std::map<std::string, std::string> aiCredentials;  // provider → API key
     std::string localLlamaUrl = "http://127.0.0.1:8080/v1";
