@@ -198,9 +198,12 @@ std::optional<std::string> runUserAgent(const std::string& message,
 
     magda::agent::RemoteAgentToolExecutor executor(host->service(), juce::String(handle),
                                                    agent->tools);
+    // The prompt carries the task, so a bare call runs it as written.
+    auto request = juce::String(magda::messageWithoutAgentOverride(message)).trim();
+    if (request.isEmpty())
+        request = "Do your task on the current project.";
     return runAgentDefinition(magda::agent::toAgentDefinition(*agent), executor, *client, *host,
-                              magda::messageWithoutAgentOverride(message), priorConversation,
-                              cancellation);
+                              request.toStdString(), priorConversation, cancellation);
 }
 }  // namespace
 
@@ -1277,6 +1280,8 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
     // can transform the prompt before sending it to the LLM).
     if (!slashRegistry_)
         buildSlashCommands();
+    hideAutocomplete();
+    syncUserAgentCommands();
     if (slashRegistry_->dispatch(text)) {
         clearInput();
         return;
@@ -1297,6 +1302,10 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
 
     // Slash-command prefixes: rewrite user message with LLM context hints
     resolvedText = rewriteSlashCommand(resolvedText);
+    if (const auto name = magda::daw::ui::SlashCommandRegistry::parse(text).cmdName.toLowerCase();
+        userAgentCommands_.contains(name))
+        resolvedText = "@" + name + " " +
+                       resolveAliases(text.trimStart().fromFirstOccurrenceOf(" ", false, false));
 
     processing_ = true;
     clearInput();
@@ -2616,6 +2625,56 @@ void AIChatConsoleContent::onInputChanged() {
     }
 }
 
+/// Each agent folder is a /alias command; a folder that did not load reports why. Built-in
+/// commands keep their names. Re-read on each use, so folder edits apply without a restart.
+void AIChatConsoleContent::syncUserAgentCommands() {
+    const auto loads = magda::agent::loadUserAgents(magda::paths::agentsDir());
+    juce::String key;
+    for (const auto& load : loads)
+        key << load.folder.getFileName() << '\n'
+            << (load.agent ? load.agent->alias + load.agent->description : load.error) << '\n';
+    // Unchanged folders keep the registry as it is, so the popup's command pointers stay valid.
+    if (key == userAgentCommandsKey_ && key.isNotEmpty())
+        return;
+    userAgentCommandsKey_ = key;
+
+    for (const auto& name : userAgentFolderCommands_)
+        slashRegistry_->remove(name);
+    userAgentCommands_.clear();
+    userAgentFolderCommands_.clear();
+
+    const auto marker = juce::String::charToString(0x25C6) + " ";
+    for (const auto& load : loads) {
+        SlashCommand cmd;
+        if (load.agent) {
+            cmd.name = load.agent->alias;
+            cmd.description =
+                load.agent->description.isNotEmpty() ? load.agent->description : load.agent->name;
+            cmd.usage = "/" + cmd.name + " [request]";
+            cmd.handler = [](const juce::String&, const std::map<juce::String, juce::String>&,
+                             const juce::String&) { return false; };
+        } else {
+            cmd.name = load.folder.getFileName().toLowerCase();
+            cmd.description = "Did not load: " + load.error;
+            cmd.usage = "/" + cmd.name;
+            cmd.handler = [this, marker, error = load.error,
+                           name = cmd.name](const juce::String& originalText,
+                                            const std::map<juce::String, juce::String>& /*flags*/,
+                                            const juce::String& /*positional*/) {
+                appendToChat(juce::String::charToString(0x25CF) + " " + originalText);
+                appendToChat(marker + "/" + name + " did not load. " + error);
+                return true;
+            };
+        }
+        if (cmd.name.containsAnyOf(" \t") || slashRegistry_->find(cmd.name) != nullptr)
+            continue;
+        if (load.agent)
+            userAgentCommands_.add(cmd.name);
+        userAgentFolderCommands_.add(cmd.name);
+        slashRegistry_->add(std::move(cmd));
+    }
+}
+
 void AIChatConsoleContent::buildSlashCommands() {
     if (slashRegistry_)
         return;
@@ -2783,6 +2842,7 @@ void AIChatConsoleContent::buildSlashCommands() {
 void AIChatConsoleContent::showSlashAutocomplete(const juce::String& filter) {
     if (!slashRegistry_)
         buildSlashCommands();
+    syncUserAgentCommands();
 
     if (!autocompletePopup_) {
         autocompletePopup_ = std::make_unique<AutocompletePopup>(*this);

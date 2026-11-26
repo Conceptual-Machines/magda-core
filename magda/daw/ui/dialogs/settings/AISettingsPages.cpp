@@ -1254,7 +1254,7 @@ class AISettingsPages::ConfigPage : public juce::Component {
         }
 
         customAgentsNote_.setText("Agents you write in the Agents folder, set in Paths. Call one "
-                                  "in the AI console with @ and its alias.",
+                                  "in the AI console with / and its alias.",
                                   juce::dontSendNotification);
         customAgentsNote_.setFont(FontManager::getInstance().getUIFont(11.5f));
         customAgentsNote_.setColour(juce::Label::textColourId,
