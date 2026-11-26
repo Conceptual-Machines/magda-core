@@ -32,6 +32,23 @@ juce::DynamicObject* obj(juce::var& value) {
     return value.getDynamicObject();
 }
 
+/// The clip fields every build writes, so a fixture holds only what its test is about.
+void addSavedClipFields(juce::DynamicObject& clip) {
+    for (const auto& [key, value] :
+         std::initializer_list<std::pair<const char*, juce::var>>{{"name", "Clip"},
+                                                                  {"colour", "FF5588AA"},
+                                                                  {"loopEnabled", false},
+                                                                  {"sceneIndex", -1},
+                                                                  {"launchMode", 0},
+                                                                  {"launchQuantize", 0},
+                                                                  {"volumeDB", 0.0},
+                                                                  {"gainDB", 0.0},
+                                                                  {"pan", 0.0},
+                                                                  {"autoCrossfade", false}})
+        if (!clip.hasProperty(key))
+            clip.setProperty(key, value);
+}
+
 /// A schema v1 audio clip: one source, one interpretation, one playback block,
 /// and the interpretation fields sitting on the clip itself.
 juce::var makeV1Clip(const juce::String& filePath, double sourceDurationSeconds) {
@@ -71,6 +88,7 @@ juce::var makeV1Clip(const juce::String& filePath, double sourceDurationSeconds)
     audio->setProperty("interpretation", juce::var(interpretation));
     audio->setProperty("playback", juce::var(playback));
     clip->setProperty("audio", juce::var(audio));
+    addSavedClipFields(*clip);
 
     return juce::var(clip);
 }
@@ -92,7 +110,9 @@ juce::DynamicObject& firstEventOf(juce::var& clip) {
 
 ClipInfo load(const juce::var& clipJson) {
     ClipInfo out;
-    REQUIRE(ProjectSerializer::deserializeClipInfo(clipJson, out, kProjectTempo));
+    const bool decoded = ProjectSerializer::deserializeClipInfo(clipJson, out, kProjectTempo);
+    INFO(ProjectSerializer::getLastError());
+    REQUIRE(decoded);
     return out;
 }
 
@@ -323,6 +343,7 @@ TEST_CASE("A v1 MIDI clip's loop moves into the MIDI content",
     placement->setProperty("startBeat", 0.0);
     placement->setProperty("lengthBeats", 16.0);
     clip->setProperty("placement", juce::var(placement));
+    addSavedClipFields(*clip);
 
     const auto loaded = load(juce::var(clip));
 

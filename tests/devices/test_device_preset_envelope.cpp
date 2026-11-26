@@ -88,8 +88,9 @@ void writeLegacyPreset(const juce::File& file, const DeviceInfo& device, const j
 
 DeviceInfo load(const juce::String& folder, const juce::String& name) {
     DeviceInfo device;
+    const bool loaded = PresetManager::getInstance().loadDevicePreset(folder, name, device);
     INFO(PresetManager::getInstance().getLastError());
-    REQUIRE(PresetManager::getInstance().loadDevicePreset(folder, name, device));
+    REQUIRE(loaded);
     return device;
 }
 

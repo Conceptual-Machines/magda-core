@@ -214,8 +214,9 @@ TEST_CASE("Legacy corpus: every project saved by a released version still loads"
         REQUIRE(file.existsAsFile());
 
         StagedProjectData staged;
+        const bool loaded = ProjectSerializer::loadAndStage(file, staged);
         INFO("load error: " << ProjectSerializer::getLastError());
-        REQUIRE(ProjectSerializer::loadAndStage(file, staged));
+        REQUIRE(loaded);
 
         CHECK(staged.info.version == juce::String(entry.savedBy));
 

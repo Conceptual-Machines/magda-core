@@ -404,6 +404,10 @@ ReadResult readEnvelope(const juce::String& text, const juce::File& presetFile,
         for (const auto& property : saved->getProperties())
             payload->setProperty(property.name, property.value);
     } else {
+        // Another host's preset has no MAGDA record: the rest is a default device's.
+        const auto defaults = ProjectSerializer::serializeDeviceInfo(DeviceInfo{});
+        for (const auto& property : defaults.getDynamicObject()->getProperties())
+            payload->setProperty(property.name, property.value);
         payload->setProperty("pluginId", utf8(preset.deviceType));
         payload->setProperty("name", utf8(preset.deviceType));
     }

@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Conceptual Machines
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "ProjectMigration.hpp"
 #include "ProjectSerializer.hpp"
 #include "SerializationHelpers.hpp"
 
@@ -27,40 +28,27 @@ void serializeControlTarget(juce::DynamicObject* targetObj, const ControlTarget&
     targetObj->setProperty("sendBusIndex", target.sendBusIndex);
 }
 
-void deserializeControlTarget(juce::DynamicObject* targetObj, ControlTarget& target) {
-    if (targetObj->hasProperty("kind"))
-        target.kind =
-            static_cast<ControlTarget::Kind>(static_cast<int>(targetObj->getProperty("kind")));
-    if (targetObj->hasProperty("trackId")) {
-        target.devicePath.trackId = static_cast<int>(targetObj->getProperty("trackId"));
-        target.devicePath.topLevelDeviceId =
-            static_cast<int>(targetObj->getProperty("topLevelDeviceId"));
-        target.devicePath.isTrackLevel = static_cast<bool>(targetObj->getProperty("isTrackLevel"));
-        auto stepsVar = targetObj->getProperty("steps");
-        target.devicePath.steps.clear();
-        if (stepsVar.isArray()) {
-            for (const auto& stepVar : *stepsVar.getArray()) {
-                if (!stepVar.isObject())
-                    continue;
-                auto* stepObj = stepVar.getDynamicObject();
-                ChainPathStep step;
-                step.type =
-                    static_cast<ChainStepType>(static_cast<int>(stepObj->getProperty("type")));
-                step.id = static_cast<int>(stepObj->getProperty("id"));
-                target.devicePath.steps.push_back(step);
-            }
-        }
-    }
-    target.paramIndex = targetObj->getProperty("paramIndex");
-    if (targetObj->hasProperty("modId"))
-        target.modId = targetObj->getProperty("modId");
-    if (targetObj->hasProperty("modParamIndex"))
-        target.modParamIndex = targetObj->getProperty("modParamIndex");
-    if (targetObj->hasProperty("sendBusIndex"))
-        target.sendBusIndex = targetObj->getProperty("sendBusIndex");
-}
-
 }  // namespace
+
+void ser::readControlTarget(const ObjectReader& in, ControlTarget& target) {
+    in.optional("kind", target.kind);
+    target.devicePath.steps.clear();
+    if (in.has("trackId")) {
+        in.required("trackId", target.devicePath.trackId);
+        in.required("topLevelDeviceId", target.devicePath.topLevelDeviceId);
+        in.optional("isTrackLevel", target.devicePath.isTrackLevel);
+        in.forEachObject("steps", [&target](const ObjectReader& item) {
+            ChainPathStep step;
+            item.required("type", step.type);
+            item.required("id", step.id);
+            target.devicePath.steps.push_back(step);
+        });
+    }
+    in.required("paramIndex", target.paramIndex);
+    in.optional("modId", target.modId);
+    in.optional("modParamIndex", target.modParamIndex);
+    in.optional("sendBusIndex", target.sendBusIndex);
+}
 
 // ============================================================================
 // Automation serialization helpers
@@ -101,59 +89,32 @@ juce::var ProjectSerializer::serializeAutomationLaneInfo(const AutomationLaneInf
 
 bool ProjectSerializer::deserializeAutomationLaneInfo(const juce::var& json,
                                                       AutomationLaneInfo& outLane) {
-    if (!json.isObject()) {
-        lastError_ = "Automation lane is not an object";
-        return false;
-    }
+    outLane = {};
+    return ser::decodeDocument(json, "lane", lastError_,
+                               [&outLane](const ser::ObjectReader& in) { read(in, outLane); });
+}
 
-    auto* obj = json.getDynamicObject();
+void ProjectSerializer::read(const ser::ObjectReader& raw, AutomationLaneInfo& outLane) {
+    const auto in = project_migration::upgradeAutomationLane(raw);
+    in.required("id", outLane.id);
+    read(in.object("target"), outLane.target);
+    in.required("type", outLane.type);
+    in.required("name", outLane.name);
+    in.optional("visible", outLane.visible);
+    in.optional("expanded", outLane.expanded);
+    if (bool bypass = false; in.optional("bypass", bypass))
+        outLane.authorityState =
+            bypass ? AutomationAuthorityState::Disabled : AutomationAuthorityState::Reading;
+    in.optional("snapEditsToBeatGrid", outLane.snapEditsToBeatGrid);
+    in.optional("snapValue", outLane.snapValue);
+    in.optional("height", outLane.height);
 
-    outLane.id = obj->getProperty("id");
-    if (!deserializeAutomationTarget(obj->getProperty("target"), outLane.target)) {
-        return false;
-    }
-    outLane.type = static_cast<AutomationLaneType>(static_cast<int>(obj->getProperty("type")));
-    outLane.name = obj->getProperty("name").toString();
-    outLane.visible = obj->getProperty("visible");
-    outLane.expanded = obj->getProperty("expanded");
-    if (obj->hasProperty("bypass")) {
-        outLane.authorityState = static_cast<bool>(obj->getProperty("bypass"))
-                                     ? AutomationAuthorityState::Disabled
-                                     : AutomationAuthorityState::Reading;
-    }
-    if (obj->hasProperty("snapEditsToBeatGrid"))
-        outLane.snapEditsToBeatGrid = obj->getProperty("snapEditsToBeatGrid");
-    else if (obj->hasProperty("snapToBeatGrid"))
-        outLane.snapEditsToBeatGrid = obj->getProperty("snapToBeatGrid");
-    else if (obj->hasProperty("snapTime"))
-        outLane.snapEditsToBeatGrid = obj->getProperty("snapTime");
-    if (obj->hasProperty("snapValue"))
-        outLane.snapValue = obj->getProperty("snapValue");
-    outLane.height = obj->getProperty("height");
-
-    // Absolute points
-    auto pointsVar = obj->getProperty("absolutePoints");
-    if (pointsVar.isArray()) {
-        auto* arr = pointsVar.getArray();
-        for (const auto& pointVar : *arr) {
-            AutomationPoint point;
-            if (!deserializeAutomationPoint(pointVar, point)) {
-                return false;
-            }
-            outLane.absolutePoints.push_back(point);
-        }
-    }
-
-    // Clip IDs
-    auto clipIdsVar = obj->getProperty("clipIds");
-    if (clipIdsVar.isArray()) {
-        auto* arr = clipIdsVar.getArray();
-        for (const auto& idVar : *arr) {
-            outLane.clipIds.push_back(static_cast<int>(idVar));
-        }
-    }
-
-    return true;
+    in.forEachObject("absolutePoints", [&outLane](const ser::ObjectReader& item) {
+        AutomationPoint point;
+        read(item, point);
+        outLane.absolutePoints.push_back(point);
+    });
+    in.readArray("clipIds", outLane.clipIds);
 }
 
 juce::var ProjectSerializer::serializeAutomationClipInfo(const AutomationClipInfo& clip) {
@@ -186,52 +147,33 @@ juce::var ProjectSerializer::serializeAutomationClipInfo(const AutomationClipInf
 
 bool ProjectSerializer::deserializeAutomationClipInfo(const juce::var& json,
                                                       AutomationClipInfo& outClip) {
-    if (!json.isObject()) {
-        lastError_ = "Automation clip is not an object";
-        return false;
-    }
+    outClip = {};
+    return ser::decodeDocument(json, "automationClip", lastError_,
+                               [&outClip](const ser::ObjectReader& in) { read(in, outClip); });
+}
 
-    auto* obj = json.getDynamicObject();
+void ProjectSerializer::read(const ser::ObjectReader& raw, AutomationClipInfo& outClip) {
+    const auto in = project_migration::upgradeAutomationClip(raw);
+    in.required("id", outClip.id);
+    in.required("laneId", outClip.laneId);
+    in.required("name", outClip.name);
+    in.required("colour", outClip.colour);
+    in.required("startBeats", outClip.startBeats);
+    in.required("lengthBeats", outClip.lengthBeats);
+    in.optional("looping", outClip.looping);
+    in.optional("loopLengthBeats", outClip.loopLengthBeats);
+    in.optional("snapXEnabled", outClip.snapXEnabled);
+    in.optional("snapXNumerator", outClip.snapXNumerator);
+    in.optional("snapXDenominator", outClip.snapXDenominator);
+    in.optional("snapYEnabled", outClip.snapYEnabled);
+    in.optional("snapYNumerator", outClip.snapYNumerator);
+    in.optional("snapYDenominator", outClip.snapYDenominator);
 
-    outClip.id = obj->getProperty("id");
-    outClip.laneId = obj->getProperty("laneId");
-    outClip.name = obj->getProperty("name").toString();
-    outClip.colour = stringToColour(obj->getProperty("colour").toString());
-    outClip.startBeats = obj->hasProperty("startBeats") ? obj->getProperty("startBeats")
-                                                        : obj->getProperty("startTime");
-    outClip.lengthBeats = obj->hasProperty("lengthBeats") ? obj->getProperty("lengthBeats")
-                                                          : obj->getProperty("length");
-    outClip.looping = obj->getProperty("looping");
-    outClip.loopLengthBeats = obj->hasProperty("loopLengthBeats")
-                                  ? obj->getProperty("loopLengthBeats")
-                                  : obj->getProperty("loopLength");
-    if (obj->hasProperty("snapXEnabled"))
-        outClip.snapXEnabled = obj->getProperty("snapXEnabled");
-    if (obj->hasProperty("snapXNumerator"))
-        outClip.snapXNumerator = obj->getProperty("snapXNumerator");
-    if (obj->hasProperty("snapXDenominator"))
-        outClip.snapXDenominator = obj->getProperty("snapXDenominator");
-    if (obj->hasProperty("snapYEnabled"))
-        outClip.snapYEnabled = obj->getProperty("snapYEnabled");
-    if (obj->hasProperty("snapYNumerator"))
-        outClip.snapYNumerator = obj->getProperty("snapYNumerator");
-    if (obj->hasProperty("snapYDenominator"))
-        outClip.snapYDenominator = obj->getProperty("snapYDenominator");
-
-    // Points
-    auto pointsVar = obj->getProperty("points");
-    if (pointsVar.isArray()) {
-        auto* arr = pointsVar.getArray();
-        for (const auto& pointVar : *arr) {
-            AutomationPoint point;
-            if (!deserializeAutomationPoint(pointVar, point)) {
-                return false;
-            }
-            outClip.points.push_back(point);
-        }
-    }
-
-    return true;
+    in.forEachObject("points", [&outClip](const ser::ObjectReader& item) {
+        AutomationPoint point;
+        read(item, point);
+        outClip.points.push_back(point);
+    });
 }
 
 juce::var ProjectSerializer::serializeAutomationPoint(const AutomationPoint& point) {
@@ -250,25 +192,20 @@ juce::var ProjectSerializer::serializeAutomationPoint(const AutomationPoint& poi
 
 bool ProjectSerializer::deserializeAutomationPoint(const juce::var& json,
                                                    AutomationPoint& outPoint) {
-    if (!json.isObject()) {
-        lastError_ = "Automation point is not an object";
-        return false;
-    }
+    outPoint = {};
+    return ser::decodeDocument(json, "point", lastError_,
+                               [&outPoint](const ser::ObjectReader& in) { read(in, outPoint); });
+}
 
-    auto* obj = json.getDynamicObject();
-
-    outPoint.id = obj->getProperty("id");
-    outPoint.beatPosition = obj->hasProperty("beatPosition") ? obj->getProperty("beatPosition")
-                                                             : obj->getProperty("time");
-    outPoint.value = obj->getProperty("value");
-    outPoint.curveType =
-        static_cast<AutomationCurveType>(static_cast<int>(obj->getProperty("curveType")));
-    outPoint.tension = obj->getProperty("tension");
-
-    if (!deserializeBezierHandle(obj->getProperty("inHandle"), outPoint.inHandle)) {
-        return false;
-    }
-    return deserializeBezierHandle(obj->getProperty("outHandle"), outPoint.outHandle);
+void ProjectSerializer::read(const ser::ObjectReader& raw, AutomationPoint& outPoint) {
+    const auto in = project_migration::upgradeAutomationPoint(raw);
+    in.required("id", outPoint.id);
+    in.required("beatPosition", outPoint.beatPosition);
+    in.required("value", outPoint.value);
+    in.required("curveType", outPoint.curveType);
+    in.required("tension", outPoint.tension);
+    read(in.object("inHandle"), outPoint.inHandle);
+    read(in.object("outHandle"), outPoint.outHandle);
 }
 
 juce::var ProjectSerializer::serializeAutomationTarget(const AutomationTarget& target) {
@@ -285,38 +222,18 @@ juce::var ProjectSerializer::serializeAutomationTarget(const AutomationTarget& t
     return {obj};
 }
 
-bool ProjectSerializer::deserializeAutomationTarget(const juce::var& json,
-                                                    AutomationTarget& outTarget) {
-    if (!json.isObject()) {
-        lastError_ = "Automation target is not an object";
-        return false;
-    }
-
-    auto* obj = json.getDynamicObject();
-
-    outTarget.kind = static_cast<ControlTarget::Kind>(static_cast<int>(obj->getProperty("type")));
-    if (!deserializeChainNodePath(obj->getProperty("devicePath"), outTarget.devicePath)) {
-        return false;
-    }
-    // Pre-unification projects stored trackId on the target; the unified path
-    // carries it now. If the path didn't deserialize a trackId, fall back.
-    if (outTarget.devicePath.trackId == INVALID_TRACK_ID && obj->hasProperty("trackId"))
-        outTarget.devicePath.trackId = obj->getProperty("trackId");
-    outTarget.paramIndex = obj->getProperty("paramIndex");
-    // Pre-unification format used a separate macroIndex field for Macro kind;
-    // collapse onto paramIndex.
-    if (obj->hasProperty("macroIndex") && outTarget.kind == ControlTarget::Kind::DeviceMacro)
-        outTarget.paramIndex = obj->getProperty("macroIndex");
-    outTarget.modId = obj->getProperty("modId");
-    outTarget.modParamIndex = obj->getProperty("modParamIndex");
-    // Migration: pre-unification projects had a separate sync-division lane
-    // at modParamIndex == 1. The unified Rate lane (index 0) now covers both.
-    if (outTarget.kind == ControlTarget::Kind::ModParam && outTarget.modParamIndex == 1)
-        outTarget.modParamIndex = 0;
-    outTarget.sendBusIndex =
-        obj->hasProperty("sendBusIndex") ? static_cast<int>(obj->getProperty("sendBusIndex")) : -1;
-
-    return true;
+void ProjectSerializer::read(const ser::ObjectReader& raw, AutomationTarget& outTarget) {
+    const auto in = project_migration::upgradeAutomationTarget(raw);
+    in.required("type", outTarget.kind);
+    if (!in.has("devicePath"))
+        in.fail("devicePath", "missing");
+    else if (!fromVar(in.get("devicePath"), outTarget.devicePath))
+        in.fail("devicePath", "not a valid chain path");
+    in.required("paramIndex", outTarget.paramIndex);
+    in.required("modId", outTarget.modId);
+    in.required("modParamIndex", outTarget.modParamIndex);
+    outTarget.sendBusIndex = -1;
+    in.optional("sendBusIndex", outTarget.sendBusIndex);
 }
 
 juce::var ProjectSerializer::serializeBezierHandle(const BezierHandle& handle) {
@@ -329,20 +246,10 @@ juce::var ProjectSerializer::serializeBezierHandle(const BezierHandle& handle) {
     return {obj};
 }
 
-bool ProjectSerializer::deserializeBezierHandle(const juce::var& json, BezierHandle& outHandle) {
-    if (!json.isObject()) {
-        lastError_ = "Bezier handle is not an object";
-        return false;
-    }
-
-    auto* obj = json.getDynamicObject();
-
-    outHandle.beatOffset =
-        obj->hasProperty("beatOffset") ? obj->getProperty("beatOffset") : obj->getProperty("time");
-    outHandle.value = obj->getProperty("value");
-    outHandle.linked = obj->getProperty("linked");
-
-    return true;
+void ProjectSerializer::read(const ser::ObjectReader& in, BezierHandle& outHandle) {
+    in.required("beatOffset", outHandle.beatOffset);
+    in.required("value", outHandle.value);
+    in.required("linked", outHandle.linked);
 }
 
 // Project persistence shares the canonical ChainNodePath serializer rather than
@@ -351,14 +258,6 @@ bool ProjectSerializer::deserializeBezierHandle(const juce::var& json, BezierHan
 // only a track id; fromVar recovers those legacy files.
 juce::var ProjectSerializer::serializeChainNodePath(const ChainNodePath& path) {
     return toVar(path);
-}
-
-bool ProjectSerializer::deserializeChainNodePath(const juce::var& json, ChainNodePath& outPath) {
-    if (!fromVar(json, outPath)) {
-        lastError_ = "Chain node path is malformed";
-        return false;
-    }
-    return true;
 }
 
 // ============================================================================
@@ -382,48 +281,16 @@ juce::var ProjectSerializer::serializeMacroInfo(const MacroInfo& macro) {
     return {obj};
 }
 
-bool ProjectSerializer::deserializeMacroInfo(const juce::var& json, MacroInfo& outMacro) {
-    if (!json.isObject()) {
-        lastError_ = "Macro is not an object";
-        return false;
-    }
-
-    auto* obj = json.getDynamicObject();
-
-    outMacro.id = obj->getProperty("id");
-    outMacro.name = obj->getProperty("name").toString();
-    outMacro.value = obj->getProperty("value");
-
-    // Links
-    auto linksVar = obj->getProperty("links");
-    if (linksVar.isArray()) {
-        auto* arr = linksVar.getArray();
-        for (const auto& linkVar : *arr) {
-            MacroLink link;
-            if (!deserializeMacroLink(linkVar, link))
-                return false;
-            outMacro.links.push_back(link);
-        }
-    }
-
-    // One-shot migration of pre-#1149 projects: if no `links` were stored but
-    // a populated legacy single `target` was, lift it into links so the macro
-    // keeps working. New projects never write `target`, so this branch is dead
-    // for anything saved after this commit.
-    if (outMacro.links.empty()) {
-        auto targetVar = obj->getProperty("target");
-        if (targetVar.isObject()) {
-            ControlTarget legacy;
-            deserializeControlTarget(targetVar.getDynamicObject(), legacy);
-            if (legacy.isValid()) {
-                MacroLink link;
-                link.target = std::move(legacy);
-                outMacro.links.push_back(link);
-            }
-        }
-    }
-
-    return true;
+void ProjectSerializer::read(const ser::ObjectReader& in, MacroInfo& outMacro) {
+    in.required("id", outMacro.id);
+    in.required("name", outMacro.name);
+    in.required("value", outMacro.value);
+    in.forEachObject("links", [&outMacro](const ser::ObjectReader& item) {
+        MacroLink link;
+        read(item, link);
+        outMacro.links.push_back(link);
+    });
+    project_migration::liftLegacyTarget(in, outMacro.links);
 }
 
 juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
@@ -498,15 +365,12 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
 }
 
 bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMod) {
-    if (!json.isObject()) {
-        lastError_ = "Mod is not an object";
-        return false;
-    }
+    outMod = {};
+    return ser::decodeDocument(json, "mod", lastError_,
+                               [&outMod](const ser::ObjectReader& in) { read(in, outMod); });
+}
 
-    auto* obj = json.getDynamicObject();
-    // Use `data` alias so DESER() macro works alongside manual `outMod.` references
-    auto& data = outMod;
-
+void ProjectSerializer::read(const ser::ObjectReader& in, ModInfo& data) {
     DESER(id);
     DESER(name);
     DESER(type);
@@ -520,8 +384,7 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
     DESER(syncDivision);
     DESER(triggerMode);
     DESER(oneShot);
-    if (obj->hasProperty("invertOutput"))
-        DESER(invertOutput);
+    DESER_OPT(invertOutput);
     DESER(useLoopRegion);
     DESER(loopStart);
     DESER(loopEnd);
@@ -531,104 +394,42 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
     DESER(audioReleaseMs);
     DESER(curvePreset);
 
-    // ADSR envelope generator (type == Envelope). Guarded so projects and
-    // mods saved without these fields keep ModInfo's defaults instead of
-    // reading 0 from a missing property.
-    if (obj->hasProperty("envAttackMs"))
-        DESER(envAttackMs);
-    if (obj->hasProperty("envDecayMs"))
-        DESER(envDecayMs);
-    if (obj->hasProperty("envSustain"))
-        DESER(envSustain);
-    if (obj->hasProperty("envReleaseMs"))
-        DESER(envReleaseMs);
-    if (obj->hasProperty("envAttackCurve"))
-        DESER(envAttackCurve);
-    if (obj->hasProperty("envDecayCurve"))
-        DESER(envDecayCurve);
-    if (obj->hasProperty("envReleaseCurve"))
-        DESER(envReleaseCurve);
+    // Each type's own fields arrived after the mod itself did.
+    DESER_OPT(envAttackMs);
+    DESER_OPT(envDecayMs);
+    DESER_OPT(envSustain);
+    DESER_OPT(envReleaseMs);
+    DESER_OPT(envAttackCurve);
+    DESER_OPT(envDecayCurve);
+    DESER_OPT(envReleaseCurve);
+    DESER_OPT(randomType);
+    DESER_OPT(randomShape);
+    DESER_OPT(randomSmooth);
+    DESER_OPT(randomStepDepth);
+    DESER_OPT(followerGainDb);
+    DESER_OPT(followerAttackMs);
+    DESER_OPT(followerHoldMs);
+    DESER_OPT(followerReleaseMs);
+    DESER_OPT(followerHpEnabled);
+    DESER_OPT(followerHpFreq);
+    DESER_OPT(followerLpEnabled);
+    DESER_OPT(followerLpFreq);
 
-    // Random modulator (type == Random). Guarded so mods saved without these
-    // fields keep ModInfo's defaults instead of reading 0 from a missing
-    // property.
-    if (obj->hasProperty("randomType"))
-        DESER(randomType);
-    if (obj->hasProperty("randomShape"))
-        DESER(randomShape);
-    if (obj->hasProperty("randomSmooth"))
-        DESER(randomSmooth);
-    if (obj->hasProperty("randomStepDepth"))
-        DESER(randomStepDepth);
+    // Absent before the point was a choice: the type's default tap point.
+    data.tapPoint = defaultModTapPoint(data.type);
+    DESER_OPT(tapPoint);
 
-    // Where it listens. Absent in every project written before the point was a
-    // choice, and the answer there is the type's default tap point.
-    data.tapPoint = obj->hasProperty("tapPoint")
-                        ? static_cast<ModTapPoint>(static_cast<int>(obj->getProperty("tapPoint")))
-                        : defaultModTapPoint(data.type);
-
-    // Envelope follower (type == Follower).
-    if (obj->hasProperty("followerGainDb"))
-        DESER(followerGainDb);
-    if (obj->hasProperty("followerAttackMs"))
-        DESER(followerAttackMs);
-    if (obj->hasProperty("followerHoldMs"))
-        DESER(followerHoldMs);
-    if (obj->hasProperty("followerReleaseMs"))
-        DESER(followerReleaseMs);
-    if (obj->hasProperty("followerHpEnabled"))
-        DESER(followerHpEnabled);
-    if (obj->hasProperty("followerHpFreq"))
-        DESER(followerHpFreq);
-    if (obj->hasProperty("followerLpEnabled"))
-        DESER(followerLpEnabled);
-    if (obj->hasProperty("followerLpFreq"))
-        DESER(followerLpFreq);
-
-    // Curve points
-    auto curvePointsVar = obj->getProperty("curvePoints");
-    if (curvePointsVar.isArray()) {
-        auto* arr = curvePointsVar.getArray();
-        for (const auto& pointVar : *arr) {
-            CurvePointData point;
-            if (!deserializeCurvePointData(pointVar, point))
-                return false;
-            outMod.curvePoints.push_back(point);
-        }
-    }
-
-    // Links
-    auto linksVar = obj->getProperty("links");
-    if (linksVar.isArray()) {
-        auto* arr = linksVar.getArray();
-        for (const auto& linkVar : *arr) {
-            ModLink link;
-            if (!deserializeModLink(linkVar, link))
-                return false;
-            outMod.links.push_back(link);
-        }
-    }
-
-    // One-shot migration of pre-#1149 projects: if no `links` were stored but
-    // a populated legacy single `target` was, lift it (and the legacy `amount`)
-    // into links so the modulator keeps working. New projects never write
-    // `target`/`amount`, so this branch is dead for anything saved after this
-    // commit.
-    if (outMod.links.empty()) {
-        auto targetVar = obj->getProperty("target");
-        if (targetVar.isObject()) {
-            ControlTarget legacy;
-            deserializeControlTarget(targetVar.getDynamicObject(), legacy);
-            if (legacy.isValid()) {
-                ModLink link;
-                link.target = std::move(legacy);
-                link.amount = static_cast<float>(obj->getProperty("amount"));
-                outMod.links.push_back(link);
-            }
-        }
-    }
-
-    return true;
+    in.forEachObject("curvePoints", [&data](const ser::ObjectReader& item) {
+        CurvePointData point;
+        read(item, point);
+        data.curvePoints.push_back(point);
+    });
+    in.forEachObject("links", [&data](const ser::ObjectReader& item) {
+        ModLink link;
+        read(item, link);
+        data.links.push_back(link);
+    });
+    project_migration::liftLegacyTarget(in, data.links);
 }
 
 juce::var ProjectSerializer::serializeParameterInfo(const ParameterInfo& data) {
@@ -680,32 +481,20 @@ juce::var ProjectSerializer::serializeParameterInfo(const ParameterInfo& data) {
     return {obj};
 }
 
-bool ProjectSerializer::deserializeParameterInfo(const juce::var& json, ParameterInfo& data) {
-    if (!json.isObject()) {
-        lastError_ = "Parameter is not an object";
-        return false;
-    }
-    auto* obj = json.getDynamicObject();
+void ProjectSerializer::read(const ser::ObjectReader& in, ParameterInfo& data) {
     DESER(paramIndex);
-    if (obj->hasProperty("stableId"))
-        DESER(stableId);
+    DESER_OPT(stableId);
     DESER(name);
     DESER(unit);
     DESER(minValue);
     DESER(maxValue);
-    if (obj->hasProperty("valueConvention")) {
-        const auto saved = obj->getProperty("valueConvention");
-        if (!saved.isInt() && !saved.isInt64()) {
-            lastError_ = "Parameter value convention is not an integer";
-            return false;
-        }
-        const int savedConvention = saved;
-        if (savedConvention < static_cast<int>(ParameterValueConvention::Real) ||
-            savedConvention > static_cast<int>(ParameterValueConvention::Normalized)) {
-            lastError_ = "Parameter has an invalid value convention";
-            return false;
-        }
-        data.valueConvention = static_cast<ParameterValueConvention>(savedConvention);
+    // Always present once ProjectMigration has inferred it for an older device.
+    if (int convention = 0; in.required("valueConvention", convention)) {
+        if (convention < static_cast<int>(ParameterValueConvention::Real) ||
+            convention > static_cast<int>(ParameterValueConvention::Normalized))
+            in.fail("valueConvention", "not a value convention: " + juce::String(convention));
+        else
+            data.valueConvention = static_cast<ParameterValueConvention>(convention);
     }
     DESER(defaultValue);
     DESER(currentValue);
@@ -713,54 +502,24 @@ bool ProjectSerializer::deserializeParameterInfo(const juce::var& json, Paramete
     DESER(skewFactor);
     DESER(modulatable);
     DESER(bipolarModulation);
+    DESER_OPT(teMinValue);
+    DESER_OPT(teMaxValue);
+    DESER_OPT(scaleAnchor);
+    DESER_OPT(displayFormat);
+    DESER_OPT(gateSlotIndex);
+    DESER_OPT(gateNegated);
+    DESER_OPT(hidden);
+    DESER_OPT(momentary);
 
-    if (obj->hasProperty("teMinValue"))
-        DESER(teMinValue);
-    if (obj->hasProperty("teMaxValue"))
-        DESER(teMaxValue);
-    if (obj->hasProperty("scaleAnchor"))
-        DESER(scaleAnchor);
-    if (obj->hasProperty("displayFormat"))
-        DESER(displayFormat);
-    if (obj->hasProperty("gateSlotIndex"))
-        DESER(gateSlotIndex);
-    if (obj->hasProperty("gateNegated"))
-        DESER(gateNegated);
-    if (obj->hasProperty("hidden"))
-        DESER(hidden);
-    if (obj->hasProperty("momentary"))
-        DESER(momentary);
-
-    // Choices (vector of strings — stays manual)
-    auto choicesVar = obj->getProperty("choices");
-    if (choicesVar.isArray()) {
-        auto* arr = choicesVar.getArray();
-        for (const auto& choiceVar : *arr) {
-            data.choices.push_back(choiceVar.toString());
-        }
-    }
-
-    auto labelTicksVar = obj->getProperty("labelTicks");
-    if (labelTicksVar.isArray()) {
-        auto* arr = labelTicksVar.getArray();
-        for (const auto& tickVar : *arr) {
-            if (auto* tickObj = tickVar.getDynamicObject()) {
-                data.labelTicks.emplace_back(
-                    static_cast<float>(static_cast<double>(tickObj->getProperty("value"))),
-                    tickObj->getProperty("label").toString());
-            }
-        }
-    }
-
-    auto valueTableVar = obj->getProperty("valueTable");
-    if (valueTableVar.isArray()) {
-        auto* arr = valueTableVar.getArray();
-        for (const auto& valueVar : *arr) {
-            data.valueTable.push_back(valueVar.toString());
-        }
-    }
-
-    return true;
+    in.readArray("choices", data.choices, true);
+    in.forEachObject("labelTicks", [&data](const ser::ObjectReader& tick) {
+        float value = 0.0f;
+        juce::String label;
+        tick.required("value", value);
+        tick.required("label", label);
+        data.labelTicks.emplace_back(value, label);
+    });
+    in.readArray("valueTable", data.valueTable);
 }
 
 juce::var ProjectSerializer::serializeCurvePointData(const CurvePointData& data) {
@@ -777,26 +536,20 @@ juce::var ProjectSerializer::serializeCurvePointData(const CurvePointData& data)
 }
 
 bool ProjectSerializer::deserializeCurvePointData(const juce::var& json, CurvePointData& data) {
-    if (!json.isObject()) {
-        lastError_ = "Curve point data is not an object";
-        return false;
-    }
-    auto* obj = json.getDynamicObject();
+    data = {};
+    return ser::decodeDocument(json, "point", lastError_,
+                               [&data](const ser::ObjectReader& in) { read(in, data); });
+}
+
+void ProjectSerializer::read(const ser::ObjectReader& in, CurvePointData& data) {
     DESER(phase);
     DESER(value);
     DESER(tension);
-    // curveType defaults to 0 (Linear) when absent (old project files)
-    if (obj->hasProperty("curveType"))
-        DESER(curveType);
-    if (obj->hasProperty("inHandleX"))
-        DESER(inHandleX);
-    if (obj->hasProperty("inHandleY"))
-        DESER(inHandleY);
-    if (obj->hasProperty("outHandleX"))
-        DESER(outHandleX);
-    if (obj->hasProperty("outHandleY"))
-        DESER(outHandleY);
-    return true;
+    DESER_OPT(curveType);
+    DESER_OPT(inHandleX);
+    DESER_OPT(inHandleY);
+    DESER_OPT(outHandleX);
+    DESER_OPT(outHandleY);
 }
 
 juce::var ProjectSerializer::serializeMacroLink(const MacroLink& data) {
@@ -809,19 +562,11 @@ juce::var ProjectSerializer::serializeMacroLink(const MacroLink& data) {
     return {obj};
 }
 
-bool ProjectSerializer::deserializeMacroLink(const juce::var& json, MacroLink& data) {
-    if (!json.isObject()) {
-        lastError_ = "Macro link is not an object";
-        return false;
-    }
-    auto* obj = json.getDynamicObject();
-    auto targetVar = obj->getProperty("target");
-    if (targetVar.isObject()) {
-        deserializeControlTarget(targetVar.getDynamicObject(), data.target);
-    }
+void ProjectSerializer::read(const ser::ObjectReader& in, MacroLink& data) {
+    if (const auto target = in.optionalObject("target"))
+        ser::readControlTarget(*target, data.target);
     DESER(amount);
     DESER(bipolar);
-    return true;
 }
 
 juce::var ProjectSerializer::serializeModLink(const ModLink& data) {
@@ -835,21 +580,12 @@ juce::var ProjectSerializer::serializeModLink(const ModLink& data) {
     return {obj};
 }
 
-bool ProjectSerializer::deserializeModLink(const juce::var& json, ModLink& data) {
-    if (!json.isObject()) {
-        lastError_ = "Mod link is not an object";
-        return false;
-    }
-    auto* obj = json.getDynamicObject();
-    auto targetVar = obj->getProperty("target");
-    if (targetVar.isObject()) {
-        deserializeControlTarget(targetVar.getDynamicObject(), data.target);
-    }
+void ProjectSerializer::read(const ser::ObjectReader& in, ModLink& data) {
+    if (const auto target = in.optionalObject("target"))
+        ser::readControlTarget(*target, data.target);
     DESER(amount);
     DESER(bipolar);
-    if (obj->hasProperty("enabled"))
-        DESER(enabled);
-    return true;
+    DESER_OPT(enabled);
 }
 
 // ============================================================================

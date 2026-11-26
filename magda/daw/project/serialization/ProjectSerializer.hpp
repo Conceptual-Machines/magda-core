@@ -15,6 +15,10 @@ namespace magda {
 
 class AddressedParameters;
 
+namespace ser {
+class ObjectReader;
+}
+
 /**
  * @brief Holds deserialized project data before committing to singleton managers.
  *
@@ -48,13 +52,22 @@ struct StagedProjectData {
  *   support for 1 is permanent.
  * 3: ordered Session scenes carry stable ids, names and colours (#2835).
  *
- * There is no version gate on the way in. Already-shipped builds validate only
- * that magdaVersion is a non-empty string and ignore keys they do not know, so
- * a v2 file opens in an older build with every audio clip silently stripped of
- * its source, and saving from there writes that loss back. Nothing this writer
- * can emit changes that, so treat it as a one-way upgrade rather than a gate.
+ * A file declaring a newer version is refused (#2323), so bump this only for a change
+ * an older reader would lose data on, not for a new optional field. Builds before the
+ * gate ignore it and load such a file lossily.
  */
 constexpr int kProjectSchemaVersion = 3;
+
+/** @brief Why the last load failed, for what the user is told. */
+enum class ProjectLoadFailure {
+    None,
+    /// Missing, unreadable, or not JSON.
+    Unreadable,
+    /// JSON, but a field is missing or of the wrong type.
+    Malformed,
+    /// Saved by a build with a newer schema than kProjectSchemaVersion.
+    NewerSchema,
+};
 
 /**
  * @brief Main serialization class for Magda projects
@@ -201,12 +214,12 @@ class ProjectSerializer {
     static juce::var serializeSources(const juce::File& projectFile = {});
 
     /**
-     * @brief Restore pooled media sources. Must run before clips, whose events
-     * reference sources by id.
+     * @brief Parse the sources array into @p out without touching the live pool.
+     *
+     * Must run before clips, whose events reference sources by id. A relative path resolves
+     * against @p projectFile's folder. False when an entry cannot be read.
      */
-    /// Parse the sources array into @p out without touching the live pool; a relative
-    /// path resolves against @p projectFile's folder.
-    static void deserializeSourcesToStaging(const juce::var& json, std::vector<Source>& out,
+    static bool deserializeSourcesToStaging(const juce::var& json, std::vector<Source>& out,
                                             const juce::File& projectFile = {});
 
     /// Replace the pool with @p sources, carrying across any entry that
@@ -236,6 +249,11 @@ class ProjectSerializer {
      */
     static const juce::String& getLastError() {
         return lastError_;
+    }
+
+    /** @brief Why the last load on this thread failed, or None after a success. */
+    static ProjectLoadFailure getLastLoadFailure() {
+        return lastLoadFailure_;
     }
 
     // ========================================================================
@@ -272,49 +290,21 @@ class ProjectSerializer {
     static bool deserializeAutomationPoint(const juce::var& json, AutomationPoint& outPoint);
 
   private:
-    // ========================================================================
-    // Atomic deserialization helpers
-    // ========================================================================
-
     /**
-     * @brief Deserialize tracks from JSON array to staging vector (validation phase)
-     * @param json JSON array containing track data
-     * @param outTracks Output staging vector for validated tracks
-     * @return true on success (all tracks valid), false on error (no state modified)
+     * @brief Parse, version-check, decode and migrate a project document (#2323).
+     *
+     * The one path both loadAndStage() and deserializeProject() take. @p projectFile
+     * resolves relative media paths and may be empty.
      */
-    static bool deserializeTracksToStaging(const juce::var& json,
-                                           std::vector<TrackInfo>& outTracks);
-
-    /**
-     * @brief Deserialize clips from JSON array to staging vector (validation phase)
-     * @param json JSON array containing clip data
-     * @param outClips Output staging vector for validated clips
-     * @return true on success (all clips valid), false on error (no state modified)
-     */
-    static bool deserializeClipsToStaging(const juce::var& json, std::vector<ClipInfo>& outClips,
-                                          double projectTempo = 120.0,
-                                          std::vector<Source>* legacySources = nullptr);
-
-    /**
-     * @brief Deserialize automation lanes from JSON array to staging vector (validation phase)
-     * @param json JSON array containing automation data (can be void for backward compatibility)
-     * @param outLanes Output staging vector for validated automation lanes
-     * @return true on success (all lanes valid), false on error (no state modified)
-     */
-    static bool deserializeAutomationToStaging(const juce::var& json,
-                                               std::vector<AutomationLaneInfo>& outLanes,
-                                               std::vector<AutomationClipInfo>& outClips);
+    static bool stageProject(const juce::var& json, const juce::File& projectFile,
+                             const ProjectCreationSettings& creationSettings,
+                             StagedProjectData& outData);
 
     /**
      * @brief Atomically commit staged deserialization data to singleton managers
      *
-     * This function clears all existing data and restores from staged collections.
-     * It should only be called after all staging functions have succeeded to ensure
-     * atomic all-or-nothing deserialization.
-     *
-     * @param stagedTracks Validated tracks to restore
-     * @param stagedClips Validated clips to restore
-     * @param stagedAutomation Validated automation lanes to restore
+     * Clears all existing data and restores from the staged collections; only called
+     * once every staging step has succeeded.
      */
     static void commitStagedData(std::vector<TrackInfo>& stagedTracks,
                                  std::vector<ClipInfo>& stagedClips,
@@ -322,64 +312,75 @@ class ProjectSerializer {
                                  std::vector<AutomationClipInfo>& stagedAutomationClips);
 
     // ========================================================================
-    // Track serialization helpers
+    // Readers. Each reads the current layout through a checked reader; the public
+    // var overloads above wrap them, and ProjectMigration lifts older layouts first.
     // ========================================================================
 
-    // serializeChainElement / DeviceInfo / RackInfo / ChainInfo are declared
-    // public above so PresetManager can use them.
+    static void readProjectSettings(const ser::ObjectReader& in, ProjectInfo& info,
+                                    const ProjectCreationSettings& creationSettings);
+    static void readSources(const ser::ObjectReader& doc, std::vector<Source>& out,
+                            const juce::File& projectFile);
+    static void readAutomation(const ser::ObjectReader& doc,
+                               std::vector<AutomationLaneInfo>& outLanes,
+                               std::vector<AutomationClipInfo>& outClips);
+
+    static void read(const ser::ObjectReader& in, TrackInfo& out);
+    static void read(const ser::ObjectReader& in, ChainElement& out);
+    static void read(const ser::ObjectReader& in, DeviceInfo& out);
+    static void read(const ser::ObjectReader& in, RackInfo& out);
+    static void read(const ser::ObjectReader& in, ChainInfo& out);
+    static void read(const ser::ObjectReader& in, SendInfo& out);
+    static void read(const ser::ObjectReader& in, ClipInfo& out, double projectTempo,
+                     std::vector<Source>* legacySources);
+    /// The keys one set of MIDI events sits under: a clip's and a take's differ.
+    struct MidiEventKeys {
+        const char* notes;
+        const char* cc;
+        const char* pitchBend;
+        const char* channelPressure;
+        const char* polyAftertouch;
+    };
+    static void readMidiEvents(const ser::ObjectReader& in, std::vector<MidiNote>& notes,
+                               std::vector<MidiCCData>& cc,
+                               std::vector<MidiPitchBendData>& pitchBend,
+                               std::vector<MidiChannelPressureData>& pressure,
+                               std::vector<MidiPolyAftertouchData>& aftertouch,
+                               const MidiEventKeys& keys);
+    static void readMidiContent(const ser::ObjectReader& in, MidiClipModel& midi);
+    static void read(const ser::ObjectReader& in, MidiNote& out);
+    static void read(const ser::ObjectReader& in, MidiCCData& out);
+    static void read(const ser::ObjectReader& in, MidiPitchBendData& out);
+    static void read(const ser::ObjectReader& in, MidiChannelPressureData& out);
+    static void read(const ser::ObjectReader& in, MidiPolyAftertouchData& out);
+    static void read(const ser::ObjectReader& in, AutomationLaneInfo& out);
+    static void read(const ser::ObjectReader& in, AutomationClipInfo& out);
+    static void read(const ser::ObjectReader& in, AutomationPoint& out);
+    static void read(const ser::ObjectReader& in, AutomationTarget& out);
+    static void read(const ser::ObjectReader& in, BezierHandle& out);
+    static void read(const ser::ObjectReader& in, MacroInfo& out);
+    static void read(const ser::ObjectReader& in, ModInfo& out);
+    static void read(const ser::ObjectReader& in, ParameterInfo& out);
+    static void read(const ser::ObjectReader& in, CurvePointData& out);
+    static void read(const ser::ObjectReader& in, MacroLink& out);
+    static void read(const ser::ObjectReader& in, ModLink& out);
 
     // ========================================================================
-    // Clip serialization helpers
+    // Writers
     // ========================================================================
 
     static juce::var serializeMidiNote(const MidiNote& data);
-    static bool deserializeMidiNote(const juce::var& json, MidiNote& data);
-
     static juce::var serializeMidiCCData(const MidiCCData& data);
-    static bool deserializeMidiCCData(const juce::var& json, MidiCCData& data);
-
     static juce::var serializeMidiPitchBendData(const MidiPitchBendData& data);
-    static bool deserializeMidiPitchBendData(const juce::var& json, MidiPitchBendData& data);
-
     static juce::var serializeMidiChannelPressureData(const MidiChannelPressureData& data);
-    static bool deserializeMidiChannelPressureData(const juce::var& json,
-                                                   MidiChannelPressureData& data);
-
     static juce::var serializeMidiPolyAftertouchData(const MidiPolyAftertouchData& data);
-    static bool deserializeMidiPolyAftertouchData(const juce::var& json,
-                                                  MidiPolyAftertouchData& data);
-
     static juce::var serializeSendInfo(const SendInfo& data);
-    static bool deserializeSendInfo(const juce::var& json, SendInfo& data);
-
     static juce::var serializeMacroLink(const MacroLink& data);
-    static bool deserializeMacroLink(const juce::var& json, MacroLink& data);
-
     static juce::var serializeModLink(const ModLink& data);
-    static bool deserializeModLink(const juce::var& json, ModLink& data);
-
-    // ========================================================================
-    // Automation serialization helpers
-    // ========================================================================
-
     static juce::var serializeAutomationTarget(const AutomationTarget& target);
-    static bool deserializeAutomationTarget(const juce::var& json, AutomationTarget& outTarget);
-
     static juce::var serializeBezierHandle(const BezierHandle& handle);
-    static bool deserializeBezierHandle(const juce::var& json, BezierHandle& outHandle);
-
     static juce::var serializeChainNodePath(const ChainNodePath& path);
-    static bool deserializeChainNodePath(const juce::var& json, ChainNodePath& outPath);
-
-    // ========================================================================
-    // Macro and Mod serialization helpers
-    // ========================================================================
-
     static juce::var serializeMacroInfo(const MacroInfo& macro);
-    static bool deserializeMacroInfo(const juce::var& json, MacroInfo& outMacro);
-
     static juce::var serializeParameterInfo(const ParameterInfo& data);
-    static bool deserializeParameterInfo(const juce::var& json, ParameterInfo& data);
 
     // ========================================================================
     // Utility functions
@@ -408,6 +409,7 @@ class ProjectSerializer {
                                           const juce::String& relativePath);
 
     static thread_local juce::String lastError_;
+    static thread_local ProjectLoadFailure lastLoadFailure_;
 };
 
 }  // namespace magda
