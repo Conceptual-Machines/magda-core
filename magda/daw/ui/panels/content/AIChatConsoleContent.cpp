@@ -84,13 +84,50 @@ std::unique_ptr<::llm::LLMClient> toolCallingClient(
     return magda::createLLMClient(llmConfig, "tool-loop");
 }
 
-/// Run @p definition to the end and format its outcome as the console's reply.
+using AgentStream = magda::agent::LlmToolModel::TextStream;
+/// What a run is doing now, shown beside the console's spinner; empty when it is done.
+using AgentActivity = std::function<void(const juce::String&)>;
+
+/// Streams a line as each tool call starts and how it ended.
+class StreamingToolExecutor final : public magda::agent::ToolExecutor {
+  public:
+    StreamingToolExecutor(magda::agent::ToolExecutor& inner, AgentStream stream,
+                          AgentActivity activity)
+        : inner_(inner), stream_(std::move(stream)), activity_(std::move(activity)) {}
+
+    magda::agent::ToolResult execute(const magda::agent::ToolExecutionRequest& request,
+                                     const magda::agent::CancellationToken& cancellation) override {
+        stream_("\n> " + request.call.name);
+        activity_("Running " + request.call.name);
+        auto result = inner_.execute(request, cancellation);
+        activity_("Thinking");
+        stream_(result.success
+                    ? juce::String("\n")
+                    : " failed: " + describe(result.error.value_or(magda::agent::ToolError{})) +
+                          "\n");
+        return result;
+    }
+
+  private:
+    magda::agent::ToolExecutor& inner_;
+    AgentStream stream_;
+    AgentActivity activity_;
+};
+
+/// Run @p definition to the end, streaming its text and tool calls, and format its outcome as
+/// the console's reply.
 std::string runAgentDefinition(const magda::agent::AgentDefinition& definition,
-                               magda::agent::ToolExecutor& executor, ::llm::LLMClient& client,
+                               magda::agent::ToolExecutor& remoteExecutor, ::llm::LLMClient& client,
                                magda::remote::RemoteApiHost& host, const std::string& message,
                                const std::string& priorConversation,
-                               const magda::agent::CancellationToken& cancellation) {
-    magda::agent::LlmToolModel model(client);
+                               const magda::agent::CancellationToken& cancellation,
+                               const AgentStream& stream, const AgentActivity& activity,
+                               std::vector<magda::agent::ConversationTurn>* followUp = nullptr) {
+    magda::agent::LlmToolModel model(client, 0.1f, stream, [&activity](const juce::String& name) {
+        activity("Writing " + name);
+    });
+    StreamingToolExecutor executor(remoteExecutor, stream, activity);
+    activity("Thinking");
     // Approving here matches the DSL executors, which apply mutations without a per-step
     // prompt; the hook is where an approval UI lands.
     magda::agent::AgentRuntime runtime(model, executor, [](const magda::agent::ApprovalRequest&) {
@@ -98,12 +135,21 @@ std::string runAgentDefinition(const magda::agent::AgentDefinition& definition,
     });
 
     magda::agent::AgentRunInput input;
-    input.userMessage = priorConversation.empty()
-                            ? juce::String(message)
-                            : juce::String(priorConversation) + "\nUser request: " + message;
+    // A follow-up carries the run it continues, which already holds the chat before it.
+    if (followUp != nullptr && !followUp->empty()) {
+        input.conversation = std::move(*followUp);
+        input.userMessage = juce::String(message);
+    } else {
+        input.userMessage = priorConversation.empty()
+                                ? juce::String(message)
+                                : juce::String(priorConversation) + "\nUser request: " + message;
+    }
     input.projectRevision = host.service().currentRevision();
+    const auto runStart = input.conversation.size();
 
     const auto result = runtime.run(definition, input, cancellation);
+    if (followUp != nullptr)
+        *followUp = magda::agent::followUpConversation(result.conversation, runStart);
 
     std::string response = result.finalText.toStdString();
     if (result.state != magda::agent::RunState::Completed) {
@@ -113,6 +159,17 @@ std::string runAgentDefinition(const magda::agent::AgentDefinition& definition,
         if (result.detail.isNotEmpty())
             response += ": " + result.detail.toStdString();
         response += "]";
+        // The streamed lines are replaced by this reply, so the last refusal is restated here.
+        for (auto step = result.trace.rbegin(); step != result.trace.rend(); ++step) {
+            const auto failed = std::ranges::find_if(
+                step->toolResults, [](const auto& tool) { return !tool.success; });
+            if (failed == step->toolResults.end())
+                continue;
+            response += "\n[" + failed->toolName.toStdString() + " failed: " +
+                        describe(failed->error.value_or(magda::agent::ToolError{})).toStdString() +
+                        "]";
+            break;
+        }
     }
     if (result.mutations > 0)
         response += "\n[" + std::to_string(result.mutations) + " change(s) applied in " +
@@ -131,7 +188,9 @@ std::string runAgentDefinition(const magda::agent::AgentDefinition& definition,
 std::optional<std::string> runAgentToolLoop(magda::AgentSurfaceId surfaceId,
                                             const std::string& message,
                                             const std::string& priorConversation,
-                                            const magda::agent::CancellationToken& cancellation) {
+                                            const magda::agent::CancellationToken& cancellation,
+                                            const AgentStream& stream,
+                                            const AgentActivity& activity) {
     if (!magda::Config::getInstance().getAgentToolLoopEnabled())
         return std::nullopt;
     // The host is created at startup and destroyed after this panel and its request threads.
@@ -162,7 +221,7 @@ std::optional<std::string> runAgentToolLoop(magda::AgentSurfaceId surfaceId,
 
     magda::agent::RemoteAgentToolExecutor executor(host->service(), surface);
     return runAgentDefinition(definition, executor, *client, *host, message, priorConversation,
-                              cancellation);
+                              cancellation, stream, activity);
 }
 
 /**
@@ -171,14 +230,17 @@ std::optional<std::string> runAgentToolLoop(magda::AgentSurfaceId surfaceId,
  */
 std::optional<std::string> runUserAgent(const std::string& message,
                                         const std::string& priorConversation,
-                                        const magda::agent::CancellationToken& cancellation) {
+                                        const magda::agent::CancellationToken& cancellation,
+                                        const AgentStream& stream, const AgentActivity& activity,
+                                        magda::agent::AgentFollowUp& followUp) {
     const auto alias =
         juce::String(magda::explicitAgentOverrideFromMessage(message)).toLowerCase().toStdString();
     if (alias.empty() || magda::agentSurfaceForAlias(alias) != nullptr)
         return std::nullopt;
 
     // Read on every request, so an edited folder takes effect without a restart.
-    const auto loads = magda::agent::loadUserAgents(magda::paths::agentsDir());
+    const auto loads =
+        magda::agent::loadAgents(magda::paths::stockAgentsDir(), magda::paths::agentsDir());
     const auto* agent = magda::agent::findUserAgent(loads, alias);
     const auto handle = "@" + alias;
     if (agent == nullptr) {
@@ -202,8 +264,11 @@ std::optional<std::string> runUserAgent(const std::string& message,
     auto request = juce::String(magda::messageWithoutAgentOverride(message)).trim();
     if (request.isEmpty())
         request = "Do your task on the current project.";
+    if (followUp.alias != juce::String(alias))
+        followUp = {.alias = juce::String(alias), .conversation = {}};
     return runAgentDefinition(magda::agent::toAgentDefinition(*agent), executor, *client, *host,
-                              request.toStdString(), priorConversation, cancellation);
+                              request.toStdString(), priorConversation, cancellation, stream,
+                              activity, &followUp.conversation);
 }
 }  // namespace
 
@@ -730,7 +795,8 @@ void AIChatConsoleContent::RequestThread::run() {
                 text = text.substring(0, thinkingPos) + text.substring(lineEnd + 1);
             }
             streamAnchor->store(text.length());
-            safeThis->chatHistory_.setText(text);
+            // The mark opens a MAGDA block, so the stream does not run on in the user's message.
+            safeThis->chatHistory_.setText(text + juce::String::charToString(0x25C6) + " ");
         });
     };
 
@@ -785,6 +851,19 @@ void AIChatConsoleContent::RequestThread::run() {
         return true;
     };
 
+    // Starts the stream so the "Thinking" line gives way to the spinner. A late post after the
+    // request ended is dropped, so the wheel never outlives it.
+    auto onActivity = [&, safeThis](const juce::String& activity) {
+        if (!streamStarted) {
+            startStreaming();
+            streamStarted = true;
+        }
+        juce::MessageManager::callAsync([safeThis, activity] {
+            if (safeThis && safeThis->processing_)
+                safeThis->chatHistory_.setActivity(activity);
+        });
+    };
+
     // Centralised conversation memory (#1402): render the active view's thread
     // and prepend it so the agent builds on earlier turns. The original message
     // is recorded verbatim once the turn completes (see the callAsync below).
@@ -808,12 +887,21 @@ void AIChatConsoleContent::RequestThread::run() {
     // summary flows through the same prose channel the mix agent uses. A
     // nullopt is a preflight refusal, and the DSL workflows below run instead.
     const magda::agent::CancellationToken cancellation([this] { return threadShouldExit(); });
-    if (auto userAgentResponse = runUserAgent(message, priorContext, cancellation)) {
+    // The mix-analysis caveat belongs to that agent's prose, not to a tool loop's summary.
+    bool mixCaveat = false;
+    // Read here and written back by the completion below; a new request waits for this thread.
+    auto followUp = owner_.agentFollowUp_;
+    bool ranUserAgent = false;
+    if (auto userAgentResponse =
+            runUserAgent(message, priorContext, cancellation, onToken, onActivity, followUp)) {
         if (threadShouldExit())
             return;
         mixAnalysis = std::move(*userAgentResponse);
+        ranUserAgent = followUp.alias ==
+                       juce::String(magda::explicitAgentOverrideFromMessage(message)).toLowerCase();
     } else if (auto toolLoopResponse =
-                   runAgentToolLoop(surfaceDecision.surface, message, priorContext, cancellation)) {
+                   runAgentToolLoop(surfaceDecision.surface, message, priorContext, cancellation,
+                                    onToken, onActivity)) {
         if (threadShouldExit())
             return;
         mixAnalysis = std::move(*toolLoopResponse);
@@ -839,6 +927,7 @@ void AIChatConsoleContent::RequestThread::run() {
         musicDescription = std::move(output.musicDescription);
         autoInstructions = std::move(output.automationInstructions);
         mixAnalysis = std::move(output.prose);
+        mixCaveat = !mixAnalysis.empty();
         error = std::move(output.error);
     }
 
@@ -861,10 +950,15 @@ void AIChatConsoleContent::RequestThread::run() {
     juce::MessageManager::callAsync(
         [safeThis, dsl = std::move(dslCode), musicIR = std::move(musicInstructions),
          musicDesc = std::move(musicDescription), autoIR = std::move(autoInstructions),
-         mixAnalysis = std::move(mixAnalysis), error = std::move(error), userMsg = message,
-         channel = convoChannel, anchor, agentMs, totalMs]() {
+         mixAnalysis = std::move(mixAnalysis), mixCaveat, error = std::move(error),
+         userMsg = message, channel = convoChannel, anchor, agentMs, totalMs, ranUserAgent,
+         followUp = std::move(followUp)]() mutable {
             if (!safeThis)
                 return;
+            if (ranUserAgent) {
+                safeThis->agentFollowUp_ = std::move(followUp);
+                safeThis->setActiveAgent(safeThis->agentFollowUp_.alias);
+            }
 
             // Execution runs synchronously on the message thread; a multi-track
             // fan-out can take a beat. Show the busy cursor so there's feedback
@@ -932,13 +1026,14 @@ void AIChatConsoleContent::RequestThread::run() {
             // Append the mixing-agent caveat in a dim secondary colour after the
             // main response. Inserted after setText so it does not enter the plain
             // text that gets stored in conversation history (display-only).
-            if (!mixAnalysis.empty() && !hadError) {
+            if (mixCaveat && !hadError) {
                 safeThis->chatHistory_.appendDim(
                     juce::String(magda::MixAnalysisAgent::getUserCaveat()) + "\n\n");
             }
 
             safeThis->inputBox_->setEnabled(true);
             safeThis->processing_ = false;
+            safeThis->chatHistory_.setActivity({});
             safeThis->restoreSendIcon();
             safeThis->inputBox_->grabKeyboardFocus();
             juce::MouseCursor::hideWaitCursor();
@@ -1021,6 +1116,14 @@ AIChatConsoleContent::AIChatConsoleContent() {
     addChildComponent(analysisChip_);
     magda::MixAnalysisService::getInstance().addListener(this);
 
+    agentChip_.setJustificationType(juce::Justification::centredLeft);
+    agentChip_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    agentChip_.setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    agentChip_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    agentChip_.addMouseListener(this, false);
+    addChildComponent(agentChip_);
+
     // Send button (embedded in bottom bar) — SVG icon
     setThemedButtonIcon(sendButton_, BinaryData::enter_svg, BinaryData::enter_svgSize);
     sendButton_.setEdgeIndent(5);
@@ -1057,6 +1160,8 @@ AIChatConsoleContent::AIChatConsoleContent() {
         // The visible chat is one shared buffer across views, so clearing it
         // wipes every view's conversation memory too.
         conversation_.clearAll();
+        agentFollowUp_ = {};
+        setActiveAgent({});
     };
     addAndMakeVisible(clearButton_);
 
@@ -1306,6 +1411,11 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
         userAgentCommands_.contains(name))
         resolvedText = "@" + name + " " +
                        resolveAliases(text.trimStart().fromFirstOccurrenceOf(" ", false, false));
+    else if (name.isNotEmpty() ||
+             !magda::explicitAgentOverrideFromMessage(text.toStdString()).empty())
+        setActiveAgent({});
+    else if (activeAgent_.isNotEmpty())
+        resolvedText = "@" + activeAgent_ + " " + resolvedText;
 
     processing_ = true;
     clearInput();
@@ -1355,6 +1465,7 @@ void AIChatConsoleContent::cancelRequest() {
 
     stopTimer();
     processing_ = false;
+    chatHistory_.setActivity({});
 
     appendToChat("[cancelled]\n");
     inputBox_->setEnabled(true);
@@ -1412,6 +1523,8 @@ void AIChatConsoleContent::lookAndFeelChanged() {
                                 : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
     analysisChip_.setColour(juce::Label::textColourId,
                             ActiveTheme::getColour(ActiveTheme::ACCENT_INFO));
+    agentChip_.setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     updateConfigStatus();
 
     repaint();
@@ -1614,6 +1727,14 @@ void AIChatConsoleContent::resized() {
 
     sendButton_.setBounds(controls.removeFromRight(28));
     controls.removeFromRight(8);
+    if (agentChip_.isVisible()) {
+        agentChip_.setBounds(controls.removeFromRight(juce::jlimit(
+            0,
+            juce::GlyphArrangement::getStringWidthInt(agentChip_.getFont(), agentChip_.getText()) +
+                8,
+            controls.getWidth() - 76)));
+        controls.removeFromRight(8);
+    }
     if (analysisChip_.isVisible()) {
         // Leaves the context chip its 60px minimum on a narrow console (#3117).
         analysisChip_.setBounds(
@@ -1663,6 +1784,8 @@ void AIChatConsoleContent::resetForProjectBoundary() {
 
     // A different project means a fresh conversation; drop all view memory.
     conversation_.clearAll();
+    agentFollowUp_ = {};
+    setActiveAgent({});
     clearMidiContext();
 
     // Cancel any in-flight request
@@ -1701,6 +1824,20 @@ void AIChatConsoleContent::externalPluginFormatPreferenceChanged(magda::PluginFo
 
 void AIChatConsoleContent::mixAnalysisChanged() {
     updateAnalysisChip();
+}
+
+void AIChatConsoleContent::setActiveAgent(const juce::String& alias) {
+    activeAgent_ = alias;
+    const bool show = alias.isNotEmpty();
+    if (show) {
+        agentChip_.setText(juce::String::charToString(0x25C6) + " /" + alias + "  " +
+                               juce::String::charToString(0x00D7),
+                           juce::dontSendNotification);
+        agentChip_.setTooltip("Follow-ups go to /" + alias +
+                              ". Click to talk to MAGDA, or type another command.");
+    }
+    agentChip_.setVisible(show);
+    resized();
 }
 
 void AIChatConsoleContent::updateAnalysisChip() {
@@ -2253,6 +2390,10 @@ void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {
         showMidiContextPicker();
         return;
     }
+    if (event.originalComponent == &agentChip_) {
+        setActiveAgent({});
+        return;
+    }
     if (event.originalComponent == this && contextIconBounds_.contains(event.getPosition())) {
         contextEnabled_ = !contextEnabled_;
         magda::dsl::Interpreter::setContextEnabled(contextEnabled_);
@@ -2628,7 +2769,8 @@ void AIChatConsoleContent::onInputChanged() {
 /// Each agent folder is a /alias command; a folder that did not load reports why. Built-in
 /// commands keep their names. Re-read on each use, so folder edits apply without a restart.
 void AIChatConsoleContent::syncUserAgentCommands() {
-    const auto loads = magda::agent::loadUserAgents(magda::paths::agentsDir());
+    const auto loads =
+        magda::agent::loadAgents(magda::paths::stockAgentsDir(), magda::paths::agentsDir());
     juce::String key;
     for (const auto& load : loads)
         key << load.folder.getFileName() << '\n'
@@ -2651,6 +2793,7 @@ void AIChatConsoleContent::syncUserAgentCommands() {
             cmd.description =
                 load.agent->description.isNotEmpty() ? load.agent->description : load.agent->name;
             cmd.usage = "/" + cmd.name + " [request]";
+            cmd.runsBare = true;
             cmd.handler = [](const juce::String&, const std::map<juce::String, juce::String>&,
                              const juce::String&) { return false; };
         } else {

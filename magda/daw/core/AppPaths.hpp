@@ -43,6 +43,9 @@ juce::File agentsDir();
 /** agentsDir() for a Config value not yet applied, such as a pending Settings edit. */
 juce::File agentsDirFor(const std::string& configured);
 
+/** The agent folders MAGDA ships, read beside agentsDir() (#3445). */
+juce::File stockAgentsDir();
+
 /** OS-default appdata root (`~/Library/Application Support/MAGDA` on macOS).
  *  Returned regardless of override — needed because the config file itself
  *  is anchored here so the override can be read from it. */

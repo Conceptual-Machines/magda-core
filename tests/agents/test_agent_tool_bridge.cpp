@@ -309,6 +309,16 @@ class CapturingLlmClient final : public llm::LLMClient {
         return scripted;
     }
 
+    std::vector<llm::StreamDelta> deltas;
+    llm::Response sendStreamingRequestDetailed(const llm::Request& request,
+                                               llm::StreamDeltaCallback onDelta) const override {
+        requests.push_back(request);
+        for (const auto& delta : deltas)
+            if (!onDelta(delta))
+                return {};
+        return scripted;
+    }
+
     juce::String getName() const override {
         return "capturing";
     }
@@ -335,7 +345,7 @@ TEST_CASE("LlmToolModel maps the runtime conversation onto the provider surface"
     client.scripted.text = "done";
     llm::ToolCall scriptedCall;
     scriptedCall.id = "c9";
-    scriptedCall.name = "tracks.list";
+    scriptedCall.name = "tracks_list";
     scriptedCall.arguments = object({});
     client.scripted.toolCalls.push_back(scriptedCall);
     client.scripted.totalTokens = 321;
@@ -367,7 +377,8 @@ TEST_CASE("LlmToolModel maps the runtime conversation onto the provider surface"
     const auto& mapped = client.requests.front();
     REQUIRE(mapped.systemPrompt == "Be the arrangement agent.");
     REQUIRE(mapped.tools.size() == 1);
-    REQUIRE(mapped.tools.front().name == "tracks.list");
+    // Providers refuse dots in tool names, so they go out with underscores and come back.
+    REQUIRE(mapped.tools.front().name == "tracks_list");
     REQUIRE(static_cast<bool>(mapped.tools.front().annotations["readOnlyHint"]));
     // The trailing user turn became the current message; history kept the rest.
     REQUIRE(mapped.userMessage == "and now?");
@@ -375,9 +386,11 @@ TEST_CASE("LlmToolModel maps the runtime conversation onto the provider surface"
     REQUIRE(mapped.messages[0].role == "user");
     REQUIRE(mapped.messages[1].role == "assistant");
     REQUIRE(mapped.messages[1].toolCalls.size() == 1);
+    REQUIRE(mapped.messages[1].toolCalls.front().name == "tracks_list");
     REQUIRE(mapped.messages[2].role == "tool");
     REQUIRE(mapped.messages[2].toolResults.size() == 1);
     REQUIRE(mapped.messages[2].toolResults.front().callId == "c1");
+    REQUIRE(mapped.messages[2].toolResults.front().name == "tracks_list");
     REQUIRE_FALSE(mapped.messages[2].toolResults.front().isError);
 
     // The provider's answer came back in runtime terms.
@@ -385,6 +398,7 @@ TEST_CASE("LlmToolModel maps the runtime conversation onto the provider surface"
     REQUIRE(response.text == "done");
     REQUIRE(response.toolCalls.size() == 1);
     REQUIRE(response.toolCalls.front().id == "c9");
+    REQUIRE(response.toolCalls.front().name == "tracks.list");
     REQUIRE(response.tokensUsed == 321);
 }
 
@@ -413,4 +427,42 @@ TEST_CASE("LlmToolModel surfaces tool errors as error results", "[agent-bridge][
     REQUIRE(mapped.messages[0].toolResults.size() == 1);
     REQUIRE(mapped.messages[0].toolResults.front().isError);
     REQUIRE(mapped.messages[0].toolResults.front().error == "track 9 not found");
+}
+
+TEST_CASE("LlmToolModel streams the model's text and keeps its tool calls",
+          "[agent-bridge][llm-model]") {
+    CapturingLlmClient client;
+    client.scripted.success = true;
+    client.scripted.text = "Analysing.";
+    llm::ToolCall call;
+    call.id = "c1";
+    call.name = "clips_analyzeSpeech";
+    call.arguments = object({{"clipId", 1}});
+    client.scripted.toolCalls.push_back(call);
+    client.deltas = {
+        {.type = llm::StreamDeltaType::Text, .text = "Analys"},
+        {.type = llm::StreamDeltaType::ToolCallStart, .toolName = "clips_analyzeSpeech"},
+        {.type = llm::StreamDeltaType::Text, .text = "ing."}};
+
+    juce::String streamed;
+    juce::StringArray started;
+    LlmToolModel model(
+        client, 0.1f,
+        [&](const juce::String& text) {
+            streamed += text;
+            return true;
+        },
+        [&](const juce::String& name) { started.add(name); });
+    ModelRequest request;
+    request.tools = {{.name = "clips.analyzeSpeech",
+                      .description = "Analyse speech",
+                      .inputSchema = object({}),
+                      .access = ToolAccess::Read}};
+    request.conversation = {ConversationTurn{.role = ConversationRole::User, .text = "level"}};
+
+    const auto response = model.generate(request, {});
+    CHECK(streamed == "Analysing.");
+    CHECK(started == juce::StringArray{"clips.analyzeSpeech"});
+    REQUIRE(response.toolCalls.size() == 1);
+    CHECK(response.toolCalls.front().name == "clips.analyzeSpeech");
 }

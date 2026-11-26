@@ -549,7 +549,10 @@ every gap between phrases and breaths. The level that counts as sound is
 derived from the take's floor and voice, or given as `thresholdDb`; the
 result reports the level it used. A clip changed during the analysis fails
 the job, and a result over 60 KiB fails it with a request to analyse the clip
-in parts.
+in parts. With `transcribe`, each phrase also carries its words as `text`,
+from the local speech model (#3445). When the model cannot run, for example
+because it is not downloaded, the regions still come back, and the result
+carries the reason as `transcriptionError`.
 
 `clips.resize` takes `lengthBeats` and an `edge` of `start` or `end`. All three
 operations are edit-scoped and commit as one undo action. A move that restates

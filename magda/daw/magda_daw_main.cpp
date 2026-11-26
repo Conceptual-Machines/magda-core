@@ -15,12 +15,14 @@
 #include "../../magda/agents/llm_client_factory.hpp"
 #include "../../magda/agents/llm_presets.hpp"
 #include "../../magda/agents/model_downloader.hpp"
+#include "../../magda/agents/speech_transcriber.hpp"
 #include "api/magda_api_live.hpp"
 #include "api/osc_command_sink_live.hpp"
 #include "api/osc_feedback_live.hpp"
 #include "api/remote_api_host.hpp"
 #include "api/remote_audit.hpp"
 #include "api/remote_service.hpp"
+#include "api/remote_speech_to_text.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/controllers/ControllerParamReader.hpp"
@@ -392,6 +394,15 @@ class MagdaDAWApplication : public JUCEApplication {
         // The engine is passed for the `meters` subscription (#1857), which
         // reads the levels the audio path already publishes; nothing else in the
         // remote API touches it.
+        magda::remote::setSpeechToText([](const std::vector<float>& samples, double sampleRate,
+                                          const std::atomic<bool>* abort) {
+            const auto result = magda::SpeechTranscriber::getInstance().transcribe(
+                magda::SpeechTranscriber::toWhisperRate(
+                    samples.data(), static_cast<int>(samples.size()), sampleRate),
+                {}, abort);
+            return magda::remote::Transcription{juce::String::fromUTF8(result.text.c_str()),
+                                                juce::String::fromUTF8(result.error.c_str())};
+        });
         remoteApi_ = std::make_unique<magda::remote::RemoteApiHost>(daw_engine_->getMagdaApi(),
                                                                     daw_engine_.get());
         if (remoteApi_->start()) {

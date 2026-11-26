@@ -6,11 +6,14 @@
 #include <algorithm>
 #include <chrono>
 #include <memory>
+#include <optional>
 
 #include "../daw/api/remote_service.hpp"
 
 namespace magda::agent {
 namespace {
+
+constexpr int kJobPollMs = 250;
 
 const remote::OperationDescriptor* resolvableOperation(const std::string& name) {
     const auto* operation = remote::OperationRegistry::instance().find(juce::String(name));
@@ -98,6 +101,11 @@ ToolResult RemoteAgentToolExecutor::execute(const ToolExecutionRequest& request,
                 .mutated = false};
     };
 
+    if (request.call.arguments.isVoid())
+        return failure("invalid_arguments",
+                       "The arguments were not valid JSON. A long call may have been cut off at "
+                       "the model's output limit: send less in one call");
+
     const bool allowed = std::ranges::contains(allowlist_, request.call.name.toStdString());
     if (!allowed)
         return failure("tool_not_allowed", "Operation '" + request.call.name + "' is not in " +
@@ -127,21 +135,59 @@ ToolResult RemoteAgentToolExecutor::execute(const ToolExecutionRequest& request,
         juce::WaitableEvent done;
         remote::Response response;
     };
-    auto pending = std::make_shared<Pending>();
-    service_.dispatch(request.call.name, request.call.arguments, context,
-                      [pending](remote::Response completed) {
-                          pending->response = std::move(completed);
-                          pending->done.signal();
-                      });
+    std::optional<ToolResult> abandoned;
+    const auto run = [&](const juce::String& method, const juce::var& arguments,
+                         const juce::String& requestId) -> std::optional<remote::Response> {
+        auto pending = std::make_shared<Pending>();
+        context.requestId = requestId;
+        service_.dispatch(method, arguments, context, [pending](remote::Response completed) {
+            pending->response = std::move(completed);
+            pending->done.signal();
+        });
+        constexpr int pollMs = 50;
+        while (!pending->done.wait(pollMs)) {
+            if (cancellation.isCancellationRequested()) {
+                abandoned = failure("cancelled", "Run cancelled while the operation was in flight");
+                return std::nullopt;
+            }
+            if (std::chrono::steady_clock::now() >= request.deadline) {
+                abandoned = failure("time_limit", "Operation did not complete before the deadline");
+                return std::nullopt;
+            }
+        }
+        return std::move(pending->response);
+    };
 
-    constexpr int pollMs = 50;
-    while (!pending->done.wait(pollMs)) {
-        if (cancellation.isCancellationRequested())
-            return failure("cancelled", "Run cancelled while the operation was in flight");
-        if (std::chrono::steady_clock::now() >= request.deadline)
-            return failure("time_limit", "Operation did not complete before the deadline");
+    auto dispatched = run(request.call.name, request.call.arguments, context.requestId);
+    if (!dispatched)
+        return *abandoned;
+    remote::Response response = std::move(*dispatched);
+
+    // A job is waited for here, so the model gets its result in one call: polling jobs.get
+    // spends a model step each time and trips the repeated-call guard (#3445).
+    const auto isPending = [](const remote::Response& r) {
+        const auto state = r.result["state"].toString();
+        return r.ok && r.result["id"].toString().startsWith("job_") &&
+               (state == "accepted" || state == "running");
+    };
+    const auto jobId = response.result["id"].toString();
+    const auto jobArguments = [&jobId] {
+        auto* object = new juce::DynamicObject();
+        object->setProperty("jobId", jobId);
+        return juce::var(object);
+    }();
+    for (int poll = 1; isPending(response); ++poll) {
+        juce::Thread::sleep(kJobPollMs);
+        auto polled = run("jobs.get", jobArguments,
+                          runNamespace_ + "/" + request.call.id + "/poll" + juce::String(poll));
+        if (!polled) {
+            run("jobs.cancel", jobArguments, runNamespace_ + "/" + request.call.id + "/cancel");
+            return *abandoned;
+        }
+        if (!polled->ok)
+            break;
+        response.result = std::move(polled->result);
     }
-    const remote::Response response = std::move(pending->response);
 
     if (!response.ok) {
         juce::var details;

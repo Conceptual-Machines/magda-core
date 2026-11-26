@@ -132,6 +132,11 @@ vc_redist_ok:
     File /r "${__FILEDIR__}\drumkits\*"
     SetOutPath $INSTDIR
 
+    ; Stock agent folders - the AI console loads <exe>/agents beside the user's own.
+    SetOutPath "$INSTDIR\agents"
+    File /r "${__FILEDIR__}\agents\*"
+    SetOutPath $INSTDIR
+
     ; DAWproject XSD schemas - DawProjectValidator validates import/export
     ; against <exe>/dawproject/Project.xsd and MetaData.xsd. Without these the
     ; validator falls back to the baked-in build-tree source path, which does
@@ -194,6 +199,7 @@ Section "un.MAGDA" SecUnProgram
     RMDir /r "$INSTDIR\faustlibraries"
     RMDir /r "$INSTDIR\faust_dsp"
     RMDir /r "$INSTDIR\drumkits"
+    RMDir /r "$INSTDIR\agents"
     RMDir /r "$INSTDIR\dawproject"
     RMDir /r "$INSTDIR\models"
     RMDir "$INSTDIR"

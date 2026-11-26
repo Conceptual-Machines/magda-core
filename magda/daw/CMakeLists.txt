@@ -1009,6 +1009,23 @@ else()
     )
 endif()
 
+# Copy resources/agents/ (stock agent folders, #3445) into the app; the AI console
+# loads them beside the user's own agents folder. A target of its own runs on every build, so an
+# edited prompt lands without a relink; cleared first, so a renamed agent leaves no copy.
+set(MAGDA_AGENTS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../resources/agents")
+if(APPLE)
+    set(MAGDA_AGENTS_DST "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Resources/agents")
+else()
+    set(MAGDA_AGENTS_DST "$<TARGET_FILE_DIR:magda_daw_app>/agents")
+endif()
+add_custom_target(magda_stock_agents ALL
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${MAGDA_AGENTS_DST}"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${MAGDA_AGENTS_SRC}" "${MAGDA_AGENTS_DST}"
+    COMMENT "Copying stock agents into the app"
+    VERBATIM
+)
+add_dependencies(magda_stock_agents magda_daw_app)
+
 # Copy resources/models/ (the bundled audio-to-MIDI model, basic_pitch.onnx)
 # into the app so TranscriptionService::findBundledModel resolves it at runtime.
 # Single small file (~230 KB); always staged regardless of MAGDA_HAVE_CLAP so

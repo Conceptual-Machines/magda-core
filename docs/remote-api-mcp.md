@@ -315,7 +315,7 @@ Something no argument could fix — an unknown tool, a malformed request — is 
 
 ### Batches
 
-`batch.apply` runs up to 256 content edits (tracks, clips and notes, sends, the
+`batch.apply` runs up to 1024 content edits (tracks, clips and notes, sends, the
 loop) as one undo step and one revision, or none of them if any step fails:
 
 ```json
@@ -326,7 +326,9 @@ loop) as one undo step and one revision, or none of them if any step fails:
 ]}
 ```
 
-A `{"$ref": "N.id"}` stands for a field of an earlier step's result. The reply
+A `{"$ref": "N.id"}` stands for a field of an earlier step's result, and
+`{"$ref": "N.2.id"}` for a field of the third item when that result is a list,
+such as the pieces `clips.split` returns. The reply
 lists each step's id, in order. Add devices with their own calls first: loading
 a plugin is outside what undo can take back. The allowlist and the full contract
 are in [remote-api-batch-decision.md](architecture/remote-api-batch-decision.md).

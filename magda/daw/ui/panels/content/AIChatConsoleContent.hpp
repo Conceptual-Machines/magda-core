@@ -19,6 +19,7 @@
 #include "../../../../agents/conversation_store.hpp"
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../../agents/mixing_agent.hpp"
+#include "../../../../agents/user_agents.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/MixAnalysisService.hpp"
 #include "../../../core/PluginPreferences.hpp"
@@ -210,6 +211,12 @@ class AIChatConsoleContent : public PanelContent,
     // measurement to the mixing agent as context (see RequestThread::run).
     juce::Label analysisChip_;
     void updateAnalysisChip();  // show/hide + label the chip from the service state
+
+    // A user agent keeps the chat until another command or the chip's click (#3445).
+    juce::String activeAgent_;
+    magda::agent::AgentFollowUp agentFollowUp_;
+    juce::Label agentChip_;
+    void setActiveAgent(const juce::String& alias);
 
     void mouseUp(const juce::MouseEvent& event) override;
 

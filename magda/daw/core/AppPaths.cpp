@@ -125,6 +125,15 @@ juce::File agentsDir() {
     return agentsDirFor(Config::getInstance().getAgentsDir());
 }
 
+juce::File stockAgentsDir() {
+#if JUCE_MAC
+    return juce::File::getSpecialLocation(juce::File::currentApplicationFile)
+        .getChildFile("Contents/Resources/agents");
+#else
+    return executableDir().getChildFile("agents");
+#endif
+}
+
 juce::File alwaysOSDefault() {
     return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
         .getChildFile("MAGDA");

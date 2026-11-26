@@ -5,6 +5,8 @@
 
 #include <juce_llm/juce_llm.h>
 
+#include <functional>
+
 #include "agent_runtime.hpp"
 
 namespace magda::agent {
@@ -21,7 +23,13 @@ namespace magda::agent {
  */
 class LlmToolModel : public Model {
   public:
-    explicit LlmToolModel(llm::LLMClient& client, float temperature = 0.1f);
+    /// Receives the model's text as it streams; false stops the request.
+    using TextStream = std::function<bool(const juce::String&)>;
+    /// Told the operation name when the model starts writing a call to it.
+    using ToolCallStream = std::function<void(const juce::String&)>;
+
+    explicit LlmToolModel(llm::LLMClient& client, float temperature = 0.1f, TextStream onText = {},
+                          ToolCallStream onToolCall = {});
 
     ModelResponse generate(const ModelRequest& request,
                            const CancellationToken& cancellation) override;
@@ -29,6 +37,8 @@ class LlmToolModel : public Model {
   private:
     llm::LLMClient& client_;
     float temperature_;
+    TextStream onText_;
+    ToolCallStream onToolCall_;
 };
 
 }  // namespace magda::agent

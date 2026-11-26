@@ -135,6 +135,9 @@ AgentRunPolicy parseBudget(const juce::var& value) {
         else if (key == "maxMutations")
             policy.maxMutations =
                 static_cast<std::size_t>(requireCount(property.value, "budget.maxMutations", 0));
+        else if (key == "maxTokens")
+            policy.maxTokens =
+                static_cast<std::size_t>(requireCount(property.value, "budget.maxTokens", 1));
         else
             fail("budget." + key, "unknown field");
     }
@@ -212,6 +215,19 @@ std::vector<UserAgentLoad> loadUserAgents(const juce::File& dir) {
     return loads;
 }
 
+std::vector<UserAgentLoad> loadAgents(const juce::File& stockDir, const juce::File& userDir) {
+    auto loads = loadUserAgents(stockDir);
+    for (auto& load : loadUserAgents(userDir)) {
+        // A copy that fails to load hides the stock agent too, so its error is what /alias shows.
+        std::erase_if(loads, [&](const UserAgentLoad& stock) {
+            return load.agent ? stock.agent && stock.agent->alias == load.agent->alias
+                              : stock.folder.getFileName() == load.folder.getFileName();
+        });
+        loads.push_back(std::move(load));
+    }
+    return loads;
+}
+
 const UserAgent* findUserAgent(const std::vector<UserAgentLoad>& loads, const std::string& alias) {
     for (const auto& load : loads)
         if (load.agent && load.agent->alias.toStdString() == alias)
@@ -238,7 +254,25 @@ AgentDefinition toAgentDefinition(const UserAgent& agent) {
     definition.tools = agentToolsForOperations(agent.tools);
     definition.budget.maxSteps = agent.runPolicy.maxSteps;
     definition.budget.maxMutations = agent.runPolicy.maxMutations;
+    definition.budget.maxTokens = agent.runPolicy.maxTokens;
     return definition;
+}
+
+std::vector<ConversationTurn> followUpConversation(std::vector<ConversationTurn> conversation,
+                                                   std::size_t lastRunStart) {
+    std::vector<ConversationTurn> carried;
+    for (std::size_t i = 0; i < conversation.size(); ++i) {
+        auto& turn = conversation[i];
+        if (i >= lastRunStart) {
+            carried.push_back(std::move(turn));
+            continue;
+        }
+        if (turn.role == ConversationRole::Tool || turn.text.trim().isEmpty())
+            continue;
+        turn.toolCalls.clear();
+        carried.push_back(std::move(turn));
+    }
+    return carried;
 }
 
 const char* toString(AgentContextProvider provider) {

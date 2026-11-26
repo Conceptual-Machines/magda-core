@@ -28,6 +28,9 @@ const std::vector<juce::String>& batchStepOperations() {
         "clips.transpose",
         "clips.move",
         "clips.resize",
+        "clips.split",
+        "clips.delete",
+        "clips.updateAudio",
         "sends.create",
         "sends.update",
         "project.setLoopRange",
@@ -46,7 +49,7 @@ struct Reference {
     juce::StringArray path;
 };
 
-/// `{"$ref": "N.field"}`, the only shape a reference takes.
+/// `{"$ref": "N.field"}`, the only shape a reference takes; a number in the path indexes an array.
 std::optional<juce::String> referenceText(const juce::var& value) {
     const auto* object = value.getDynamicObject();
     if (object == nullptr || object->getProperties().size() != 1 || !object->hasProperty("$ref"))
@@ -97,7 +100,14 @@ template <typename Resolve> juce::var substitute(const juce::var& value, Resolve
 
 juce::var walk(juce::var node, const juce::StringArray& path, bool schema) {
     for (const auto& key : path) {
-        node = schema ? node["properties"][juce::Identifier(key)] : node[juce::Identifier(key)];
+        const bool index = key.containsOnly("0123456789");
+        if (schema)
+            node = index ? node["items"] : node["properties"][juce::Identifier(key)];
+        else if (index)
+            node = node.isArray() && key.getIntValue() < node.size() ? node[key.getIntValue()]
+                                                                     : juce::var();
+        else
+            node = node[juce::Identifier(key)];
         if (node.isVoid())
             return {};
     }

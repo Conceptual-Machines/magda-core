@@ -426,6 +426,20 @@ RunResult AgentRuntime::run(const AgentDefinition& definition, AgentRunInput inp
     }
 }
 
+juce::String describe(const ToolError& error) {
+    auto text = error.code + ": " + error.message;
+    if (const auto* issues = error.details.getArray()) {
+        // The first few say what to fix; a long list only repeats the same mistake.
+        constexpr int kShown = 5;
+        for (int i = 0; i < std::min(issues->size(), kShown); ++i)
+            text << "\n"
+                 << (*issues)[i]["path"].toString() << ": " << (*issues)[i]["message"].toString();
+        if (issues->size() > kShown)
+            text << "\n(" << (issues->size() - kShown) << " more)";
+    }
+    return text;
+}
+
 const char* toString(TerminalReason reason) {
     switch (reason) {
         case TerminalReason::Completed:

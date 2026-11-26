@@ -18,6 +18,7 @@
 #include "remote_engine_jobs.hpp"
 #include "remote_handlers.hpp"
 #include "remote_jobs.hpp"
+#include "remote_speech_to_text.hpp"
 
 namespace magda::remote::handlers {
 namespace {
@@ -45,6 +46,9 @@ struct SpeechWork {
     std::shared_ptr<std::atomic_bool> cancelled;
     std::vector<audio::SpeechAnalysisResult> results;
     juce::String error;
+    SpeechToText speechToText;                     ///< Set when the phrases are transcribed.
+    std::vector<std::vector<juce::String>> texts;  ///< Per segment, per phrase.
+    juce::String transcriptionError;
 };
 
 double bpmAt(MagdaApi& api, const ClipInfo& clip) {
@@ -85,9 +89,69 @@ double rounded(double value, int places) {
     return std::round(value * scale) / scale;
 }
 
-void analyse(SpeechWork& work, const std::function<void(double)>& progress) {
+std::vector<int> channelsOf(const SpeechSegment& segment, const juce::AudioFormatReader& reader) {
+    if (reader.numChannels < 2)
+        return {0};
+    std::vector<int> channels;
+    if (segment.left)
+        channels.push_back(0);
+    if (segment.right)
+        channels.push_back(1);
+    if (channels.empty())
+        channels = {0, 1};
+    return channels;
+}
+
+/// Each phrase's words; a failing transcriber stops the pass and leaves the regions whole.
+void transcribe(SpeechWork& work, juce::AudioFormatManager& formats,
+                const std::function<void(double)>& progress) {
+    std::size_t total = 0;
+    for (const auto& result : work.results)
+        total += result.phrases.size();
+    std::size_t done = 0;
+    work.texts.resize(work.results.size());
+    for (std::size_t i = 0; i < work.results.size(); ++i) {
+        const auto& segment = work.segments[i];
+        const std::unique_ptr<juce::AudioFormatReader> reader(
+            formats.createReaderFor(segment.file));
+        if (reader == nullptr)
+            return;
+        const auto rate = reader->sampleRate;
+        const auto channels = channelsOf(segment, *reader);
+        for (const auto& phrase : work.results[i].phrases) {
+            if (work.cancelled->load(std::memory_order_acquire))
+                return;
+            const auto first =
+                static_cast<juce::int64>(std::llround((segment.sourceStart + phrase.start) * rate));
+            const auto count = static_cast<int>(std::min<juce::int64>(
+                std::llround((phrase.end - phrase.start) * rate), reader->lengthInSamples - first));
+            juce::AudioBuffer<float> buffer(static_cast<int>(reader->numChannels),
+                                            std::max(count, 1));
+            std::vector<float> mono(static_cast<std::size_t>(std::max(count, 0)), 0.0f);
+            if (count > 0) {
+                reader->read(&buffer, 0, count, first, true, true);
+                for (const int channel : channels)
+                    juce::FloatVectorOperations::addWithMultiply(
+                        mono.data(), buffer.getReadPointer(channel),
+                        1.0f / static_cast<float>(channels.size()), count);
+            }
+            const auto transcription = work.speechToText(mono, rate, work.cancelled.get());
+            if (transcription.error.isNotEmpty()) {
+                work.transcriptionError = transcription.error;
+                work.texts.clear();
+                return;
+            }
+            work.texts[i].push_back(transcription.text.trim());
+            progress(0.5 + 0.5 * static_cast<double>(++done) / static_cast<double>(total));
+        }
+    }
+}
+
+void analyse(SpeechWork& work, const std::function<void(double)>& reportProgress) {
     juce::AudioFormatManager formats;
     formats.registerBasicFormats();
+    const double share = work.speechToText ? 0.5 : 1.0;
+    const auto progress = [&](double value) { reportProgress(share * value); };
     double total = 0.0;
     for (const auto& segment : work.segments)
         total += segment.sourceEnd - segment.sourceStart;
@@ -101,17 +165,7 @@ void analyse(SpeechWork& work, const std::function<void(double)>& progress) {
             return;
         }
         const auto rate = reader->sampleRate;
-        std::vector<int> channels;
-        if (reader->numChannels < 2) {
-            channels = {0};
-        } else {
-            if (segment.left)
-                channels.push_back(0);
-            if (segment.right)
-                channels.push_back(1);
-            if (channels.empty())
-                channels = {0, 1};
-        }
+        const auto channels = channelsOf(segment, *reader);
 
         audio::SpeechAnalyser analyser(rate, static_cast<int>(channels.size()), work.options);
         juce::AudioBuffer<float> buffer(static_cast<int>(reader->numChannels), kReadBlock);
@@ -134,6 +188,8 @@ void analyse(SpeechWork& work, const std::function<void(double)>& progress) {
         done += segment.sourceEnd - segment.sourceStart;
         work.results.push_back(analyser.finish());
     }
+    if (work.speechToText)
+        transcribe(work, formats, reportProgress);
 }
 
 /// The regions in timeline beats, each segment's clamped to the beats its event plays.
@@ -160,9 +216,12 @@ juce::var resultJson(const ClipInfo& clip, const SpeechWork& work, double bpm,
             return object;
         };
         const auto& result = work.results[i];
-        for (const auto& phrase : result.phrases) {
+        for (std::size_t p = 0; p < result.phrases.size(); ++p) {
+            const auto& phrase = result.phrases[p];
             auto* object = span(phrase.start, phrase.end);
             object->setProperty("loudness", rounded(phrase.loudness, 1));
+            if (i < work.texts.size() && p < work.texts[i].size())
+                object->setProperty("text", work.texts[i][p]);
             if (!targetLoudness.isVoid())
                 object->setProperty(
                     "gainToTargetDb",
@@ -181,6 +240,8 @@ juce::var resultJson(const ClipInfo& clip, const SpeechWork& work, double bpm,
         out->setProperty("thresholdDb", rounded(work.results.front().thresholdDb, 1));
     if (!targetLoudness.isVoid())
         out->setProperty("targetLoudness", targetLoudness);
+    if (work.transcriptionError.isNotEmpty())
+        out->setProperty("transcriptionError", work.transcriptionError);
     out->setProperty("phrases", phrases);
     out->setProperty("breaths", breaths);
     out->setProperty("silences", silences);
@@ -282,6 +343,13 @@ HandlerResult clipsAnalyzeSpeech(MagdaApi& api, const juce::var& input,
     if (work->segments.empty())
         return HandlerResult::fail(ErrorCode::Conflict, "the clip plays no audio in that range");
 
+    if (static_cast<bool>(input["transcribe"])) {
+        work->speechToText = speechToText();
+        if (!work->speechToText)
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "this build has no speech to text; analyse without "
+                                       "transcribe");
+    }
     work->cancelled = std::make_shared<std::atomic_bool>(false);
     const auto jobId = context.jobs->accept(
         {.kind = "clips.analyzeSpeech",

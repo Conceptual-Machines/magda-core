@@ -226,4 +226,7 @@ class AgentRuntime {
 
 const char* toString(TerminalReason reason);
 
+/// "code: message", then each schema issue in the details as "path: message".
+juce::String describe(const ToolError& error);
+
 }  // namespace magda::agent

@@ -171,7 +171,7 @@ bool SlashCommandRegistry::dispatch(const juce::String& text) {
 
     // Bare invocation with neither flags nor positional → treat as --help.
     // Saves users one keystroke when they've forgotten what a command does.
-    if (inv.flags.empty() && inv.positional.isEmpty()) {
+    if (inv.flags.empty() && inv.positional.isEmpty() && !cmd->runsBare) {
         chatSink_(juce::String(echo()) + " " + text.trimStart());
         renderHelp(*cmd);
         return true;
