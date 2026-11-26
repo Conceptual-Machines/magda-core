@@ -60,6 +60,16 @@ TEST_CASE("The unedited smoke project loads", "[serialization][decode]") {
     CHECK(ProjectSerializer::getLastLoadFailure() == ProjectLoadFailure::None);
 }
 
+TEST_CASE("Staging twice into one object replaces the first load", "[serialization][decode]") {
+    StagedProjectData staged;
+    REQUIRE(ProjectSerializer::loadAndStage(smokeProject(), staged));
+    const auto tracks = staged.tracks.size();
+    const auto clips = staged.clips.size();
+    REQUIRE(ProjectSerializer::loadAndStage(smokeProject(), staged));
+    CHECK(staged.tracks.size() == tracks);
+    CHECK(staged.clips.size() == clips);
+}
+
 TEST_CASE("A project from a newer schema is refused", "[serialization][decode]") {
     EditedProject project([](juce::var& json) {
         objectAt(json).setProperty("schemaVersion", kProjectSchemaVersion + 1);

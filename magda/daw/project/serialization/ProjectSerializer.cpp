@@ -362,6 +362,7 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
 bool ProjectSerializer::stageProject(const juce::var& json, const juce::File& projectFile,
                                      const ProjectCreationSettings& creationSettings,
                                      StagedProjectData& outData) {
+    outData = StagedProjectData{};
     ser::DecodeLog log;
     const ser::ObjectReader doc(json, {}, log);
     const auto malformed = [&log] {
