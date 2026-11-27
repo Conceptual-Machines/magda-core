@@ -218,6 +218,28 @@ void MenuManager::removeContribution(ContributionId id) {
     refresh();
 }
 
+void MenuManager::addCommandTarget(juce::ApplicationCommandTarget* target) {
+    contributedCommands_.add(target);
+    if (std::ranges::find(commandTargets_, target) == commandTargets_.end())
+        commandTargets_.push_back(target);
+    if (commandManager_ != nullptr)
+        registerContributedCommands();
+}
+
+void MenuManager::removeCommandTarget(juce::ApplicationCommandTarget* target) {
+    // JUCE's removeCommand drops a command's keys, and the shortcut store would save that.
+    contributedCommands_.remove(target);
+    std::erase(commandTargets_, target);
+}
+
+void MenuManager::registerContributedCommands() {
+    for (auto* target : commandTargets_)
+        commandManager_->registerAllCommandsForTarget(target);
+    // The saved remaps loaded before these commands existed, so they load again.
+    if (reloadKeyMappings_)
+        reloadKeyMappings_();
+}
+
 void MenuManager::refresh() {
     menuItemsChanged();
 #if JUCE_MAC

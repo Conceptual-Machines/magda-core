@@ -585,16 +585,6 @@ juce::ApplicationCommandManager& MainWindow::getCommandManager() {
     return mainComponent->getCommandManager();
 }
 
-void MainWindow::addCommandTarget(juce::ApplicationCommandTarget* target) {
-    jassert(mainComponent != nullptr);
-    mainComponent->addCommandTarget(target);
-}
-
-void MainWindow::removeCommandTarget(juce::ApplicationCommandTarget* target) {
-    if (mainComponent != nullptr)
-        mainComponent->removeCommandTarget(target);
-}
-
 void MainWindow::updateWindowTitle() {
     auto& pm = ProjectManager::getInstance();
     juce::String title = extensions::currentEdition().productName;
@@ -678,7 +668,11 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
     // Let the menu bar render its shortcut hints from these (live) mappings
     // instead of hardcoded per-platform strings (#1352).
-    MenuManager::getInstance().setCommandManager(&commandManager);
+    // Extensions add commands after the saved remaps load, so each addition loads them again.
+    MenuManager::getInstance().setCommandManager(&commandManager, [this] {
+        if (keyMappingStore_ != nullptr)
+            keyMappingStore_->restore();
+    });
 
     // Plugin editor windows are separate top-level windows in the engine layer,
     // outside this component's key chain. Inject the command manager so they can
@@ -1633,21 +1627,8 @@ MainWindow::MainComponent::~MainComponent() {
 // ============================================================================
 
 juce::ApplicationCommandTarget* MainWindow::MainComponent::getNextCommandTarget() {
-    // Commands this component does not list go on to the extensions'.
-    return &contributedCommands_;
-}
-
-void MainWindow::MainComponent::addCommandTarget(juce::ApplicationCommandTarget* target) {
-    contributedCommands_.add(target);
-    commandManager.registerAllCommandsForTarget(target);
-    // Remaps of these commands were dropped when the saved set loaded before they existed.
-    if (keyMappingStore_ != nullptr)
-        keyMappingStore_->restore();
-}
-
-void MainWindow::MainComponent::removeCommandTarget(juce::ApplicationCommandTarget* target) {
-    // The commands stay registered: removing one drops its keys, and the store would save that.
-    contributedCommands_.remove(target);
+    // Commands this component does not list go on to the extensions' (#3076).
+    return &MenuManager::getInstance().getContributedCommands();
 }
 
 void MainWindow::MainComponent::paint(juce::Graphics& g) {

@@ -9,6 +9,7 @@
 #include <map>
 #include <vector>
 
+#include "ContributedCommands.hpp"
 #include "core/UndoManager.hpp"
 
 namespace magda {
@@ -171,10 +172,13 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
     // render the command's current key from the mapping set instead of a
     // hardcoded per-platform string, so remaps (#20) stay in sync. Owned by
     // MainComponent; cleared (nullptr) on its destruction.
-    void setCommandManager(juce::ApplicationCommandManager* commandManager) {
+    void setCommandManager(juce::ApplicationCommandManager* commandManager,
+                           std::function<void()> reloadKeyMappings = {}) {
         commandManager_ = commandManager;
+        reloadKeyMappings_ = std::move(reloadKeyMappings);
+        if (commandManager_ != nullptr)
+            registerContributedCommands();
     }
-
     // Update menu item states
     void updateMenuStates(bool canUndo, bool canRedo, bool hasSelection, bool hasEditCursor,
                           bool leftPanelVisible, bool rightPanelVisible, bool bottomPanelVisible,
@@ -208,6 +212,17 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
 
     juce::ApplicationCommandManager* getCommandManager() const {
         return commandManager_;
+    }
+
+    /** @brief An extension's commands: they get keys, show in Shortcuts and run as commands. */
+    void addCommandTarget(juce::ApplicationCommandTarget* target);
+
+    /** @brief Stops routing to @p target. Its commands stay registered, so their keys are kept. */
+    void removeCommandTarget(juce::ApplicationCommandTarget* target);
+
+    /** @brief The target after the main component in the command chain. */
+    ContributedCommands& getContributedCommands() {
+        return contributedCommands_;
     }
 
     // UndoManagerListener
@@ -258,7 +273,12 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
     void clearContributedActions(int firstId, int endId);
     ContributionId addContribution(Contribution contribution);
 
+    void registerContributedCommands();
+
     juce::ApplicationCommandManager* commandManager_ = nullptr;
+    std::function<void()> reloadKeyMappings_;
+    ContributedCommands contributedCommands_;
+    std::vector<juce::ApplicationCommandTarget*> commandTargets_;
 
     std::vector<Contribution> contributions_;
     std::map<int, std::function<void()>> contributedActions_;

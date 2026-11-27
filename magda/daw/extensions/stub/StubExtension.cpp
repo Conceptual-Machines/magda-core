@@ -5,7 +5,6 @@
 
 #include "extensions/Extension.hpp"
 #include "ui/windows/CommandIDs.hpp"
-#include "ui/windows/MainWindow.hpp"
 #include "ui/windows/MenuManager.hpp"
 
 namespace magda::extensions::stub {
@@ -25,11 +24,9 @@ class StubExtension final : public Extension, private juce::ApplicationCommandTa
         return "stub";
     }
 
-    void onStartup(AppContext& context) override {
-        mainWindow_ = &context.mainWindow;
-        mainWindow_->addCommandTarget(this);
-
+    void onStartup(AppContext&) override {
         auto& menus = MenuManager::getInstance();
+        menus.addCommandTarget(this);
         menu_ = menus.addTopLevelMenu("Stub", 6, [](MenuItems& items) {
             items.addItem("Stub Action", [] { juce::Logger::writeToLog("[stub] menu item"); });
         });
@@ -41,9 +38,7 @@ class StubExtension final : public Extension, private juce::ApplicationCommandTa
         auto& menus = MenuManager::getInstance();
         menus.removeContribution(helpItems_);
         menus.removeContribution(menu_);
-        if (mainWindow_ != nullptr)
-            mainWindow_->removeCommandTarget(this);
-        mainWindow_ = nullptr;
+        menus.removeCommandTarget(this);
     }
 
   private:
@@ -67,7 +62,6 @@ class StubExtension final : public Extension, private juce::ApplicationCommandTa
         return true;
     }
 
-    MainWindow* mainWindow_ = nullptr;
     MenuManager::ContributionId menu_ = 0;
     MenuManager::ContributionId helpItems_ = 0;
 };
