@@ -412,9 +412,10 @@ ahead, whose first block seeds the ahead side's launch handles (#3316), and one 
 external phase (Link), which holds the start at the callback. A stop and a locate still take
 effect at the next callback.
 
-The CPU readout measures the audio callback only. Work done on the render-ahead thread is not in
-it. So the readout drops when the selection moves to a track with no instrument: everything
-then renders ahead, and the callback only reads the ring and mixes. The total work is the same.
+The CPU readout counts the real-time callback and the render-ahead threads, as separate lines
+(#3364). Its expanded view lists each track's share and whether it renders ahead or in real time.
+Moving the selection to a track with no instrument moves work from the real-time line to the
+render-ahead line; the total stays the same.
 
 ---
 
