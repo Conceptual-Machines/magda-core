@@ -27,9 +27,14 @@ class LlmToolModel : public Model {
     using TextStream = std::function<bool(const juce::String&)>;
     /// Told the operation name when the model starts writing a call to it.
     using ToolCallStream = std::function<void(const juce::String&)>;
+    /// Given each piece of the call's JSON arguments as the model writes it.
+    using ToolArgumentsStream = std::function<void(const juce::String&)>;
+    /// Given each piece of the model's thinking summary as it streams.
+    using ThinkingStream = std::function<void(const juce::String&)>;
 
     explicit LlmToolModel(llm::LLMClient& client, float temperature = 0.1f, TextStream onText = {},
-                          ToolCallStream onToolCall = {});
+                          ToolCallStream onToolCall = {}, ToolArgumentsStream onToolArguments = {},
+                          ThinkingStream onThinking = {});
 
     ModelResponse generate(const ModelRequest& request,
                            const CancellationToken& cancellation) override;
@@ -39,6 +44,8 @@ class LlmToolModel : public Model {
     float temperature_;
     TextStream onText_;
     ToolCallStream onToolCall_;
+    ToolArgumentsStream onToolArguments_;
+    ThinkingStream onThinking_;
 };
 
 }  // namespace magda::agent

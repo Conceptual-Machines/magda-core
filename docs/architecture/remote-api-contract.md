@@ -114,7 +114,8 @@ Long-running project, render, capture, and plugin-heavy work shares one job
 contract. A producing operation accepts work with an opaque `job_…` id and a
 captured project revision, then moves it through `accepted`, `running`, and
 exactly one of `completed`, `cancelled`, `failed`, or `unsupported`. Progress is
-monotonic from 0 to 1. A cancellation is terminal immediately: a worker that
+monotonic from 0 to 1. `stage` says what the job is doing now in a few words, for
+display, and is empty until the producer reports one. A cancellation is terminal immediately: a worker that
 finishes late cannot overwrite it with success or publish a complete artifact.
 
 `jobs.list` and `jobs.get` are read-scoped. `jobs.cancel` is revision-neutral

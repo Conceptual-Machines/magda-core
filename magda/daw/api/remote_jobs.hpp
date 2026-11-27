@@ -52,6 +52,7 @@ struct RemoteJobDto {
     juce::String kind;
     RemoteJobState state = RemoteJobState::Accepted;
     double progress = 0.0;
+    juce::String stage;  // what the job is doing now, for display; empty until it says
     bool cancellable = true;
     bool cancelRequested = false;
     bool projectBound = true;
@@ -103,7 +104,8 @@ class RemoteJobManager {
     /// Accept a job and return its unguessable public id. Empty on invalid spec.
     juce::String accept(RemoteJobSpec spec, CancelCallback cancel = {});
     bool markRunning(const juce::String& id);
-    bool reportProgress(const juce::String& id, double progress);
+    /// An empty @p stage keeps the one reported before.
+    bool reportProgress(const juce::String& id, double progress, const juce::String& stage = {});
 
     /**
      * Finish successfully. For `StableUntilCompletion`, a changed revision

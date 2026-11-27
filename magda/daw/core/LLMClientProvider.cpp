@@ -158,6 +158,15 @@ llm::ProviderConfig toLLMProviderConfig(const Config::AgentLLMConfig& config,
             pc.reasoningEffort = "low";
     }
 
+    // The console's tool loop shows what the model is reasoning about during a long turn. Only
+    // models that think anyway: asking an older one to would add a thinking pass it did not run.
+    const bool thinksAlways =
+        pc.model.startsWith("claude-fable-") || pc.model.startsWith("claude-mythos-") ||
+        pc.model.startsWith("claude-opus-5") || pc.model.startsWith("claude-sonnet-5") ||
+        pc.model.startsWith("claude-haiku-5");
+    if (providerEnum == llm::Provider::Anthropic && agentName == "tool-loop" && thinksAlways)
+        pc.thinkingDisplay = "summarized";
+
     pc.userAgent = juce::String("MAGDA/") + MAGDA_VERSION;
     if (!agentName.empty())
         pc.userAgent += " (" + juce::String(agentName) + ")";

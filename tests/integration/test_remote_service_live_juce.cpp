@@ -1779,6 +1779,7 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
                                                            {"clips.analyzeSpeech"});
             magda::agent::ToolResult result;
             std::atomic<bool> finished{false};
+            std::atomic<int> progressReports{0};
             std::thread agent([&] {
                 result = executor.execute(
                     {.call = {.id = "call_0",
@@ -1786,7 +1787,8 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
                               .arguments = object({{"clipId", clipId}})},
                      .expectedRevision = 0,
                      .permissions = {},
-                     .deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20)},
+                     .deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20),
+                     .onJobProgress = [&](double, const juce::String&) { ++progressReports; }},
                     {});
                 finished = true;
             });
@@ -1796,6 +1798,7 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             // Long enough for several polls, each of which the old loop spent a model step on.
             messages->runDispatchLoopUntil(800);
             expect(!finished.load());
+            expect(progressReports.load() > 0, "the waiting executor reports the job's progress");
             engine->pendingFileTask();
             while (!finished.load())
                 messages->runDispatchLoopUntil(10);

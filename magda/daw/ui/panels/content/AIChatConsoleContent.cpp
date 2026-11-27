@@ -12,6 +12,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <utility>
 
 #include "../../../../agents/agent_tool_bridge.hpp"
 #include "../../../../agents/automation_agent.hpp"
@@ -87,6 +88,7 @@ std::unique_ptr<::llm::LLMClient> toolCallingClient(
 using AgentStream = magda::agent::LlmToolModel::TextStream;
 /// What a run is doing now, shown beside the console's spinner; empty when it is done.
 using AgentActivity = std::function<void(const juce::String&)>;
+const juce::String kActivityDetail = ConsoleTranscript::activityDetailSeparator();
 
 /// Streams a line as each tool call starts and how it ended.
 class StreamingToolExecutor final : public magda::agent::ToolExecutor {
@@ -99,12 +101,30 @@ class StreamingToolExecutor final : public magda::agent::ToolExecutor {
                                      const magda::agent::CancellationToken& cancellation) override {
         stream_("\n> " + request.call.name);
         activity_("Running " + request.call.name);
-        auto result = inner_.execute(request, cancellation);
+        // A job the call starts reports each new stage as a line, and its percentage beside the
+        // spinner.
+        auto tracked = request;
+        juce::String lastStage;
+        tracked.onJobProgress = [&](double progress, const juce::String& stage) {
+            if (stage.isNotEmpty() && stage != lastStage) {
+                lastStage = stage;
+                stream_("\n  " + stage);
+            }
+            const auto percent = juce::String(juce::roundToInt(progress * 100.0)) + "%";
+            activity_((lastStage.isEmpty() ? "Running " + request.call.name : lastStage) +
+                      kActivityDetail + percent);
+        };
+        auto result = inner_.execute(tracked, cancellation);
         activity_("Thinking");
-        stream_(result.success
-                    ? juce::String("\n")
-                    : " failed: " + describe(result.error.value_or(magda::agent::ToolError{})) +
-                          "\n");
+        if (!result.success) {
+            stream_(" failed: " + describe(result.error.value_or(magda::agent::ToolError{})) +
+                    "\n");
+            return result;
+        }
+        if (const auto* steps = result.content["results"].getArray();
+            steps != nullptr && request.call.name == "batch.apply")
+            stream_("\n  " + juce::String(steps->size()) + " steps applied as one undo step");
+        stream_("\n");
         return result;
     }
 
@@ -123,9 +143,47 @@ std::string runAgentDefinition(const magda::agent::AgentDefinition& definition,
                                const magda::agent::CancellationToken& cancellation,
                                const AgentStream& stream, const AgentActivity& activity,
                                std::vector<magda::agent::ConversationTurn>* followUp = nullptr) {
-    magda::agent::LlmToolModel model(client, 0.1f, stream, [&activity](const juce::String& name) {
-        activity("Writing " + name);
-    });
+    // A batch shows how many steps the model has written so far, counted on its "method" keys.
+    juce::String writing;
+    int stepsWritten = 0;
+    juce::String carry;
+    // The model's thinking summary streams as dim lines, closed by its next text or tool call.
+    bool thinking = false;
+    const auto endThinking = [&] {
+        if (std::exchange(thinking, false))
+            stream("\n");
+    };
+    const AgentStream text = [&](const juce::String& piece) {
+        endThinking();
+        return stream(piece);
+    };
+    magda::agent::LlmToolModel model(
+        client, 0.1f, text,
+        [&](const juce::String& name) {
+            endThinking();
+            writing = name;
+            stepsWritten = 0;
+            carry.clear();
+            activity("Writing " + name);
+        },
+        [&](const juce::String& piece) {
+            if (writing != "batch.apply")
+                return;
+            const auto text = carry + piece;
+            const int before = stepsWritten;
+            for (int at = text.indexOf("\"method\""); at >= 0;
+                 at = text.indexOf(at + 1, "\"method\""))
+                ++stepsWritten;
+            carry = text.getLastCharacters(7);  // too short to hold a whole "method"
+            if (stepsWritten != before)
+                activity("Writing batch.apply" + kActivityDetail + juce::String(stepsWritten) +
+                         (stepsWritten == 1 ? " step" : " steps"));
+        },
+        [&](const juce::String& piece) {
+            const auto mark = ConsoleTranscript::dimMark();
+            stream((std::exchange(thinking, true) ? juce::String() : "\n" + mark) +
+                   piece.replace("\n", "\n" + mark));
+        });
     StreamingToolExecutor executor(remoteExecutor, stream, activity);
     activity("Thinking");
     // Approving here matches the DSL executors, which apply mutations without a per-step
