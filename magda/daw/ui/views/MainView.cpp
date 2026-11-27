@@ -1582,6 +1582,7 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
             return true;
         }
         timelineController->dispatch(ClearTimeSelectionEvent{});
+        timelineController->dispatch(SetEditCursorEvent{-1.0});
         SelectionManager::getInstance().clearSelection();
         return true;
     }
