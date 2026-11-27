@@ -230,8 +230,9 @@ std::string runAgentDefinition(const magda::agent::AgentDefinition& definition,
         }
     }
     if (result.mutations > 0)
-        response += "\n[" + std::to_string(result.mutations) + " change(s) applied in " +
-                    std::to_string(result.steps) + " step(s)]";
+        response += "\n[" + std::to_string(result.mutations) +
+                    (result.mutations == 1 ? " edit in " : " edits in ") +
+                    std::to_string(result.steps) + (result.steps == 1 ? " turn]" : " turns]");
     return response;
 }
 
