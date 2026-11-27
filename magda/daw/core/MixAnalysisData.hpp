@@ -25,6 +25,8 @@ struct MixAnalysisData {
         std::string role;  // optional hint ("kick", "bass", "vocal", "bus", ...)
         float integratedLufs = -100.0f;
         float shortTermLufs = -100.0f;
+        float loudnessRange = 0.0f;       // LRA, LU (EBU Tech 3342)
+        bool loudnessRangeValid = false;  // false until a full 3 s window was measured
         float samplePeakDb = -200.0f;
         float truePeakDb = -200.0f;  // oversampled dBTP; > 0 = real inter-sample clipping
         bool truePeakValid = false;  // false when true-peak wasn't measured

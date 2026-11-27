@@ -147,13 +147,16 @@ void LevelsUI::paint(juce::Graphics& g) {
         }
     };
 
-    const float rowH = juce::jmax(28.0f, loudCol.getHeight() / 3.0f);
+    // A full row and three at 0.8: the loudness column's four.
+    const float rowH = juce::jmax(28.0f, loudCol.getHeight() / 3.4f);
 
     // Column 1: loudness.
     g.setColour(DT::getColour(DT::ACCENT_INFO));
     g.setFont(fonts.getMonoFont(9.0f));
     g.drawText("LOUDNESS", loudCol.removeFromTop(11.0f), juce::Justification::topLeft);
     valueRow(loudCol, "Integrated", fmtLufs(s.integratedLufs), "LUFS", primary, rowH);
+    valueRow(loudCol, "Range", s.loudnessRangeValid ? fmtLu(s.loudnessRange) : juce::String("-"),
+             "LU", primary, rowH * 0.8f);
     valueRow(loudCol, "Short-term", fmtLufs(s.shortTermLufs), "LUFS", primary, rowH * 0.8f);
     valueRow(loudCol, "Momentary", fmtLufs(s.momentaryLufs), "LUFS", dim.brighter(0.4f),
              rowH * 0.8f);

@@ -169,6 +169,8 @@ MixAnalysisData::Track snapshotToMix(const juce::String& name, const std::string
     t.role = role;
     t.integratedLufs = s.integratedLufs;
     t.shortTermLufs = s.shortTermLufs;
+    t.loudnessRange = s.loudnessRange;
+    t.loudnessRangeValid = s.loudnessRangeValid;
     t.samplePeakDb = s.samplePeakDb;
     t.truePeakDb = s.truePeakDb;
     t.truePeakValid = s.truePeakValid;

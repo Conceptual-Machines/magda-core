@@ -195,6 +195,8 @@ MixAnalysisData MixAnalysisService::buildLiveInput() {
         tm.chain = tmgr.getChainSummary(id);
         tm.integratedLufs = snap.integratedLufs;
         tm.shortTermLufs = snap.shortTermLufs;
+        tm.loudnessRange = snap.loudnessRange;
+        tm.loudnessRangeValid = snap.loudnessRangeValid;
         tm.samplePeakDb = snap.samplePeakDb;
         tm.truePeakDb = snap.truePeakDb;
         tm.truePeakValid = snap.truePeakValid;

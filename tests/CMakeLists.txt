@@ -424,6 +424,8 @@ set(TEST_SOURCES
     audio/test_masking_detector.cpp
     # Mixing pt2 (issue #1390) - per-track band spectrum (FFT bin -> band mapping)
     audio/test_band_spectrum.cpp
+    # Loudness range in the mix analysis (#3079)
+    audio/test_mix_analysis_loudness_range.cpp
     # Spectrum Analyzer overlap, columns and note readout (#3185)
     audio/test_spectrum_analysis.cpp
     # Oscilloscope trigger, interpolation and envelope (#3186)
