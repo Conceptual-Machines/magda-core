@@ -41,9 +41,11 @@ For each piece:
   goes in `volumeDb` with `gainDb` 0. The analysis measures the source before the clip's volume
   and gain, so these values replace what the clip had.
 - **Breath.** Give it the gain of the phrase after it, or the phrase before it at the end, minus
-  6 dB, with the same rule for `gainDb` and `volumeDb`. Delete a breath with `clips.delete` only
-  when the user asks to remove breaths.
+  6 dB, with the same rule for `gainDb` and `volumeDb`.
 - **Silence.** Keep its level.
+
+If the user asks to remove breaths, silences or pauses, delete those pieces with `clips.delete`
+instead of levelling them. Otherwise delete nothing.
 
 Name each phrase piece after its words: the first five or six words of its `text`, without a
 trailing comma or full stop. A phrase with an empty `text` keeps its name.
@@ -60,7 +62,7 @@ each step names its method with dots, such as `"method": "clips.split"`.
 Send one `batch.apply`. Step 0 is `clips.split`. Then one `clips.updateAudio` per piece, with every
 field for that piece in the one step and `"clipId": {"$ref": "0.K.id"}`. Then one `clips.update`
 per named phrase, with `"clipId": {"$ref": "0.K.id"}` and its `name`. Then one `clips.delete`
-per breath to remove, with `"clipId": {"$ref": "0.K.id"}`.
+per piece to remove, with `"clipId": {"$ref": "0.K.id"}`.
 
 If `batch.apply` fails, nothing was applied. Its error names the step: fix that step and send the
 batch again. Do not send the same batch twice.
@@ -73,4 +75,4 @@ undo step.
 ## Report
 
 Reply in two or three sentences: how many phrases you levelled and named, the target, the largest boost and
-cut, and what you did with the breaths. Say how many undo steps the edit takes.
+cut, and what you did with the breaths and silences. Say how many undo steps the edit takes.
