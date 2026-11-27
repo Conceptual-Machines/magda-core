@@ -289,7 +289,7 @@ void ExportAudioDialog::resized() {
     bounds.removeFromTop(5);
 
     auto stemArea = bounds.removeFromTop(24);
-    stemArea.removeFromLeft(130);
+    stemArea.setLeft(exportStemsButton_.getX());
     stemTrackEffectsCheckbox_.setBounds(stemArea.removeFromLeft(110));
     selectedTracksOnlyCheckbox_.setBounds(stemArea);
     bounds.removeFromTop(20);
