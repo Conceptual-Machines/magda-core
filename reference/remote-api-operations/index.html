@@ -3394,6 +3394,13 @@ WebSocket connection itself rather than the project, and has no MCP tool.</p>
 <td>—</td>
 </tr>
 <tr>
+<td><code>clips.analyzeSpeech</code></td>
+<td>Find the phrases, breaths and silences of a vocal audio clip, in timeline beats, with each phrase's loudness and, with transcribe, its words; runs as a job</td>
+<td><code>read</code></td>
+<td><code>clipId</code> integer</td>
+<td><code>startBeat</code> number<br><code>endBeat</code> number<br><code>targetLoudness</code> number<br><code>minSilenceSeconds</code> number<br><code>breathMinSeconds</code> number<br><code>breathMaxSeconds</code> number<br><code>paddingSeconds</code> number<br><code>thresholdDb</code> number<br><code>transcribe</code> boolean</td>
+</tr>
+<tr>
 <td><code>clips.duplicate</code></td>
 <td>Duplicate a clip to an arrangement position or session slot</td>
 <td><code>edit</code></td>
@@ -4284,7 +4291,7 @@ WebSocket connection itself rather than the project, and has no MCP tool.</p>
 <tbody>
 <tr>
 <td><code>batch.apply</code></td>
-<td _ref_:_N.id_>Apply up to 256 content edits as one undo step, or none if any fails; a step may use an earlier step's id as</td>
+<td>Apply up to 1024 content edits as one undo step, or none if any fails; a step may use an earlier step's id as {"$ref":"N.id"}, or an item of its list as {"$ref":"N.2.id"}</td>
 <td><code>edit</code></td>
 <td><code>steps</code> array of object</td>
 <td>—</td>

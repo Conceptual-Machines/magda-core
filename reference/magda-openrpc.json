@@ -21416,6 +21416,264 @@
       "x-transport-scoped": false
     },
     {
+      "name": "clips.analyzeSpeech",
+      "summary": "Find the phrases, breaths and silences of a vocal audio clip, in timeline beats, with each phrase's loudness and, with transcribe, its words; runs as a job",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "clipId",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        },
+        {
+          "name": "startBeat",
+          "required": false,
+          "schema": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        {
+          "name": "endBeat",
+          "required": false,
+          "schema": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        {
+          "name": "targetLoudness",
+          "required": false,
+          "schema": {
+            "type": "number",
+            "minimum": -70,
+            "maximum": 0
+          }
+        },
+        {
+          "name": "minSilenceSeconds",
+          "required": false,
+          "schema": {
+            "type": "number",
+            "minimum": 0.02,
+            "maximum": 10
+          }
+        },
+        {
+          "name": "breathMinSeconds",
+          "required": false,
+          "schema": {
+            "type": "number",
+            "minimum": 0.02,
+            "maximum": 5
+          }
+        },
+        {
+          "name": "breathMaxSeconds",
+          "required": false,
+          "schema": {
+            "type": "number",
+            "minimum": 0.02,
+            "maximum": 5
+          }
+        },
+        {
+          "name": "paddingSeconds",
+          "required": false,
+          "schema": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        {
+          "name": "thresholdDb",
+          "required": false,
+          "schema": {
+            "type": "number",
+            "minimum": -120,
+            "maximum": 0
+          }
+        },
+        {
+          "name": "transcribe",
+          "required": false,
+          "schema": {
+            "type": "boolean"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kind": {
+              "type": "string",
+              "minLength": 1
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "accepted",
+                "running",
+                "completed",
+                "cancelled",
+                "failed",
+                "unsupported"
+              ]
+            },
+            "progress": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "cancellable": {
+              "type": "boolean"
+            },
+            "cancelRequested": {
+              "type": "boolean"
+            },
+            "projectBound": {
+              "type": "boolean"
+            },
+            "revisionPolicy": {
+              "type": "string",
+              "enum": [
+                "stable_until_completion",
+                "check_at_start_only"
+              ]
+            },
+            "acceptedRevision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "completionRevision": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "createdAtMs": {
+              "type": "number",
+              "minimum": 0
+            },
+            "startedAtMs": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "finishedAtMs": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "result": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "error": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "artifacts": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "kind": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "mediaType": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "mediaType"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "state",
+            "progress",
+            "cancellable",
+            "cancelRequested",
+            "projectBound",
+            "revisionPolicy",
+            "acceptedRevision",
+            "completionRevision",
+            "createdAtMs",
+            "startedAtMs",
+            "finishedAtMs",
+            "result",
+            "error",
+            "artifacts"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/validation_failed"
+        },
+        {
+          "$ref": "#/components/errors/internal_error"
+        },
+        {
+          "$ref": "#/components/errors/not_found"
+        },
+        {
+          "$ref": "#/components/errors/conflict"
+        },
+        {
+          "$ref": "#/components/errors/timeout"
+        },
+        {
+          "$ref": "#/components/errors/cancelled"
+        },
+        {
+          "$ref": "#/components/errors/too_many_requests"
+        },
+        {
+          "$ref": "#/components/errors/permission_denied"
+        }
+      ],
+      "x-access": "read",
+      "x-required-scope": "read",
+      "x-transport-scoped": false
+    },
+    {
       "name": "clips.duplicate",
       "summary": "Duplicate a clip to an arrangement position or session slot",
       "paramStructure": "by-name",
@@ -50165,7 +50423,7 @@
     },
     {
       "name": "batch.apply",
-      "summary": "Apply up to 256 content edits as one undo step, or none if any fails; a step may use an earlier step's id as {\"$ref\":\"N.id\"}",
+      "summary": "Apply up to 1024 content edits as one undo step, or none if any fails; a step may use an earlier step's id as {\"$ref\":\"N.id\"}, or an item of its list as {\"$ref\":\"N.2.id\"}",
       "paramStructure": "by-name",
       "params": [
         {
@@ -50174,7 +50432,7 @@
           "schema": {
             "type": "array",
             "minItems": 1,
-            "maxItems": 256,
+            "maxItems": 1024,
             "items": {
               "type": "object",
               "properties": {
@@ -50194,6 +50452,9 @@
                     "clips.transpose",
                     "clips.move",
                     "clips.resize",
+                    "clips.split",
+                    "clips.delete",
+                    "clips.updateAudio",
                     "sends.create",
                     "sends.update",
                     "project.setLoopRange"
