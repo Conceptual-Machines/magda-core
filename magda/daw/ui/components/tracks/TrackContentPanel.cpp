@@ -3019,15 +3019,13 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // Escape: dismiss everything — clip selection AND the time selection
-    // (#1722). This handler consumes the key, so MainView's Escape (which
-    // clears both) never runs while the arrangement has focus; without the
-    // dispatch here the time selection survived and kept the grab-hand
-    // cursor, leaving click-on-empty as the only way out.
+    // Escape clears the clip selection, time selection and edit cursor (#1722). It consumes the
+    // key, so neither MainView's handler nor the Escape command runs while this has focus.
     if (key == juce::KeyPress::escapeKey) {
         selectionManager.clearSelection();
         if (timelineController) {
             timelineController->dispatch(ClearTimeSelectionEvent{});
+            timelineController->dispatch(SetEditCursorEvent{-1.0});
         }
         if (isMarqueeActive_) {
             isMarqueeActive_ = false;
@@ -3818,7 +3816,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                     if (const auto* clipTrack = TrackManager::getInstance().getTrack(clipTrackId);
                         clipTrack != nullptr &&
                         traitsOf(clipTrack->type).userClips == UserClipAcceptance::Progressions)
-                        annotateChordsFromNotes(*clip, beatsPerBar);
+                        annotateChordsFromNotes(*clip);
                 }
 
                 ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId);

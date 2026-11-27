@@ -609,8 +609,7 @@ ClipId ClipManager::createRecordedMidiClip(TrackId trackId, RecordedMidiClipData
     // A take on the chord track lands as a progression, as a .mid dropped there does (#3325).
     if (const auto* track = TrackManager::getInstance().getTrack(trackId);
         track != nullptr && traitsOf(track->type).userClips == UserClipAcceptance::Progressions)
-        annotateChordsFromNotes(
-            clip, ProjectManager::getInstance().getCurrentProjectInfo().beatsPerBar());
+        annotateChordsFromNotes(clip);
 
     const auto clipId = clip.id;
     clips_[clipId] = std::move(clip);

@@ -128,11 +128,7 @@ void extractChordsToChordTrack(magda::ClipId sourceClipId, bool replace) {
     if (source == nullptr || !source->isMidi() || source->midiNotes.empty())
         return;
 
-    double beatsPerBar = 4.0;
-    if (auto* controller = TimelineController::getCurrent())
-        beatsPerBar = controller->getState().tempo.beatsPerBar();
-
-    const auto extracted = magda::extractChordsFromNotes(source->midiNotes, beatsPerBar);
+    const auto extracted = magda::extractChordsFromNotes(source->midiNotes);
     if (extracted.empty()) {
         magda::daw::ui::Toast::showGlobal("No chords detected in clip");
         return;

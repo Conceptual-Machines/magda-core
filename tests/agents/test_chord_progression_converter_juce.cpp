@@ -99,7 +99,7 @@ class ChordProgressionConverterTest final : public juce::UnitTest {
             for (int p : {67, 71, 74})
                 notes.push_back(note(p, 4.0, 4.0));
 
-            auto chords = extractChordsFromNotes(notes, 4);
+            auto chords = extractChordsFromNotes(notes);
             expectEquals((int)chords.size(), 2);
             expectWithinAbsoluteError(chords[0].startBeat, 0.0, 1e-9);
             expectWithinAbsoluteError(chords[0].lengthBeats, 4.0, 1e-9);
@@ -120,7 +120,7 @@ class ChordProgressionConverterTest final : public juce::UnitTest {
             for (int p : {67, 71, 74})
                 notes.push_back(note(p, 8.0, 4.0));  // bar 8 (bar 4 empty)
 
-            auto chords = extractChordsFromNotes(notes, 4);
+            auto chords = extractChordsFromNotes(notes);
             expectEquals((int)chords.size(), 2);
             // First chord stretches over the empty bar to the next chord's start.
             expectWithinAbsoluteError(chords[0].lengthBeats, 8.0, 1e-9);
@@ -162,32 +162,67 @@ class ChordProgressionConverterTest final : public juce::UnitTest {
             }
         }
 
-        beginTest("extractChordsFromNotes: a chord played a little late keeps its bar");
+        beginTest("extractChordsFromNotes: a played chord starts where it was struck");
         {
-            // C let go and G struck just after the bar line, as played rather than drawn.
+            // C struck early and let go a little late, G struck just after the bar line.
             std::vector<MidiNote> notes;
             for (int p : {60, 64, 67})
-                notes.push_back(note(p, 0.0, 4.05));
+                notes.push_back(note(p, 3.2, 0.9));
             for (int p : {67, 71, 74})
                 notes.push_back(note(p, 4.08, 3.92));
 
-            const auto chords = extractChordsFromNotes(notes, 4);
+            const auto chords = extractChordsFromNotes(notes);
             expectEquals(static_cast<int>(chords.size()), 2);
             if (chords.size() == 2) {
-                expect(chords[1].root == ChordRoot::G, "the late G is read for its own bar");
-                expectWithinAbsoluteError(chords[1].startBeat, 4.0, 1e-9);
+                expectWithinAbsoluteError(chords[0].startBeat, 3.2, 1e-9);
+                expectWithinAbsoluteError(chords[0].lengthBeats, 0.88, 1e-9);
+                expect(chords[1].root == ChordRoot::G, "the late C is not read into G");
+                expectWithinAbsoluteError(chords[1].startBeat, 4.08, 1e-9);
                 expectEquals(static_cast<int>(chords[1].noteIndices.size()), 3);
+            }
+        }
+
+        beginTest("extractChordsFromNotes: single notes between chords start none");
+        {
+            std::vector<MidiNote> notes;
+            for (int p : {60, 64, 67})
+                notes.push_back(note(p, 0.0, 2.0));
+            notes.push_back(note(72, 2.5, 0.5));
+            notes.push_back(note(74, 3.0, 0.5));
+            for (int p : {57, 60, 64})
+                notes.push_back(note(p, 4.0, 2.0));
+
+            const auto chords = extractChordsFromNotes(notes);
+            expectEquals(static_cast<int>(chords.size()), 2);
+            if (chords.size() == 2) {
+                expectWithinAbsoluteError(chords[0].lengthBeats, 4.0, 1e-9);
+                expect(chords[1].root == ChordRoot::A, "A minor follows C");
+            }
+        }
+
+        beginTest("extractChordsFromNotes: a chord struck again extends the one before");
+        {
+            std::vector<MidiNote> notes;
+            for (double start : {0.0, 1.0, 2.0})
+                for (int p : {60, 64, 67})
+                    notes.push_back(note(p, start, 0.5));
+
+            const auto chords = extractChordsFromNotes(notes);
+            expectEquals(static_cast<int>(chords.size()), 1);
+            if (chords.size() == 1) {
+                expectWithinAbsoluteError(chords[0].lengthBeats, 2.5, 1e-9);
+                expectEquals(static_cast<int>(chords[0].noteIndices.size()), 9);
             }
         }
 
         beginTest("extractChordsFromNotes: a lone note is not a chord");
         {
             std::vector<MidiNote> notes{note(60, 0.0, 4.0)};
-            expect(extractChordsFromNotes(notes, 4).empty(), "single note -> no chord");
+            expect(extractChordsFromNotes(notes).empty(), "single note -> no chord");
         }
 
         beginTest("extractChordsFromNotes: empty input yields nothing");
-        { expect(extractChordsFromNotes({}, 4).empty(), "no notes -> no chords"); }
+        { expect(extractChordsFromNotes({}).empty(), "no notes -> no chords"); }
 
         beginTest("round-trip: build a voicing, detect it back to the same root");
         {
@@ -200,7 +235,7 @@ class ChordProgressionConverterTest final : public juce::UnitTest {
                 const auto quality =
                     juce::String(label).endsWith("m") ? ChordQuality::Minor : ChordQuality::Major;
                 auto voicing = buildVoicingNotes(root, quality, 0.0, 4.0, 100, 4);
-                auto detected = extractChordsFromNotes(voicing, 4);
+                auto detected = extractChordsFromNotes(voicing);
                 expectEquals((int)detected.size(), 1, juce::String("one chord for ") + label);
                 if (!detected.empty())
                     expect(detected[0].root == root, juce::String("root round-trips for ") + label);

@@ -2193,13 +2193,8 @@ void PianoRollContent::detectChordsFromNotes() {
     if (!clip || clip->midiNotes.empty())
         return;
 
-    double beatsPerBar = 4.0;
-    if (auto* controller = magda::TimelineController::getCurrent())
-        beatsPerBar = controller->getState().tempo.beatsPerBar();
-
-    // Bar-by-bar detection lives in the shared converter so this and the
-    // "extract to chord track" feature stay in sync.
-    const auto detected = magda::extractChordsFromNotes(clip->midiNotes, beatsPerBar);
+    // Detection lives in the shared converter so this and "extract to chord track" agree.
+    const auto detected = magda::extractChordsFromNotes(clip->midiNotes);
     if (detected.empty())
         return;
 

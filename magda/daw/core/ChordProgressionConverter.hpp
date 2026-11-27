@@ -12,7 +12,7 @@
 
 namespace magda {
 
-/// One detected chord from a bar-by-bar scan of a MIDI clip's notes.
+/// One chord detected in a MIDI clip's notes.
 struct ExtractedChord {
     double startBeat = 0.0;    // Clip-relative beat where the chord starts
     double lengthBeats = 0.0;  // Extends to the next chord (or the last note end)
@@ -28,16 +28,14 @@ struct ExtractedChord {
 };
 
 /**
- * @brief Bar-by-bar chord detection over a clip's MIDI notes.
+ * @brief Detects the chords played in a clip's notes, each starting at its first note.
  *
- * Mirrors the per-bar scan the piano-roll chord lane performs: at each bar it
- * gathers the notes sounding there and runs ChordEngine detection. Beats are
- * clip-relative on input and output. The single source of truth shared by the
- * in-editor "detect chords" action and the "extract to chord track" feature.
+ * A chord is two or more notes struck within kChordOnsetSpreadBeats, plus any still held
+ * past that spread. A chord struck again extends the one before it. Beats are clip-relative.
  */
-std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& notes,
-                                                   double beatsPerBar);
+std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& notes);
 
+/// Reads one chord per window, placed at the window's start; the remote API's grid scan.
 std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& notes,
                                                    double startBeat, double endBeat,
                                                    double windowBeats);
@@ -45,12 +43,15 @@ std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& 
 /// How far into each window its chord is read: a 16th, capped at half the window.
 inline constexpr double kChordReadDelayBeats = 0.25;
 
+/// How far apart, at most, the notes of one played chord start: a 16th.
+inline constexpr double kChordOnsetSpreadBeats = 0.25;
+
 /**
- * @brief Detects @p clip's chords bar by bar and links each one's notes to its annotation.
+ * @brief Detects @p clip's chords and links each one's notes to its annotation.
  *
  * What a MIDI clip landing on the chord track goes through, dropped or recorded.
  */
-void annotateChordsFromNotes(ClipInfo& clip, double beatsPerBar);
+void annotateChordsFromNotes(ClipInfo& clip);
 
 /**
  * @brief Build a canonical root-position voicing for a chord.
