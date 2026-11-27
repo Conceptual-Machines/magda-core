@@ -44,6 +44,8 @@ struct SlashCommand {
                                        const std::map<juce::String, juce::String>& flags,
                                        const juce::String& positional)>;
     Handler handler;
+    /// A bare invocation runs the handler instead of showing --help.
+    bool runsBare = false;
 };
 
 /** Result of parsing a slash invocation. cmdName is empty when the input

@@ -3,10 +3,51 @@
 
 #include "llm_tool_model.hpp"
 
+#include <map>
+#include <utility>
+
 namespace magda::agent {
 namespace {
 
-llm::Message toLlmMessage(const ConversationTurn& turn) {
+/// Operation names to the `^[a-zA-Z0-9_-]{1,128}$` providers accept, and back.
+class ToolNames {
+  public:
+    explicit ToolNames(const std::vector<ToolDefinition>& tools) {
+        for (const auto& tool : tools) {
+            auto wire = sanitised(tool.name);
+            for (int n = 2; fromWire_.contains(wire); ++n)
+                wire = sanitised(tool.name).substring(0, 120) + "_" + juce::String(n);
+            toWire_[tool.name] = wire;
+            fromWire_[wire] = tool.name;
+        }
+    }
+
+    juce::String wire(const juce::String& name) const {
+        const auto found = toWire_.find(name);
+        return found != toWire_.end() ? found->second : sanitised(name);
+    }
+
+    juce::String operation(const juce::String& wire) const {
+        const auto found = fromWire_.find(wire);
+        return found != fromWire_.end() ? found->second : wire;
+    }
+
+  private:
+    static juce::String sanitised(const juce::String& name) {
+        juce::String out;
+        for (const auto c : name)
+            out << ((c < 128 && juce::CharacterFunctions::isLetterOrDigit(c)) || c == '_' ||
+                            c == '-'
+                        ? juce::String::charToString(c)
+                        : juce::String("_"));
+        return out.substring(0, 128);
+    }
+
+    std::map<juce::String, juce::String> toWire_;
+    std::map<juce::String, juce::String> fromWire_;
+};
+
+llm::Message toLlmMessage(const ConversationTurn& turn, const ToolNames& names) {
     llm::Message message;
     switch (turn.role) {
         case ConversationRole::User:
@@ -19,7 +60,7 @@ llm::Message toLlmMessage(const ConversationTurn& turn) {
             for (const auto& call : turn.toolCalls) {
                 llm::ToolCall llmCall;
                 llmCall.id = call.id;
-                llmCall.name = call.name;
+                llmCall.name = names.wire(call.name);
                 llmCall.arguments = call.arguments;
                 message.toolCalls.push_back(std::move(llmCall));
             }
@@ -30,10 +71,9 @@ llm::Message toLlmMessage(const ConversationTurn& turn) {
                 const auto& result = *turn.toolResult;
                 const bool isError = result.error.has_value();
                 message.toolResults.emplace_back(
-                    result.callId, result.toolName,
-                    isError ? juce::var(result.error->code + ": " + result.error->message)
-                            : result.content,
-                    isError, isError ? result.error->message : juce::String());
+                    result.callId, names.wire(result.toolName),
+                    isError ? juce::var(describe(*result.error)) : result.content, isError,
+                    isError ? result.error->message : juce::String());
             }
             break;
         }
@@ -43,8 +83,12 @@ llm::Message toLlmMessage(const ConversationTurn& turn) {
 
 }  // namespace
 
-LlmToolModel::LlmToolModel(llm::LLMClient& client, float temperature)
-    : client_(client), temperature_(temperature) {}
+LlmToolModel::LlmToolModel(llm::LLMClient& client, float temperature, TextStream onText,
+                           ToolCallStream onToolCall)
+    : client_(client),
+      temperature_(temperature),
+      onText_(std::move(onText)),
+      onToolCall_(std::move(onToolCall)) {}
 
 ModelResponse LlmToolModel::generate(const ModelRequest& request,
                                      const CancellationToken& cancellation) {
@@ -59,12 +103,13 @@ ModelResponse LlmToolModel::generate(const ModelRequest& request,
     }
     llmRequest.temperature = temperature_;
 
+    const ToolNames names(request.tools);
     llmRequest.tools.reserve(request.tools.size());
     for (const auto& tool : request.tools) {
         auto* annotations = new juce::DynamicObject();
         annotations->setProperty("readOnlyHint", tool.access == ToolAccess::Read);
-        llmRequest.tools.emplace_back(tool.name, tool.description, tool.inputSchema.clone(),
-                                      juce::var(annotations));
+        llmRequest.tools.emplace_back(names.wire(tool.name), tool.description,
+                                      tool.inputSchema.clone(), juce::var(annotations));
     }
 
     // The runtime appends the user turn to the conversation; providers want the
@@ -79,9 +124,20 @@ ModelResponse LlmToolModel::generate(const ModelRequest& request,
     }
     llmRequest.messages.reserve(conversation.size());
     for (const auto& turn : conversation)
-        llmRequest.messages.push_back(toLlmMessage(turn));
+        llmRequest.messages.push_back(toLlmMessage(turn, names));
 
-    const auto response = client_.sendRequest(llmRequest);
+    const auto response =
+        onText_ ? client_.sendStreamingRequestDetailed(
+                      llmRequest,
+                      [&](const llm::StreamDelta& delta) {
+                          if (cancellation.isCancellationRequested())
+                              return false;
+                          if (delta.type == llm::StreamDeltaType::ToolCallStart && onToolCall_)
+                              onToolCall_(names.operation(delta.toolName));
+                          return delta.type != llm::StreamDeltaType::Text || delta.text.isEmpty() ||
+                                 onText_(delta.text);
+                      })
+                : client_.sendRequest(llmRequest);
     if (cancellation.isCancellationRequested())
         return {.success = false, .error = "cancelled"};
 
@@ -93,7 +149,8 @@ ModelResponse LlmToolModel::generate(const ModelRequest& request,
         // A call whose arguments failed to parse keeps its name and a void
         // payload: dispatch-side schema validation turns that into an error
         // the model can read and correct, which beats repairing JSON here.
-        mapped.toolCalls.push_back({.id = call.id, .name = call.name, .arguments = call.arguments});
+        mapped.toolCalls.push_back(
+            {.id = call.id, .name = names.operation(call.name), .arguments = call.arguments});
     }
     if (response.totalTokens >= 0)
         mapped.tokensUsed = static_cast<std::size_t>(response.totalTokens);

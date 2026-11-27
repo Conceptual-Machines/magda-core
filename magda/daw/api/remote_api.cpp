@@ -3788,6 +3788,26 @@ OperationRegistry::OperationRegistry() {
             "required":["clipIds"],"additionalProperties":false
         })json"),
         clipOrJobSchema());
+    add("clips.analyzeSpeech",
+        "Find the phrases, breaths and silences of a vocal audio clip, in timeline beats, with "
+        "each phrase's loudness and, with transcribe, its words; runs as a job",
+        OperationAccess::Read, &handlers::clipsAnalyzeSpeech, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0},
+                "endBeat":{"type":"number","minimum":0},
+                "targetLoudness":{"type":"number","minimum":-70,"maximum":0},
+                "minSilenceSeconds":{"type":"number","minimum":0.02,"maximum":10},
+                "breathMinSeconds":{"type":"number","minimum":0.02,"maximum":5},
+                "breathMaxSeconds":{"type":"number","minimum":0.02,"maximum":5},
+                "paddingSeconds":{"type":"number","minimum":0,"maximum":1},
+                "thresholdDb":{"type":"number","minimum":-120,"maximum":0},
+                "transcribe":{"type":"boolean"}
+            },
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        remoteJobSchema());
     add("clips.duplicate", "Duplicate a clip to an arrangement position or session slot",
         OperationAccess::Write, &handlers::clipsDuplicate, operationInputSchema(R"json({
             "type":"object",
@@ -4846,12 +4866,13 @@ OperationRegistry::OperationRegistry() {
         okResult);
 
     add("batch.apply",
-        "Apply up to 256 content edits as one undo step, or none if any fails; a step may use "
-        "an earlier step's id as {\"$ref\":\"N.id\"}",
+        "Apply up to 1024 content edits as one undo step, or none if any fails; a step may use "
+        "an earlier step's id as {\"$ref\":\"N.id\"}, or an item of its list as "
+        "{\"$ref\":\"N.2.id\"}",
         OperationAccess::Write, &handlers::batchApply, operationInputSchema(R"json({
             "type":"object",
             "properties":{
-                "steps":{"type":"array","minItems":1,"maxItems":256,"items":{
+                "steps":{"type":"array","minItems":1,"maxItems":1024,"items":{
                     "type":"object",
                     "properties":{"method":{"type":"string"},"params":{"type":"object"}},
                     "required":["method","params"],"additionalProperties":false

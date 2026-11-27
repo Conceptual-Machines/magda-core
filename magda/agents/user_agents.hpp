@@ -50,6 +50,13 @@ UserAgentLoad loadUserAgent(const juce::File& folder);
  */
 std::vector<UserAgentLoad> loadUserAgents(const juce::File& dir);
 
+/**
+ * @brief The agents MAGDA ships in @p stockDir, then the user's in @p userDir.
+ *
+ * A user agent with a stock agent's alias replaces it, so a copied stock folder can be edited.
+ */
+std::vector<UserAgentLoad> loadAgents(const juce::File& stockDir, const juce::File& userDir);
+
 /** @brief The loaded agent with @p alias, or nullptr. */
 const UserAgent* findUserAgent(const std::vector<UserAgentLoad>& loads, const std::string& alias);
 
@@ -59,6 +66,19 @@ const UserAgentLoad* findFailedUserAgent(const std::vector<UserAgentLoad>& loads
 
 /** @brief The runtime definition: the prompt, the resolved tools and the budget. */
 AgentDefinition toAgentDefinition(const UserAgent& agent);
+
+/** @brief A user agent's last run, which a follow-up addressed to it continues. */
+struct AgentFollowUp {
+    juce::String alias;
+    std::vector<ConversationTurn> conversation;
+};
+
+/**
+ * @brief @p conversation for the next run: the run from @p lastRunStart on whole, the turns
+ * before it as their text only, so the carried tool results stay those of one run.
+ */
+std::vector<ConversationTurn> followUpConversation(std::vector<ConversationTurn> conversation,
+                                                   std::size_t lastRunStart);
 
 const char* toString(AgentContextProvider provider);
 const char* toString(AgentOutputKind kind);

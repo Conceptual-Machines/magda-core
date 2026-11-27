@@ -66,6 +66,7 @@ enum class AgentOutputKind {
 struct AgentRunPolicy {
     std::size_t maxSteps = 8;
     std::size_t maxMutations = 8;
+    std::size_t maxTokens = 32'000;  ///< Input and output, summed over the run's model calls.
     bool approveMutations = true;
 };
 

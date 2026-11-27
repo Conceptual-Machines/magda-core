@@ -45,8 +45,8 @@ first, then one batch carries everything else.
 **Allowlist.** `tracks.create`, `tracks.update`, `clips.createMidi`,
 `clips.addMidiEvents`, `clips.replaceMidiEvents`, `clips.updateMidiEvents`,
 `clips.deleteMidiEvents`, `clips.update`, `clips.duplicate`, `clips.transpose`,
-`clips.move`, `clips.resize`, `sends.create`, `sends.update`,
-`project.setLoopRange`. Each records its changes as undo commands, which is what
+`clips.move`, `clips.resize`, `clips.split`, `clips.delete`, `clips.updateAudio`,
+`sends.create`, `sends.update`, `project.setLoopRange`. Each records its changes as undo commands, which is what
 lets a failed batch roll back.
 
 Left out although #3377 proposed them: `project.setTempo`,
@@ -58,11 +58,13 @@ They can join once they do.
 
 - Every step's method, permission and schema is checked first, as if sent
   alone, and nothing runs if one fails. The error names the step.
-- A step may use an earlier step's field as `{"$ref": "N.id"}`. Validation
+- A step may use an earlier step's field as `{"$ref": "N.id"}`, or an item of
+  an earlier step's list as `{"$ref": "N.2.id"}`, such as a piece of a split. Validation
   checks that `N` is earlier and that its output declares the field; the value
   itself is resolved while applying.
-- At most 256 steps and 16,384 MIDI events in total, inside the transport's
-  request size limit. No nesting.
+- At most 1024 steps and 16,384 MIDI events in total, inside the transport's
+  request size limit. 1024 steps lets one batch level about 25 minutes of speech
+  (#3445). No nesting.
 - One outer `expectedRevision` and `requestId`; steps carry neither.
 - The reply is `{"revision": N, "results": [...]}`, one entry per step in
   order, each with the step's `id` or `ids` as in the #3376 summary form.

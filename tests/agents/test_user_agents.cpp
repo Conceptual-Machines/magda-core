@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Conceptual Machines
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/agents/user_agents.hpp"
@@ -139,7 +140,7 @@ TEST_CASE("One alias is one agent, the first folder by name", "[agents][user-age
 TEST_CASE("A user agent runs with its own tools, budget and prompt", "[agents][user-agents]") {
     AgentsDir dir;
     const auto agent = loadUserAgent(dir.write("leveller", R"({"name":"A","alias":"level",
-            "tools":["clips.get","clips.split"],"budget":{"maxSteps":5,"maxMutations":2}})"))
+            "tools":["clips.get","clips.split"],"budget":{"maxSteps":5,"maxMutations":2,"maxTokens":90000}})"))
                            .agent.value();
 
     const auto definition = toAgentDefinition(agent);
@@ -151,4 +152,74 @@ TEST_CASE("A user agent runs with its own tools, budget and prompt", "[agents][u
     CHECK(definition.tools[1].access == ToolAccess::Mutation);
     CHECK(definition.budget.maxSteps == 5);
     CHECK(definition.budget.maxMutations == 2);
+    CHECK(definition.budget.maxTokens == 90000);
+}
+
+TEST_CASE("A follow-up carries the last run's tool results and the earlier runs' words",
+          "[agents][user-agents]") {
+    const auto tool = [](const char* name) {
+        return ConversationTurn{.role = ConversationRole::Tool,
+                                .text = {},
+                                .toolCalls = {},
+                                .toolResult = ToolResult{.callId = "c", .toolName = name}};
+    };
+    const auto calling = [](const char* name) {
+        return ConversationTurn{.role = ConversationRole::Assistant,
+                                .text = "Looking.",
+                                .toolCalls = {{.id = "c", .name = name, .arguments = {}}},
+                                .toolResult = {}};
+    };
+    const std::vector<ConversationTurn> conversation{
+        {.role = ConversationRole::User, .text = "level it"},
+        calling("clips.analyzeSpeech"),
+        tool("clips.analyzeSpeech"),
+        {.role = ConversationRole::Assistant, .text = "Levelled 18 phrases."},
+        {.role = ConversationRole::User, .text = "louder"},
+        calling("batch.apply"),
+        tool("batch.apply"),
+        {.role = ConversationRole::Assistant, .text = "Raised them 2 dB."},
+    };
+
+    const auto carried = followUpConversation(conversation, 4);
+
+    REQUIRE(carried.size() == 7);
+    CHECK(carried[0].text == "level it");
+    CHECK(carried[1].text == "Looking.");
+    CHECK(carried[1].toolCalls.empty());
+    CHECK(carried[2].text == "Levelled 18 phrases.");
+    CHECK(carried[4].toolCalls.size() == 1);
+    CHECK(carried[5].toolResult->toolName == "batch.apply");
+}
+
+TEST_CASE("The Vocal Leveller MAGDA ships loads as /vocal (#3445)", "[agents][user-agents]") {
+    const auto stock = juce::File(MAGDA_REPO_ROOT).getChildFile("resources/agents");
+    const auto loads = loadUserAgents(stock);
+    for (const auto& load : loads)
+        CHECK(load.error == "");
+    const auto* leveller = findUserAgent(loads, "vocal");
+    REQUIRE(leveller != nullptr);
+    CHECK(leveller->name == "Vocal Leveller");
+    CHECK(std::ranges::contains(leveller->tools, std::string("clips.analyzeSpeech")));
+    CHECK(std::ranges::contains(leveller->tools, std::string("batch.apply")));
+}
+
+TEST_CASE("A user agent replaces the stock agent with its alias or folder name",
+          "[agents][user-agents]") {
+    AgentsDir stock;
+    AgentsDir user;
+    stock.write("vocal-leveller", kMinimal);
+    stock.write("tidy", R"({"name":"Tidy","alias":"tidy","tools":["clips.get"]})");
+
+    user.write("my-leveller", R"({"name":"Mine","alias":"level","tools":["clips.get"]})");
+    auto loads = loadAgents(stock.root, user.root);
+    REQUIRE(loads.size() == 2);
+    CHECK(findUserAgent(loads, "level")->name == "Mine");
+    CHECK(findUserAgent(loads, "tidy") != nullptr);
+
+    // A copy that fails to load reports its error instead of falling back to the stock agent.
+    user.root.getChildFile("my-leveller").deleteRecursively();
+    user.write("vocal-leveller", R"({"name":"Mine","alias":"level"})");
+    loads = loadAgents(stock.root, user.root);
+    CHECK(findUserAgent(loads, "level") == nullptr);
+    CHECK(findFailedUserAgent(loads, "vocal-leveller") != nullptr);
 }

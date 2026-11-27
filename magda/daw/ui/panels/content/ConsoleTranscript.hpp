@@ -16,7 +16,7 @@ namespace magda::daw::ui {
  * blocks are split from it on change. A line starting "● " opens one of your messages,
  * "◆ " one of MAGDA's, and every other line continues the block above it.
  */
-class ConsoleTranscript : public juce::Component {
+class ConsoleTranscript : public juce::Component, private juce::Timer {
   public:
     ConsoleTranscript();
     ~ConsoleTranscript() override;
@@ -34,6 +34,10 @@ class ConsoleTranscript : public juce::Component {
 
     /// Where your next message goes ("Bass"), shown as "YOU → Bass" above its bubble.
     void noteNextUserTarget(const juce::String& target);
+
+    /// A spinning wheel and @p activity under the last block, such as "Running clips.get";
+    /// empty hides it.
+    void setActivity(const juce::String& activity);
 
     /// Shown centred while the log holds nothing but the greeting.
     void setEmptyHint(const juce::String& hint);
@@ -58,11 +62,15 @@ class ConsoleTranscript : public juce::Component {
 
     void rebuild();
     void layoutBlocks();
+    void timerCallback() override;
 
     juce::String text_;
     juce::StringArray userTargets_;
     juce::String emptyHint_;
     std::vector<Block> blocks_;
+    juce::String activity_;
+    juce::Rectangle<int> activityBounds_;
+    float spinnerTurn_ = 0.0f;
     std::unique_ptr<Content> content_;
     juce::Viewport viewport_;
 };

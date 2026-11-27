@@ -532,6 +532,28 @@ clip plays under the span, and a clip changed during the render fails the job
 with nothing joined. Glue and Join Clips in the app render the same way, behind
 a progress window.
 
+`clips.analyzeSpeech` finds the phrases, breaths and silences of an arrangement
+audio clip, or of the part between an optional `startBeat` and `endBeat`
+(#3444). It is read-scoped and returns a job whose result lists each region
+as a `startBeat` and `endBeat` on the timeline, so phrase boundaries feed
+`clips.split` directly. The analysis reads the source audio each event plays,
+through the clip's trim, warp and beat mode; looped and reversed clips are
+refused. Each phrase carries its `loudness` in LUFS: K-weighted (BS.1770),
+measured over its voiced frames only, on the source before clip volume and
+gain. With `targetLoudness`, each phrase also carries `gainToTargetDb`. A
+breath is an unvoiced, noisy sound between `breathMinSeconds` (0.15) and
+`breathMaxSeconds` (0.6) long, at least 8 dB under the voice. Sounds closer
+than `minSilenceSeconds` (0.3) join into one phrase unless a breath parts
+them, and each phrase keeps `paddingSeconds` (0.02) around it. Silences are
+every gap between phrases and breaths. The level that counts as sound is
+derived from the take's floor and voice, or given as `thresholdDb`; the
+result reports the level it used. A clip changed during the analysis fails
+the job, and a result over 60 KiB fails it with a request to analyse the clip
+in parts. With `transcribe`, each phrase also carries its words as `text`,
+from the local speech model, with the track's name biasing its vocabulary (#3445, #3446). When the model cannot run, for example
+because it is not downloaded, the regions still come back, and the result
+carries the reason as `transcriptionError`.
+
 `clips.resize` takes `lengthBeats` and an `edge` of `start` or `end`. All three
 operations are edit-scoped and commit as one undo action. A move that restates
 the current destination and a resize that restates the current length are

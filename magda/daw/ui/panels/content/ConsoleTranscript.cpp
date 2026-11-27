@@ -22,6 +22,9 @@ constexpr int kLabelHeight = 18;
 constexpr int kBlockGap = 14;
 constexpr int kBubblePadX = 12;
 constexpr int kBubblePadY = 8;
+constexpr int kActivityHeight = 18;
+constexpr int kSpinnerSize = 11;
+constexpr int kSpinnerHz = 30;
 
 juce::Font bodyFont() {
     return FontManager::getInstance().getUIFont(13.0f);
@@ -67,9 +70,29 @@ class ConsoleTranscript::Content : public juce::Component {
                 b.layout.draw(g, b.bounds.toFloat());
             }
         }
+        if (owner_.activity_.isNotEmpty())
+            paintActivity(g, owner_.activityBounds_);
     }
 
   private:
+    void paintActivity(juce::Graphics& g, juce::Rectangle<int> area) const {
+        const auto wheel = area.removeFromLeft(kSpinnerSize)
+                               .withSizeKeepingCentre(kSpinnerSize, kSpinnerSize)
+                               .toFloat();
+        const float start = owner_.spinnerTurn_ * juce::MathConstants<float>::twoPi;
+        juce::Path arc;
+        arc.addCentredArc(wheel.getCentreX(), wheel.getCentreY(), wheel.getWidth() * 0.5f,
+                          wheel.getHeight() * 0.5f, 0.0f, start,
+                          start + juce::MathConstants<float>::pi * 1.4f, true);
+        g.setColour(ActiveTheme::getAccentColour());
+        g.strokePath(arc, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
+        area.removeFromLeft(8);
+        g.setFont(bodyFont());
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        g.drawText(owner_.activity_, area, juce::Justification::centredLeft, true);
+    }
+
     void paintEmptyState(juce::Graphics& g) {
         const auto area = getLocalBounds().reduced(kPad * 2);
         const auto c = area.getCentre().toFloat().translated(0.0f, -22.0f);
@@ -113,7 +136,25 @@ ConsoleTranscript::ConsoleTranscript() : content_(std::make_unique<Content>(*thi
     addAndMakeVisible(viewport_);
 }
 
-ConsoleTranscript::~ConsoleTranscript() = default;
+ConsoleTranscript::~ConsoleTranscript() {
+    stopTimer();
+}
+
+void ConsoleTranscript::setActivity(const juce::String& activity) {
+    if (activity == activity_)
+        return;
+    activity_ = activity;
+    if (activity_.isEmpty())
+        stopTimer();
+    else if (!isTimerRunning())
+        startTimerHz(kSpinnerHz);
+    layoutBlocks();
+}
+
+void ConsoleTranscript::timerCallback() {
+    spinnerTurn_ = std::fmod(spinnerTurn_ + 1.0f / kSpinnerHz, 1.0f);
+    content_->repaint(activityBounds_.expanded(2));
+}
 
 void ConsoleTranscript::setText(const juce::String& text) {
     if (text == text_)
@@ -248,6 +289,10 @@ void ConsoleTranscript::layoutBlocks() {
         first = false;
     }
 
+    if (activity_.isNotEmpty()) {
+        activityBounds_ = {kPad, y + (blocks_.empty() ? 0 : 8), width - kPad * 2, kActivityHeight};
+        y = activityBounds_.getBottom();
+    }
     content_->setSize(width, juce::jmax(y + kPad, viewport_.getHeight()));
     if (wasAtBottom)
         viewport_.setViewPosition(0, content_->getHeight());

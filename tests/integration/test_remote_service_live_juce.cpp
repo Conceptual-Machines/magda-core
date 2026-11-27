@@ -7,13 +7,16 @@
 #include <algorithm>
 #include <filesystem>
 #include <memory>
+#include <thread>
 #include <vector>
 
 #include "RemoteTestScopes.hpp"
+#include "magda/agents/agent_tool_bridge.hpp"
 #include "magda/daw/api/magda_api_live.hpp"
 #include "magda/daw/api/remote_engine_jobs.hpp"
 #include "magda/daw/api/remote_model_bridge.hpp"
 #include "magda/daw/api/remote_service.hpp"
+#include "magda/daw/api/remote_speech_to_text.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
@@ -97,6 +100,25 @@ juce::File writeSample(const juce::File& file, double seconds) {
     return file;
 }
 
+/// One second of silence, a second of a 220 Hz voice, then a second of silence.
+juce::File writeVoice(const juce::File& file) {
+    file.deleteFile();
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatWriter> writer(
+        wav.createWriterFor(new juce::FileOutputStream(file), 48000.0, 1, 24, {}, 0));
+    juce::AudioBuffer<float> buffer(1, 3 * 48000);
+    buffer.clear();
+    for (int i = 48000; i < 2 * 48000; ++i) {
+        const double phase = 2.0 * juce::MathConstants<double>::pi * 220.0 * i / 48000.0;
+        double value = 0.0;
+        for (int h = 1; h <= 20; ++h)
+            value += std::sin(h * phase) / h;
+        buffer.setSample(0, i, static_cast<float>(0.1 * value));
+    }
+    writer->writeFromAudioSampleBuffer(buffer, 0, buffer.getNumSamples());
+    return file;
+}
+
 /// Renders by writing a sample of the range's length, at once, so a render job finishes inline.
 class SampleWritingEngineJobs final : public EngineJobSource {
   public:
@@ -125,9 +147,25 @@ class SampleWritingEngineJobs final : public EngineJobSource {
     MasterCaptureSnapshot masterCaptureStatus() const override {
         return {};
     }
+    EngineJobStartStatus runFileTask(std::function<void()> work, std::shared_ptr<std::atomic_bool>,
+                                     std::function<void()> onComplete) override {
+        if (deferFileTasks) {
+            pendingFileTask = [work = std::move(work), onComplete = std::move(onComplete)] {
+                work();
+                onComplete();
+            };
+            return EngineJobStartStatus::Started;
+        }
+        work();
+        onComplete();
+        return EngineJobStartStatus::Started;
+    }
     void shutdown() override {}
 
     OfflineRenderRequest lastRequest;
+    /// Holds a file task until the test runs it, as a long analysis keeps its job running.
+    bool deferFileTasks = false;
+    std::function<void()> pendingFileTask;
 };
 
 SceneId sceneIdAt(int index) {
@@ -1625,6 +1663,152 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             dir.deleteRecursively();
         }
 
+        beginTest("A vocal clip's phrases come back in timeline beats (#3444)");
+        {
+            Fixture fixture;
+            FlatTempoMap tempo(120.0);
+            fixture.api.setProjectTempoMap([&tempo] { return &tempo; });
+            fixture.service.setEngineJobSource(std::make_shared<SampleWritingEngineJobs>());
+            const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                 .getChildFile("magda-speech-analysis-test");
+            dir.createDirectory();
+            const auto sample = writeVoice(dir.getChildFile("voice.wav"));
+            const auto trackId = static_cast<int>(
+                fixture.run("tracks.create", object({{"name", "Voice"}, {"type", "audio"}}))
+                    .result["id"]);
+            const auto clipId = static_cast<int>(
+                fixture
+                    .run("clips.loadSample",
+                         object({{"samplePath", sample.getFullPathName()},
+                                 {"placement", arrangementDestination(trackId, 4.0)}}))
+                    .result["id"]);
+
+            auto owner = fullyGrantedContext();
+            owner.clientId = "speech-client";
+            // The voice plays from 1 s to 2 s of the file: beats 6 to 8 at 120 BPM.
+            const auto analysed =
+                fixture.run("clips.analyzeSpeech",
+                            object({{"clipId", clipId}, {"targetLoudness", -16.0}}), owner);
+            expect(analysed.ok, analysed.error.message);
+            expect(analysed.result["state"].toString() == "completed",
+                   analysed.result["state"].toString());
+            const auto* phrases = analysed.result["result"]["phrases"].getArray();
+            expect(phrases != nullptr && phrases->size() == 1,
+                   juce::JSON::toString(analysed.result["result"], true));
+            if (phrases != nullptr && phrases->size() == 1) {
+                const auto& phrase = phrases->getReference(0);
+                expectWithinAbsoluteError(static_cast<double>(phrase["startBeat"]), 6.0, 0.1);
+                expectWithinAbsoluteError(static_cast<double>(phrase["endBeat"]), 8.0, 0.1);
+                expectWithinAbsoluteError(static_cast<double>(phrase["gainToTargetDb"]),
+                                          -16.0 - static_cast<double>(phrase["loudness"]), 0.11);
+            }
+
+            const auto later = fixture.run("clips.analyzeSpeech",
+                                           object({{"clipId", clipId}, {"startBeat", 7.0}}), owner);
+            const auto* trimmed = later.result["result"]["phrases"].getArray();
+            expect(trimmed != nullptr && trimmed->size() == 1);
+            if (trimmed != nullptr && trimmed->size() == 1)
+                expectWithinAbsoluteError(
+                    static_cast<double>(trimmed->getReference(0)["startBeat"]), 7.0, 1e-6);
+
+            // Each phrase is transcribed from its own audio (#3445).
+            double heardSeconds = 0.0;
+            juce::String heardPrompt;
+            setSpeechToText([&](const std::vector<float>& samples, double rate,
+                                const juce::String& prompt, const std::atomic<bool>*) {
+                heardSeconds += static_cast<double>(samples.size()) / rate;
+                heardPrompt = prompt;
+                return Transcription{" hello there ", {}};
+            });
+            const auto spoken = fixture.run(
+                "clips.analyzeSpeech", object({{"clipId", clipId}, {"transcribe", true}}), owner);
+            const auto* named = spoken.result["result"]["phrases"].getArray();
+            expect(named != nullptr && named->size() == 1,
+                   juce::JSON::toString(spoken.result, true));
+            if (named != nullptr && named->size() == 1)
+                expect(named->getReference(0)["text"].toString() == "hello there");
+            expectWithinAbsoluteError(heardSeconds, 1.0, 0.1);
+            expect(heardPrompt == "Voice", heardPrompt);
+
+            setSpeechToText([](const std::vector<float>&, double, const juce::String&,
+                               const std::atomic<bool>*) {
+                return Transcription{{}, "The speech model is not downloaded."};
+            });
+            const auto unnamed = fixture.run(
+                "clips.analyzeSpeech", object({{"clipId", clipId}, {"transcribe", true}}), owner);
+            expect(unnamed.result["result"]["transcriptionError"].toString().isNotEmpty());
+            const auto* kept = unnamed.result["result"]["phrases"].getArray();
+            expect(kept != nullptr && kept->size() == 1 && kept->getReference(0)["text"].isVoid());
+
+            setSpeechToText({});
+            const auto missing = fixture.run(
+                "clips.analyzeSpeech", object({{"clipId", clipId}, {"transcribe", true}}), owner);
+            expect(!missing.ok && missing.error.code == ErrorCode::Conflict);
+
+            expect(fixture.run("clips.updateAudio", object({{"clipId", clipId}, {"looping", true}}))
+                       .ok);
+            const auto looped =
+                fixture.run("clips.analyzeSpeech", object({{"clipId", clipId}}), owner);
+            expect(!looped.ok && looped.error.code == ErrorCode::Conflict);
+            dir.deleteRecursively();
+        }
+
+        beginTest("An agent's call that starts a job returns the finished job (#3445)");
+        {
+            Fixture fixture;
+            FlatTempoMap tempo(120.0);
+            fixture.api.setProjectTempoMap([&tempo] { return &tempo; });
+            const auto engine = std::make_shared<SampleWritingEngineJobs>();
+            engine->deferFileTasks = true;
+            fixture.service.setEngineJobSource(engine);
+            const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                 .getChildFile("magda-agent-job-test");
+            dir.createDirectory();
+            const auto sample = writeVoice(dir.getChildFile("voice.wav"));
+            const auto trackId = static_cast<int>(
+                fixture.run("tracks.create", object({{"name", "Voice"}, {"type", "audio"}}))
+                    .result["id"]);
+            const auto clipId = static_cast<int>(
+                fixture
+                    .run("clips.loadSample",
+                         object({{"samplePath", sample.getFullPathName()},
+                                 {"placement", arrangementDestination(trackId, 4.0)}}))
+                    .result["id"]);
+
+            magda::agent::RemoteAgentToolExecutor executor(fixture.service, "@vocal",
+                                                           {"clips.analyzeSpeech"});
+            magda::agent::ToolResult result;
+            std::atomic<bool> finished{false};
+            std::thread agent([&] {
+                result = executor.execute(
+                    {.call = {.id = "call_0",
+                              .name = "clips.analyzeSpeech",
+                              .arguments = object({{"clipId", clipId}})},
+                     .expectedRevision = 0,
+                     .permissions = {},
+                     .deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20)},
+                    {});
+                finished = true;
+            });
+            auto* messages = juce::MessageManager::getInstance();
+            while (!engine->pendingFileTask)
+                messages->runDispatchLoopUntil(10);
+            // Long enough for several polls, each of which the old loop spent a model step on.
+            messages->runDispatchLoopUntil(800);
+            expect(!finished.load());
+            engine->pendingFileTask();
+            while (!finished.load())
+                messages->runDispatchLoopUntil(10);
+            agent.join();
+
+            expect(result.success, result.error ? result.error->message : juce::String());
+            expect(result.content["state"].toString() == "completed",
+                   juce::JSON::toString(result.content, true));
+            const auto* phrases = result.content["result"]["phrases"].getArray();
+            expect(phrases != nullptr && phrases->size() == 1);
+            dir.deleteRecursively();
+        }
+
         beginTest("Two audio clips that meet take a crossfade as one undo step");
         {
             Fixture fixture;
@@ -2377,6 +2561,68 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             expect(TrackManager::getInstance().getTracks().empty());
             expect(ClipManager::getInstance().getClips().empty());
             expect(!UndoManager::getInstance().canUndo());
+        }
+
+        beginTest("A batch splits a vocal, levels and deletes pieces by index, as one undo step "
+                  "(#3445)");
+        {
+            Fixture fixture;
+            FlatTempoMap tempo(120.0);
+            fixture.api.setProjectTempoMap([&tempo] { return &tempo; });
+            const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                 .getChildFile("magda-batch-level-test");
+            dir.createDirectory();
+            const auto sample = writeSample(dir.getChildFile("voice.wav"), 2.0);
+            const auto trackId = static_cast<int>(
+                fixture.run("tracks.create", object({{"name", "Voice"}, {"type", "audio"}}))
+                    .result["id"]);
+            const auto clipId = static_cast<int>(
+                fixture
+                    .run("clips.loadSample",
+                         object({{"samplePath", sample.getFullPathName()},
+                                 {"placement", arrangementDestination(trackId, 0.0)}}))
+                    .result["id"]);
+            const auto clipsOnTrack = [trackId] {
+                return static_cast<int>(
+                    ClipManager::getInstance()
+                        .getClipsOnTrack(static_cast<TrackId>(trackId), ClipView::Arrangement)
+                        .size());
+            };
+            const auto ref = [](const char* text) { return object({{"$ref", text}}); };
+            const auto step = [](const char* method, juce::var params) {
+                return object({{"method", method}, {"params", std::move(params)}});
+            };
+            juce::Array<juce::var> steps{
+                step("clips.split",
+                     object({{"clipId", clipId},
+                             {"beats", juce::var(juce::Array<juce::var>{1.0, 3.0})}})),
+                step("clips.updateAudio", object({{"clipId", ref("0.1.id")},
+                                                  {"gainDb", 6.0},
+                                                  {"fadeInSeconds", 0.01},
+                                                  {"fadeOutSeconds", 0.01}})),
+                step("clips.delete", object({{"clipId", ref("0.2.id")}}))};
+
+            auto failing = steps;
+            failing.add(step("clips.delete", object({{"clipId", ref("0.5.id")}})));
+            const auto refused = fixture.run("batch.apply", object({{"steps", failing}}));
+            expect(!refused.ok && refused.error.code == ErrorCode::NotFound);
+            expectEquals(clipsOnTrack(), 1);
+
+            const auto applied = fixture.run("batch.apply", object({{"steps", steps}}));
+            expect(applied.ok);
+            expectEquals(clipsOnTrack(), 2);
+            const auto levelled =
+                static_cast<ClipId>(static_cast<int>(applied.result["results"][0]["ids"][1]));
+            if (const auto* clip = ClipManager::getInstance().getClip(levelled)) {
+                expectWithinAbsoluteError(clip->gainDB, 6.0f, 1e-6f);
+                expectWithinAbsoluteError(clip->primaryEvent()->fadeInSeconds, 0.01, 1e-9);
+            } else {
+                expect(false, "the levelled piece is missing");
+            }
+
+            expect(UndoManager::getInstance().undo());
+            expectEquals(clipsOnTrack(), 1);
+            dir.deleteRecursively();
         }
     }
 

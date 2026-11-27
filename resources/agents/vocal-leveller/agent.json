@@ -1,0 +1,19 @@
+{
+    "name": "Vocal Leveller",
+    "alias": "vocal",
+    "description": "Splits a vocal clip into phrases named after their words, turns the breaths down and brings the phrases to one level.",
+    "tools": [
+        "selection.get",
+        "clips.list",
+        "clips.get",
+        "clips.analyzeSpeech",
+        "jobs.get",
+        "clips.split",
+        "clips.delete",
+        "clips.updateAudio",
+        "clips.update",
+        "batch.apply"
+    ],
+    "budget": {"maxSteps": 16, "maxMutations": 4, "maxTokens": 300000},
+    "output": "ChangeSummary"
+}

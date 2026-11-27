@@ -55,6 +55,13 @@ class EngineJobSource {
     virtual RecentCaptureResult captureRecentMaster(int /*bars*/) {
         return RecentCaptureResult::failed("Capturing recent audio is unsupported");
     }
+    /// Run @p work on a worker thread, then @p onComplete on the message thread. Shutdown sets
+    /// @p cancelled, joins the worker and drops @p onComplete.
+    virtual EngineJobStartStatus runFileTask(std::function<void()> /*work*/,
+                                             std::shared_ptr<std::atomic_bool> /*cancelled*/,
+                                             std::function<void()> /*onComplete*/) {
+        return EngineJobStartStatus::Unsupported;
+    }
     virtual void shutdown() = 0;
 };
 
