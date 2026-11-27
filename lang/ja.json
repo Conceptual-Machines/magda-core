@@ -580,12 +580,14 @@
     "paths.row.data": "データ",
     "paths.row.presets": "プリセット",
     "paths.row.capture": "キャプチャ履歴",
+    "paths.row.agents": "エージェント",
     "paths.row.render": "レンダリング出力",
     "paths.row.location": "場所",
     "paths.row.editor": "外部オーディオエディター",
     "paths.desc.data": "ログ、スクリプト、プラグインのキャッシュ",
     "paths.desc.presets": "チェーン、ラック、デバイス",
     "paths.desc.capture": "キャプチャバッファに保存された記録",
+    "paths.desc.agents": "AIコンソールのエージェント（1つにつき1フォルダ）",
     "paths.system_temp": "システムの一時フォルダ",
     "paths.files_indexed": "{0} ファイルのインデックスを作成",
     "paths.embeddings": "{0} の音声埋め込み",
@@ -615,7 +617,10 @@
     "gestures.action": "アクション",
     "gestures.input": "入力",
     "gestures.sensitivity": "感度",
-    "gestures.invert": "反転"
+    "gestures.invert": "反転",
+    "gestures.swap_title": "この入力は使用中です",
+    "gestures.swap_message": "{1} はすでに {0} を使用しています。\n入力を入れ替えますか？{1} は {2} を使用するようになります。",
+    "gestures.swap": "入れ替え"
   },
   "controllers": {
     "tab.profiles": "{0} プロファイル",

@@ -580,12 +580,14 @@
     "paths.row.data": "Datos",
     "paths.row.presets": "Presets",
     "paths.row.capture": "Historial de captura",
+    "paths.row.agents": "Agentes",
     "paths.row.render": "Salida de render",
     "paths.row.location": "Ubicación",
     "paths.row.editor": "Editor de audio externo",
     "paths.desc.data": "Registros, scripts, cachés de plugins",
     "paths.desc.presets": "Cadenas, racks, dispositivos",
     "paths.desc.capture": "Grabaciones guardadas por el búfer de captura",
+    "paths.desc.agents": "Los agentes de tu consola IA, una carpeta cada uno",
     "paths.system_temp": "Carpeta temporal del sistema",
     "paths.files_indexed": "{0} archivos indexados",
     "paths.embeddings": "{0} con embeddings de audio",
@@ -615,7 +617,10 @@
     "gestures.action": "Acción",
     "gestures.input": "Entrada",
     "gestures.sensitivity": "Sensibilidad",
-    "gestures.invert": "Invertir"
+    "gestures.invert": "Invertir",
+    "gestures.swap_title": "Entrada ya en uso",
+    "gestures.swap_message": "{1} ya usa {0}.\n¿Intercambiar las entradas? {1} pasará a usar {2}.",
+    "gestures.swap": "Intercambiar"
   },
   "controllers": {
     "tab.profiles": "{0} Perfiles",
