@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/ui/windows/CommandIDs.hpp"
+#include "magda/daw/ui/windows/ContributedCommands.hpp"
 #include "magda/daw/ui/windows/MenuManager.hpp"
 
 namespace {
@@ -80,4 +81,137 @@ TEST_CASE("MenuManager rejects commands outside its application callback dispatc
     CHECK_FALSE(menuManager.invokeApplicationCommand(magda::CommandIDs::undo));
     CHECK_FALSE(menuManager.invokeApplicationCommand(magda::CommandIDs::zoom));
     CHECK_FALSE(menuManager.invokeApplicationCommand(magda::CommandIDs::showHelp));
+}
+
+namespace {
+
+/** @brief The bar through its MenuBarModel face, as JUCE sees it. */
+juce::MenuBarModel& barOf(magda::MenuManager& menuManager) {
+    return *menuManager.getMenuBarModel();
+}
+
+/** @brief Pick the item with @p text in @p menu, as a click would. */
+bool pick(magda::MenuManager& menuManager, int menuIndex, const juce::String& text) {
+    auto& bar = barOf(menuManager);
+    const auto menu = bar.getMenuForIndex(menuIndex, {});
+    for (juce::PopupMenu::MenuItemIterator it(menu); it.next();) {
+        if (it.getItem().text == text) {
+            bar.menuItemSelected(it.getItem().itemID, menuIndex);
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @brief Removes a contribution when the test ends, pass or fail. */
+struct Contributed {
+    magda::MenuManager& menus;
+    magda::MenuManager::ContributionId id;
+    ~Contributed() {
+        menus.removeContribution(id);
+    }
+};
+
+}  // namespace
+
+TEST_CASE("An extension's top-level menu sits where it asked and runs its items",
+          "[commands][menu][extensions]") {
+    juce::ScopedJuceInitialiser_GUI gui;  // the bar posts its rebuilds
+    auto& menus = magda::MenuManager::getInstance();
+    const auto builtIn = barOf(menus).getMenuBarNames();
+
+    int runs = 0;
+    Contributed account{menus,
+                        menus.addTopLevelMenu("Account", 6, [&runs](magda::MenuItems& items) {
+                            items.addItem("Sign In", [&runs] { ++runs; });
+                        })};
+
+    const auto names = barOf(menus).getMenuBarNames();
+    REQUIRE(names.size() == builtIn.size() + 1);
+    CHECK(names[6] == "Account");
+    CHECK(names[7] == builtIn[6]);
+
+    REQUIRE(pick(menus, 6, "Sign In"));
+    CHECK(runs == 1);
+}
+
+TEST_CASE("Items an extension adds to a built-in menu leave its own items as they were",
+          "[commands][menu][extensions]") {
+    juce::ScopedJuceInitialiser_GUI gui;  // the bar posts its rebuilds
+    auto& menus = magda::MenuManager::getInstance();
+    const int help = barOf(menus).getMenuBarNames().size() - 1;
+    const auto before = barOf(menus).getMenuForIndex(help, {}).getNumItems();
+
+    int runs = 0;
+    {
+        Contributed extra{menus, menus.addItems(magda::Menu::Help, magda::MenuSection::End,
+                                                [&runs](magda::MenuItems& items) {
+                                                    items.addItem("Extension Help",
+                                                                  [&runs] { ++runs; });
+                                                })};
+        // getNumItems() leaves the separator out.
+        CHECK(barOf(menus).getMenuForIndex(help, {}).getNumItems() == before + 1);
+        REQUIRE(pick(menus, help, "Extension Help"));
+        CHECK(runs == 1);
+    }
+
+    CHECK(barOf(menus).getMenuBarNames().size() == help + 1);
+    CHECK(barOf(menus).getMenuForIndex(help, {}).getNumItems() == before);
+}
+
+TEST_CASE("A contributed menu is built each time it opens, from current state",
+          "[commands][menu][extensions]") {
+    juce::ScopedJuceInitialiser_GUI gui;  // the bar posts its rebuilds
+    auto& menus = magda::MenuManager::getInstance();
+    bool signedIn = false;
+    Contributed account{menus,
+                        menus.addTopLevelMenu("Account", 99, [&signedIn](magda::MenuItems& items) {
+                            items.addItem(signedIn ? "Sign Out" : "Sign In", [] {});
+                        })};
+    const int index = barOf(menus).getMenuBarNames().indexOf("Account");
+    REQUIRE(index == barOf(menus).getMenuBarNames().size() - 1);
+
+    CHECK(pick(menus, index, "Sign In"));
+    signedIn = true;
+    menus.refresh();
+    CHECK(pick(menus, index, "Sign Out"));
+    CHECK_FALSE(pick(menus, index, "Sign In"));
+}
+
+TEST_CASE("Contributed commands run on the target that lists them", "[commands][extensions]") {
+    struct Target final : juce::ApplicationCommandTarget {
+        explicit Target(juce::CommandID ownCommand) : command(ownCommand) {}
+        juce::ApplicationCommandTarget* getNextCommandTarget() override {
+            return nullptr;
+        }
+        void getAllCommands(juce::Array<juce::CommandID>& commands) override {
+            commands.add(command);
+        }
+        void getCommandInfo(juce::CommandID, juce::ApplicationCommandInfo& result) override {
+            result.setInfo("Target", {}, "Extensions", 0);
+        }
+        bool perform(const InvocationInfo&) override {
+            ++runs;
+            return true;
+        }
+        juce::CommandID command;
+        int runs = 0;
+    };
+
+    const auto first = magda::CommandIDs::firstExtensionCommand;
+    Target a(first), b(first + 1);
+    magda::ContributedCommands commands;
+    commands.add(&a);
+    commands.add(&b);
+
+    juce::Array<juce::CommandID> all;
+    commands.getAllCommands(all);
+    CHECK(all.size() == 2);
+
+    CHECK(commands.perform(juce::ApplicationCommandTarget::InvocationInfo(first + 1)));
+    CHECK(a.runs == 0);
+    CHECK(b.runs == 1);
+
+    commands.remove(&b);
+    CHECK_FALSE(commands.perform(juce::ApplicationCommandTarget::InvocationInfo(first + 1)));
 }

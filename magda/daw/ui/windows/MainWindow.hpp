@@ -16,6 +16,7 @@
 #include "../dialogs/ExportMidiDialog.hpp"
 #include "../layout/LayoutConfig.hpp"
 #include "CommandIDs.hpp"
+#include "ContributedCommands.hpp"
 #include "MenuManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -89,6 +90,10 @@ class MainWindow : public juce::DocumentWindow,
     void applyLayoutFromConfig();
 
     juce::ApplicationCommandManager& getCommandManager();
+
+    /** @brief An extension's commands: they get shortcuts, show in Shortcuts and run (#3076). */
+    void addCommandTarget(juce::ApplicationCommandTarget* target);
+    void removeCommandTarget(juce::ApplicationCommandTarget* target);
 
   private:
     void updateWindowTitle();
@@ -203,6 +208,9 @@ class MainWindow::MainComponent : public juce::Component,
         return commandManager;
     }
 
+    void addCommandTarget(juce::ApplicationCommandTarget* target);
+    void removeCommandTarget(juce::ApplicationCommandTarget* target);
+
     void applyTooltipsFromConfig();
 
     // Make these public so MainWindow can access them
@@ -254,6 +262,8 @@ class MainWindow::MainComponent : public juce::Component,
     // Persists user keyboard-shortcut remaps (#20). Created after the commands
     // are registered; loads saved overrides and re-saves on any change.
     std::unique_ptr<KeyMappingStore> keyMappingStore_;
+
+    ContributedCommands contributedCommands_;
 
     // Current view mode
     ViewMode currentViewMode = ViewMode::Arrange;

@@ -585,6 +585,16 @@ juce::ApplicationCommandManager& MainWindow::getCommandManager() {
     return mainComponent->getCommandManager();
 }
 
+void MainWindow::addCommandTarget(juce::ApplicationCommandTarget* target) {
+    jassert(mainComponent != nullptr);
+    mainComponent->addCommandTarget(target);
+}
+
+void MainWindow::removeCommandTarget(juce::ApplicationCommandTarget* target) {
+    if (mainComponent != nullptr)
+        mainComponent->removeCommandTarget(target);
+}
+
 void MainWindow::updateWindowTitle() {
     auto& pm = ProjectManager::getInstance();
     juce::String title = extensions::currentEdition().productName;
@@ -1623,8 +1633,21 @@ MainWindow::MainComponent::~MainComponent() {
 // ============================================================================
 
 juce::ApplicationCommandTarget* MainWindow::MainComponent::getNextCommandTarget() {
-    // We're the top-level command target
-    return nullptr;
+    // Commands this component does not list go on to the extensions'.
+    return &contributedCommands_;
+}
+
+void MainWindow::MainComponent::addCommandTarget(juce::ApplicationCommandTarget* target) {
+    contributedCommands_.add(target);
+    commandManager.registerAllCommandsForTarget(target);
+    // Remaps of these commands were dropped when the saved set loaded before they existed.
+    if (keyMappingStore_ != nullptr)
+        keyMappingStore_->restore();
+}
+
+void MainWindow::MainComponent::removeCommandTarget(juce::ApplicationCommandTarget* target) {
+    // The commands stay registered: removing one drops its keys, and the store would save that.
+    contributedCommands_.remove(target);
 }
 
 void MainWindow::MainComponent::paint(juce::Graphics& g) {

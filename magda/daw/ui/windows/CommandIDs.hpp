@@ -105,6 +105,9 @@ enum {
     // Settings menu
     openPreferences = 0x6000,    // Cmd/Ctrl+, (#3019)
     openAudioSettings = 0x6001,  // no default: there is no convention to follow
+
+    // 0x10000 up belongs to extensions, each in a block of its own (#3076)
+    firstExtensionCommand = 0x10000,
 };
 
 }  // namespace magda::CommandIDs
