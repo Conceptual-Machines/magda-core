@@ -58,6 +58,13 @@ TEST_CASE("Remote jobs use one bounded legal state machine", "[remote][jobs][283
     CHECK_FALSE(jobs.reportProgress(id, 1.1));
 
     Error error;
+    REQUIRE(jobs.reportProgress(id, 0.5, "Transcribing 3 phrases"));
+    REQUIRE(jobs.reportProgress(id, 0.6));
+    const auto staged = jobs.get(id, "client-a", allScopes(), error);
+    REQUIRE(staged.has_value());
+    CHECK(staged->stage == "Transcribing 3 phrases");
+    CHECK(toJson(*staged)["stage"].toString() == "Transcribing 3 phrases");
+
     CHECK_FALSE(jobs.get(id, "client-b", allScopes(), error).has_value());
     CHECK(error.code == ErrorCode::NotFound);
     CHECK_FALSE(jobs.get(id, "client-a", ScopeSet{Scope::Read}, error).has_value());

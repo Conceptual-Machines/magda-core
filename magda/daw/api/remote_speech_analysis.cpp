@@ -106,11 +106,12 @@ std::vector<int> channelsOf(const SpeechSegment& segment, const juce::AudioForma
 
 /// Each phrase's words; a failing transcriber stops the pass and leaves the regions whole.
 void transcribe(SpeechWork& work, juce::AudioFormatManager& formats,
-                const std::function<void(double)>& progress) {
+                const std::function<void(double, const juce::String&)>& progress) {
     std::size_t total = 0;
     for (const auto& result : work.results)
         total += result.phrases.size();
     std::size_t done = 0;
+    progress(0.5, "Transcribing " + juce::String(total) + (total == 1 ? " phrase" : " phrases"));
     work.texts.resize(work.results.size());
     for (std::size_t i = 0; i < work.results.size(); ++i) {
         const auto& segment = work.segments[i];
@@ -145,20 +146,22 @@ void transcribe(SpeechWork& work, juce::AudioFormatManager& formats,
                 return;
             }
             work.texts[i].push_back(transcription.text.trim());
-            progress(0.5 + 0.5 * static_cast<double>(++done) / static_cast<double>(total));
+            progress(0.5 + 0.5 * static_cast<double>(++done) / static_cast<double>(total), {});
         }
     }
 }
 
-void analyse(SpeechWork& work, const std::function<void(double)>& reportProgress) {
+void analyse(SpeechWork& work,
+             const std::function<void(double, const juce::String&)>& reportProgress) {
     juce::AudioFormatManager formats;
     formats.registerBasicFormats();
     const double share = work.speechToText ? 0.5 : 1.0;
-    const auto progress = [&](double value) { reportProgress(share * value); };
+    const auto progress = [&](double value) { reportProgress(share * value, {}); };
     double total = 0.0;
     for (const auto& segment : work.segments)
         total += segment.sourceEnd - segment.sourceStart;
     double done = 0.0;
+    reportProgress(0.0, "Finding phrases in " + juce::String(total, 1) + " s of audio");
 
     for (const auto& segment : work.segments) {
         const std::unique_ptr<juce::AudioFormatReader> reader(
@@ -193,6 +196,19 @@ void analyse(SpeechWork& work, const std::function<void(double)>& reportProgress
     }
     if (work.speechToText)
         transcribe(work, formats, reportProgress);
+
+    std::size_t phrases = 0, breaths = 0, silences = 0;
+    for (const auto& result : work.results) {
+        phrases += result.phrases.size();
+        breaths += result.breaths.size();
+        silences += result.silences.size();
+    }
+    const auto count = [](std::size_t n, const char* one, const char* many) {
+        return juce::String(n) + " " + (n == 1 ? one : many);
+    };
+    reportProgress(1.0, "Found " + count(phrases, "phrase", "phrases") + ", " +
+                            count(breaths, "breath", "breaths") + " and " +
+                            count(silences, "silence", "silences"));
 }
 
 /// The regions in timeline beats, each segment's clamped to the beats its event plays.
@@ -376,9 +392,9 @@ HandlerResult clipsAnalyzeSpeech(MagdaApi& api, const juce::var& input,
     auto* live = &api;
     const auto started = context.engineJobs->runFileTask(
         [work, jobs, jobId] {
-            analyse(*work, [&](double progress) {
+            analyse(*work, [&](double progress, const juce::String& stage) {
                 if (jobs)
-                    jobs->reportProgress(jobId, progress);
+                    jobs->reportProgress(jobId, progress, stage);
             });
         },
         work->cancelled,

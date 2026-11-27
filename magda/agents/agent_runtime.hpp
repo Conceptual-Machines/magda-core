@@ -131,6 +131,8 @@ struct ToolExecutionRequest {
     std::uint64_t expectedRevision = 0;
     PermissionContext permissions;
     std::chrono::steady_clock::time_point deadline;
+    /// Called while the executor waits on a job the call started, with its progress and stage.
+    std::function<void(double progress, const juce::String& stage)> onJobProgress;
 };
 
 class ToolExecutor {

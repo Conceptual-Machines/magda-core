@@ -176,7 +176,13 @@ ToolResult RemoteAgentToolExecutor::execute(const ToolExecutionRequest& request,
         object->setProperty("jobId", jobId);
         return juce::var(object);
     }();
+    const auto reportJob = [&] {
+        if (request.onJobProgress)
+            request.onJobProgress(static_cast<double>(response.result["progress"]),
+                                  response.result["stage"].toString());
+    };
     for (int poll = 1; isPending(response); ++poll) {
+        reportJob();
         juce::Thread::sleep(kJobPollMs);
         auto polled = run("jobs.get", jobArguments,
                           runNamespace_ + "/" + request.call.id + "/poll" + juce::String(poll));
@@ -188,6 +194,8 @@ ToolResult RemoteAgentToolExecutor::execute(const ToolExecutionRequest& request,
             break;
         response.result = std::move(polled->result);
     }
+    if (response.ok && jobId.startsWith("job_"))
+        reportJob();
 
     if (!response.ok) {
         juce::var details;

@@ -36,8 +36,19 @@ class ConsoleTranscript : public juce::Component, private juce::Timer {
     void noteNextUserTarget(const juce::String& target);
 
     /// A spinning wheel and @p activity under the last block, such as "Running clips.get";
-    /// empty hides it.
+    /// empty hides it. The seconds shown beside it restart when the part before
+    /// activityDetailSeparator() changes.
     void setActivity(const juce::String& activity);
+
+    /// Opens a line that draws dimmed, for text streamed in rather than appended with appendDim.
+    static juce::String dimMark() {
+        return juce::String::charToString(0x200B);
+    }
+
+    /// Joins an activity to a detail that changes under it, such as a percentage.
+    static juce::String activityDetailSeparator() {
+        return juce::String(juce::CharPointer_UTF8(" \xc2\xb7 "));
+    }
 
     /// Shown centred while the log holds nothing but the greeting.
     void setEmptyHint(const juce::String& hint);
@@ -69,6 +80,7 @@ class ConsoleTranscript : public juce::Component, private juce::Timer {
     juce::String emptyHint_;
     std::vector<Block> blocks_;
     juce::String activity_;
+    juce::uint32 activityStartMs_ = 0;
     juce::Rectangle<int> activityBounds_;
     float spinnerTurn_ = 0.0f;
     std::unique_ptr<Content> content_;

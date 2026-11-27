@@ -1353,6 +1353,7 @@ const juce::var& remoteJobSchema() {
             "state":{"type":"string","enum":["accepted","running","completed","cancelled",
                                                    "failed","unsupported"]},
             "progress":{"type":"number","minimum":0,"maximum":1},
+            "stage":{"type":"string"},
             "cancellable":{"type":"boolean"},
             "cancelRequested":{"type":"boolean"},
             "projectBound":{"type":"boolean"},
@@ -1373,7 +1374,7 @@ const juce::var& remoteJobSchema() {
                 },"required":["id","kind","mediaType"],"additionalProperties":false
             }}
         },
-        "required":["id","kind","state","progress","cancellable","cancelRequested",
+        "required":["id","kind","state","progress","stage","cancellable","cancelRequested",
                     "projectBound","revisionPolicy","acceptedRevision","completionRevision",
                     "createdAtMs","startedAtMs","finishedAtMs","result","error","artifacts"],
         "additionalProperties":false

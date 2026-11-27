@@ -15,7 +15,7 @@ namespace {
 
 const juce::juce_wchar kUserMark = 0x25CF;   // ●
 const juce::juce_wchar kMagdaMark = 0x25C6;  // ◆
-const juce::juce_wchar kDimMark = 0x200B;    // zero-width space opens a dimmed line
+const juce::juce_wchar kDimMark = 0x200B;    // zero-width space opens a dimmed line; see dimMark()
 
 constexpr int kPad = 12;
 constexpr int kLabelHeight = 18;
@@ -90,7 +90,12 @@ class ConsoleTranscript::Content : public juce::Component {
         area.removeFromLeft(8);
         g.setFont(bodyFont());
         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-        g.drawText(owner_.activity_, area, juce::Justification::centredLeft, true);
+        // Seconds in this activity, so a long model turn reads as progress, not a hang.
+        auto text = owner_.activity_;
+        const auto seconds = (juce::Time::getMillisecondCounter() - owner_.activityStartMs_) / 1000;
+        if (seconds >= 2)
+            text += activityDetailSeparator() + juce::String(seconds) + " s";
+        g.drawText(text, area, juce::Justification::centredLeft, true);
     }
 
     void paintEmptyState(juce::Graphics& g) {
@@ -143,6 +148,11 @@ ConsoleTranscript::~ConsoleTranscript() {
 void ConsoleTranscript::setActivity(const juce::String& activity) {
     if (activity == activity_)
         return;
+    const auto label = [](const juce::String& text) {
+        return text.upToFirstOccurrenceOf(activityDetailSeparator(), false, false);
+    };
+    if (label(activity) != label(activity_))
+        activityStartMs_ = juce::Time::getMillisecondCounter();
     activity_ = activity;
     if (activity_.isEmpty())
         stopTimer();
