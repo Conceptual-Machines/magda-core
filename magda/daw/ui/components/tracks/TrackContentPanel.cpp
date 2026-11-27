@@ -3818,7 +3818,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                     if (const auto* clipTrack = TrackManager::getInstance().getTrack(clipTrackId);
                         clipTrack != nullptr &&
                         traitsOf(clipTrack->type).userClips == UserClipAcceptance::Progressions)
-                        annotateChordsFromNotes(*clip, beatsPerBar);
+                        annotateChordsFromNotes(*clip);
                 }
 
                 ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId);

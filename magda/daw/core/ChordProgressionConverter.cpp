@@ -5,20 +5,101 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "music/ChordEngine.hpp"
 
 namespace magda {
 
-std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& notes,
-                                                   double beatsPerBar) {
-    if (notes.empty())
-        return {};
+namespace {
 
-    double lastNoteEnd = 0.0;
+bool isChord(const music::Chord& chord) {
+    return chord.name != "none" && chord.name != "unknown" && chord.name.isNotEmpty();
+}
+
+ExtractedChord toExtracted(const music::Chord& chord, double startBeat,
+                           std::vector<size_t> indices) {
+    ExtractedChord ex;
+    ex.startBeat = startBeat;
+    ex.name = chord.getDisplayName();
+    ex.root = chord.root;
+    ex.quality = chord.quality;
+    ex.exactMatch = chord.exactMatch;
+    const auto idealCount = music::ChordUtils::getChordIntervals(chord.quality).size();
+    const auto matchedCount = idealCount - chord.missingIntervals.size();
+    const auto unionCount = idealCount + chord.extraPitchClasses.size();
+    ex.confidence =
+        unionCount == 0 ? 0.0 : static_cast<double>(matchedCount) / static_cast<double>(unionCount);
+    if (!chord.exactMatch)
+        ex.warnings.emplace_back("partial_match");
+    if (!chord.missingIntervals.empty())
+        ex.warnings.emplace_back("missing_chord_tones");
+    if (!chord.extraPitchClasses.empty())
+        ex.warnings.emplace_back("extra_pitch_classes");
+    ex.noteIndices = std::move(indices);
+    return ex;
+}
+
+// Each chord runs to the next one's start, and the last to the end of the notes in range.
+void setLengths(std::vector<ExtractedChord>& detected, const std::vector<MidiNote>& notes,
+                double startBeat, double endBeat) {
+    double lastNoteEnd = startBeat;
     for (const auto& note : notes)
-        lastNoteEnd = std::max(lastNoteEnd, note.startBeat + note.lengthBeats);
-    return extractChordsFromNotes(notes, 0.0, lastNoteEnd, beatsPerBar > 0.0 ? beatsPerBar : 4.0);
+        if (note.startBeat < endBeat && note.startBeat + note.lengthBeats > startBeat)
+            lastNoteEnd =
+                std::max(lastNoteEnd, std::min(endBeat, note.startBeat + note.lengthBeats));
+    for (size_t i = 0; i < detected.size(); ++i)
+        detected[i].lengthBeats = (i + 1 < detected.size())
+                                      ? (detected[i + 1].startBeat - detected[i].startBeat)
+                                      : (lastNoteEnd - detected[i].startBeat);
+}
+
+}  // namespace
+
+std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& notes) {
+    std::vector<ExtractedChord> detected;
+    std::vector<size_t> order(notes.size());
+    for (size_t i = 0; i < order.size(); ++i)
+        order[i] = i;
+    std::ranges::stable_sort(order, {}, [&](size_t i) { return notes[i].startBeat; });
+
+    auto& engine = magda::music::ChordEngine::getInstance();
+    const auto at = [&](size_t k) { return order.begin() + static_cast<std::ptrdiff_t>(k); };
+    for (size_t first = 0; first < order.size();) {
+        const double onset = notes[order[first]].startBeat;
+        size_t last = first;
+        while (last < order.size() &&
+               notes[order[last]].startBeat - onset <= kChordOnsetSpreadBeats)
+            ++last;
+
+        // Struck together: notes held from before join, unless they end within the spread.
+        if (last - first >= 2) {
+            const double heldPast = onset + kChordOnsetSpreadBeats;
+            std::vector<size_t> indices(at(first), at(last));
+            for (size_t k = 0; k < first; ++k)
+                if (notes[order[k]].startBeat + notes[order[k]].lengthBeats > heldPast)
+                    indices.push_back(order[k]);
+
+            std::vector<magda::music::ChordNote> chordNotes;
+            chordNotes.reserve(indices.size());
+            for (const auto i : indices)
+                chordNotes.emplace_back(notes[i].noteNumber, notes[i].velocity);
+            const auto chord = engine.detect(chordNotes);
+            if (isChord(chord)) {
+                // A chord struck again extends the one before it.
+                if (!detected.empty() && detected.back().root == chord.root &&
+                    detected.back().quality == chord.quality)
+                    detected.back().noteIndices.insert(detected.back().noteIndices.end(), at(first),
+                                                       at(last));
+                else
+                    detected.push_back(toExtracted(chord, onset, std::move(indices)));
+            }
+        }
+        first = last;
+    }
+
+    setLengths(detected, notes, 0.0, std::numeric_limits<double>::max());
+    return detected;
 }
 
 std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& notes,
@@ -31,7 +112,7 @@ std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& 
         return detected;
 
     // Each window is read a 16th after it starts, so a chord played a little late, or
-    // released a little late, still counts for the bar it belongs to (#3325).
+    // released a little late, still counts for the window it belongs to (#3325).
     const double readAfter = std::min(kChordReadDelayBeats, windowBeats * 0.5);
     auto& engine = magda::music::ChordEngine::getInstance();
     for (double beat = startBeat; beat < endBeat; beat += windowBeats) {
@@ -49,48 +130,17 @@ std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& 
         if (chordNotes.size() < 2)
             continue;
 
-        auto chord = engine.detect(chordNotes);
-        if (chord.name == "none" || chord.name == "unknown" || chord.name.isEmpty())
-            continue;
-
-        ExtractedChord ex;
-        ex.startBeat = beat;
-        ex.name = chord.getDisplayName();
-        ex.root = chord.root;
-        ex.quality = chord.quality;
-        ex.exactMatch = chord.exactMatch;
-        const auto idealCount = music::ChordUtils::getChordIntervals(chord.quality).size();
-        const auto matchedCount = idealCount - chord.missingIntervals.size();
-        const auto unionCount = idealCount + chord.extraPitchClasses.size();
-        ex.confidence = unionCount == 0
-                            ? 0.0
-                            : static_cast<double>(matchedCount) / static_cast<double>(unionCount);
-        if (!chord.exactMatch)
-            ex.warnings.emplace_back("partial_match");
-        if (!chord.missingIntervals.empty())
-            ex.warnings.emplace_back("missing_chord_tones");
-        if (!chord.extraPitchClasses.empty())
-            ex.warnings.emplace_back("extra_pitch_classes");
-        ex.noteIndices = std::move(indices);
-        detected.push_back(std::move(ex));
+        const auto chord = engine.detect(chordNotes);
+        if (isChord(chord))
+            detected.push_back(toExtracted(chord, beat, std::move(indices)));
     }
 
-    double lastNoteEnd = startBeat;
-    for (const auto& note : notes)
-        if (note.startBeat < endBeat && note.startBeat + note.lengthBeats > startBeat)
-            lastNoteEnd =
-                std::max(lastNoteEnd, std::min(endBeat, note.startBeat + note.lengthBeats));
-    for (size_t i = 0; i < detected.size(); ++i) {
-        detected[i].lengthBeats = (i + 1 < detected.size())
-                                      ? (detected[i + 1].startBeat - detected[i].startBeat)
-                                      : (lastNoteEnd - detected[i].startBeat);
-    }
-
+    setLengths(detected, notes, startBeat, endBeat);
     return detected;
 }
 
-void annotateChordsFromNotes(ClipInfo& clip, double beatsPerBar) {
-    for (const auto& detected : extractChordsFromNotes(clip.midiNotes, beatsPerBar)) {
+void annotateChordsFromNotes(ClipInfo& clip) {
+    for (const auto& detected : extractChordsFromNotes(clip.midiNotes)) {
         ClipInfo::ChordAnnotation ann;
         ann.beatPosition = detected.startBeat;
         ann.lengthBeats = detected.lengthBeats;

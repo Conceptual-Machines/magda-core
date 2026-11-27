@@ -214,7 +214,7 @@ TEST_CASE("A take recorded on the chord track lands as a progression", "[clips][
     const auto chordTrack = tracks.createTrack("", TrackType::Chord);
     const auto mediaTrack = tracks.createTrack("Keys", TrackType::Media);
 
-    // Played, not drawn: C struck just after the bar, G struck and C let go a little late.
+    // Played, not drawn: each chord starts where it was struck (#3325).
     MidiTake take;
     for (const int pitch : {60, 64, 67})
         take.notes.push_back(
@@ -230,9 +230,9 @@ TEST_CASE("A take recorded on the chord track lands as a progression", "[clips][
     const auto rootOf = [&](size_t i) {
         return music::ChordEngine::parseChordName(clip->chordAnnotations[i].chordName).root;
     };
-    CHECK(clip->chordAnnotations[0].beatPosition == 0.0);
+    CHECK(clip->chordAnnotations[0].beatPosition == 0.02);
     CHECK(rootOf(0) == music::ChordRoot::C);
-    CHECK(clip->chordAnnotations[1].beatPosition == 4.0);
+    CHECK(clip->chordAnnotations[1].beatPosition == 4.08);
     CHECK(rootOf(1) == music::ChordRoot::G);
     CHECK(std::ranges::all_of(clip->midiNotes, [](const auto& n) { return n.chordGroup != 0; }));
     CHECK(trackAcceptsClip(*tracks.getTrack(chordTrack), *clip));

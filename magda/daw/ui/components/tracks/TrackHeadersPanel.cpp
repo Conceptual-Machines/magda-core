@@ -2479,11 +2479,7 @@ track_controls::MixControls TrackHeadersPanel::mixControlsFor(TrackHeader& heade
     track_controls::MixControls c;
     if (p.gain)
         c.gain = header.volumeLabel.get();
-    // The chord track's 3-state audition control rides the pan cell so it
-    // lines up with the pan/automation column of the other tracks.
-    if (p.muteStyle == TrackControlsPolicy::MuteStyle::ChordAudition)
-        c.pan = header.chordAuditionButton.get();
-    else if (p.pan)
+    if (p.pan)
         c.pan = header.panLabel.get();
     if (p.mute && p.muteStyle == TrackControlsPolicy::MuteStyle::Standard)
         c.buttons.push_back(header.muteButton.get());
@@ -2493,6 +2489,9 @@ track_controls::MixControls TrackHeadersPanel::mixControlsFor(TrackHeader& heade
         c.buttons.push_back(header.recordButton.get());
     if (p.monitor)
         c.buttons.push_back(header.monitorButton.get());
+    // The chord track's audition control folds in its monitor, so it sits where the monitor does.
+    if (p.muteStyle == TrackControlsPolicy::MuteStyle::ChordAudition)
+        c.buttons.push_back(header.chordAuditionButton.get());
     if (p.automation)
         c.trailing = header.automationButton.get();
     return c;
