@@ -243,7 +243,8 @@ void ConsoleTranscript::rebuild() {
     }
 
     for (auto& b : blocks_) {
-        b.text = b.text.trimEnd();
+        // TextLayout leaves a leading empty line out of its height, so the next block overlaps.
+        b.text = b.text.trimCharactersAtStart("\n").trimEnd();
         if (b.text.startsWith("[!] ")) {
             b.error = true;
             b.text = b.text.substring(4);

@@ -191,8 +191,8 @@ std::vector<juce::String> knownModelsForProvider(const std::string& providerId) 
                 m::GPT_5_1,     m::GPT_5,         m::GPT_5_MINI,   m::GPT_5_NANO,   m::O3_PRO,
                 m::O3,          m::GPT_4_1,       m::GPT_4_1_MINI};
     if (providerId == magda::provider::ANTHROPIC)
-        return {m::CLAUDE_FABLE_5,  m::CLAUDE_OPUS_4_8,   m::CLAUDE_OPUS_4_7,
-                m::CLAUDE_SONNET_5, m::CLAUDE_SONNET_4_6, m::CLAUDE_HAIKU};
+        return {m::CLAUDE_FABLE_5,  m::CLAUDE_OPUS_5_5, m::CLAUDE_OPUS_5,     m::CLAUDE_OPUS_4_8,
+                m::CLAUDE_OPUS_4_7, m::CLAUDE_SONNET_5, m::CLAUDE_SONNET_4_6, m::CLAUDE_HAIKU};
     if (providerId == magda::provider::GEMINI)
         return {m::GEMINI_3_5_FLASH,      m::GEMINI_3_1_PRO, m::GEMINI_3_1_FLASH,
                 m::GEMINI_3_1_FLASH_LITE, m::GEMINI_2_5_PRO, m::GEMINI_2_5_FLASH};

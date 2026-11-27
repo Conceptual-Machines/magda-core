@@ -68,6 +68,8 @@ inline constexpr const char* O3_PRO = "o3-pro";
 
 // Anthropic (Claude). Dateless ids are pinned snapshots (4.6 generation onward).
 inline constexpr const char* CLAUDE_FABLE_5 = "claude-fable-5";
+inline constexpr const char* CLAUDE_OPUS_5_5 = "claude-opus-5-5";
+inline constexpr const char* CLAUDE_OPUS_5 = "claude-opus-5";
 inline constexpr const char* CLAUDE_OPUS_4_7 = "claude-opus-4-7";
 inline constexpr const char* CLAUDE_OPUS_4_8 = "claude-opus-4-8";
 inline constexpr const char* CLAUDE_OPUS = CLAUDE_OPUS_4_8;
