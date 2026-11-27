@@ -516,6 +516,9 @@
                 "minimum": 0,
                 "maximum": 1
               },
+              "stage": {
+                "type": "string"
+              },
               "cancellable": {
                 "type": "boolean"
               },
@@ -607,6 +610,7 @@
               "kind",
               "state",
               "progress",
+              "stage",
               "cancellable",
               "cancelRequested",
               "projectBound",
@@ -698,6 +702,9 @@
               "minimum": 0,
               "maximum": 1
             },
+            "stage": {
+              "type": "string"
+            },
             "cancellable": {
               "type": "boolean"
             },
@@ -789,6 +796,7 @@
             "kind",
             "state",
             "progress",
+            "stage",
             "cancellable",
             "cancelRequested",
             "projectBound",
@@ -879,6 +887,9 @@
               "minimum": 0,
               "maximum": 1
             },
+            "stage": {
+              "type": "string"
+            },
             "cancellable": {
               "type": "boolean"
             },
@@ -970,6 +981,7 @@
             "kind",
             "state",
             "progress",
+            "stage",
             "cancellable",
             "cancelRequested",
             "projectBound",
@@ -1238,6 +1250,9 @@
               "minimum": 0,
               "maximum": 1
             },
+            "stage": {
+              "type": "string"
+            },
             "cancellable": {
               "type": "boolean"
             },
@@ -1329,6 +1344,7 @@
             "kind",
             "state",
             "progress",
+            "stage",
             "cancellable",
             "cancelRequested",
             "projectBound",
@@ -1419,6 +1435,9 @@
               "minimum": 0,
               "maximum": 1
             },
+            "stage": {
+              "type": "string"
+            },
             "cancellable": {
               "type": "boolean"
             },
@@ -1510,6 +1529,7 @@
             "kind",
             "state",
             "progress",
+            "stage",
             "cancellable",
             "cancelRequested",
             "projectBound",
@@ -1800,6 +1820,9 @@
               "minimum": 0,
               "maximum": 1
             },
+            "stage": {
+              "type": "string"
+            },
             "cancellable": {
               "type": "boolean"
             },
@@ -1891,6 +1914,7 @@
             "kind",
             "state",
             "progress",
+            "stage",
             "cancellable",
             "cancelRequested",
             "projectBound",
@@ -1981,6 +2005,9 @@
               "minimum": 0,
               "maximum": 1
             },
+            "stage": {
+              "type": "string"
+            },
             "cancellable": {
               "type": "boolean"
             },
@@ -2072,6 +2099,7 @@
             "kind",
             "state",
             "progress",
+            "stage",
             "cancellable",
             "cancelRequested",
             "projectBound",
@@ -2778,6 +2806,9 @@
               "minimum": 0,
               "maximum": 1
             },
+            "stage": {
+              "type": "string"
+            },
             "cancellable": {
               "type": "boolean"
             },
@@ -2869,6 +2900,7 @@
             "kind",
             "state",
             "progress",
+            "stage",
             "cancellable",
             "cancelRequested",
             "projectBound",
@@ -3115,6 +3147,9 @@
               "minimum": 0,
               "maximum": 1
             },
+            "stage": {
+              "type": "string"
+            },
             "cancellable": {
               "type": "boolean"
             },
@@ -3206,6 +3241,7 @@
             "kind",
             "state",
             "progress",
+            "stage",
             "cancellable",
             "cancelRequested",
             "projectBound",
@@ -21276,6 +21312,9 @@
                   "minimum": 0,
                   "maximum": 1
                 },
+                "stage": {
+                  "type": "string"
+                },
                 "cancellable": {
                   "type": "boolean"
                 },
@@ -21367,6 +21406,7 @@
                 "kind",
                 "state",
                 "progress",
+                "stage",
                 "cancellable",
                 "cancelRequested",
                 "projectBound",
@@ -21536,6 +21576,9 @@
               "minimum": 0,
               "maximum": 1
             },
+            "stage": {
+              "type": "string"
+            },
             "cancellable": {
               "type": "boolean"
             },
@@ -21627,6 +21670,7 @@
             "kind",
             "state",
             "progress",
+            "stage",
             "cancellable",
             "cancelRequested",
             "projectBound",
@@ -46274,6 +46318,9 @@
               "minimum": 0,
               "maximum": 1
             },
+            "stage": {
+              "type": "string"
+            },
             "cancellable": {
               "type": "boolean"
             },
@@ -46365,6 +46412,7 @@
             "kind",
             "state",
             "progress",
+            "stage",
             "cancellable",
             "cancelRequested",
             "projectBound",
@@ -46455,6 +46503,9 @@
               "minimum": 0,
               "maximum": 1
             },
+            "stage": {
+              "type": "string"
+            },
             "cancellable": {
               "type": "boolean"
             },
@@ -46546,6 +46597,7 @@
             "kind",
             "state",
             "progress",
+            "stage",
             "cancellable",
             "cancelRequested",
             "projectBound",
@@ -46626,6 +46678,9 @@
               "minimum": 0,
               "maximum": 1
             },
+            "stage": {
+              "type": "string"
+            },
             "cancellable": {
               "type": "boolean"
             },
@@ -46717,6 +46772,7 @@
             "kind",
             "state",
             "progress",
+            "stage",
             "cancellable",
             "cancelRequested",
             "projectBound",
@@ -46807,6 +46863,9 @@
               "minimum": 0,
               "maximum": 1
             },
+            "stage": {
+              "type": "string"
+            },
             "cancellable": {
               "type": "boolean"
             },
@@ -46898,6 +46957,7 @@
             "kind",
             "state",
             "progress",
+            "stage",
             "cancellable",
             "cancelRequested",
             "projectBound",
