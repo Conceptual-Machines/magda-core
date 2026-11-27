@@ -15,7 +15,7 @@ namespace {
 
 const juce::juce_wchar kUserMark = 0x25CF;   // ●
 const juce::juce_wchar kMagdaMark = 0x25C6;  // ◆
-const juce::juce_wchar kDimMark = 0x200B;    // zero-width space opens a dimmed line
+const juce::juce_wchar kDimMark = 0x200B;    // zero-width space opens a dimmed line; see dimMark()
 
 constexpr int kPad = 12;
 constexpr int kLabelHeight = 18;
@@ -32,6 +32,20 @@ juce::Font bodyFont() {
 
 juce::Font labelFont() {
     return FontManager::getInstance().getMonoFont(10.5f).withExtraKerningFactor(0.08f);
+}
+
+/// Appends @p text with each closed **pair** drawn bold, as the model writes emphasis in markdown.
+void appendWithBold(juce::AttributedString& s, const juce::String& text, juce::Colour colour) {
+    juce::StringArray parts;
+    parts.addTokens(text, "**", {});
+    // An odd count of markers leaves the last one open; it stays literal until it closes.
+    const int closed = parts.size() % 2 == 1 ? parts.size() : parts.size() - 1;
+    for (int i = 0; i < parts.size(); ++i) {
+        const bool bold = i % 2 == 1 && i < closed;
+        const auto piece = i >= closed ? "**" + parts[i] : parts[i];
+        if (piece.isNotEmpty())
+            s.append(piece, bold ? bodyFont().boldened() : bodyFont(), colour);
+    }
 }
 
 }  // namespace
@@ -90,7 +104,12 @@ class ConsoleTranscript::Content : public juce::Component {
         area.removeFromLeft(8);
         g.setFont(bodyFont());
         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-        g.drawText(owner_.activity_, area, juce::Justification::centredLeft, true);
+        // Seconds in this activity, so a long model turn reads as progress, not a hang.
+        auto text = owner_.activity_;
+        const auto seconds = (juce::Time::getMillisecondCounter() - owner_.activityStartMs_) / 1000;
+        if (seconds >= 2)
+            text += activityDetailSeparator() + juce::String(seconds) + " s";
+        g.drawText(text, area, juce::Justification::centredLeft, true);
     }
 
     void paintEmptyState(juce::Graphics& g) {
@@ -143,6 +162,11 @@ ConsoleTranscript::~ConsoleTranscript() {
 void ConsoleTranscript::setActivity(const juce::String& activity) {
     if (activity == activity_)
         return;
+    const auto label = [](const juce::String& text) {
+        return text.upToFirstOccurrenceOf(activityDetailSeparator(), false, false);
+    };
+    if (label(activity) != label(activity_))
+        activityStartMs_ = juce::Time::getMillisecondCounter();
     activity_ = activity;
     if (activity_.isEmpty())
         stopTimer();
@@ -233,7 +257,8 @@ void ConsoleTranscript::rebuild() {
     }
 
     for (auto& b : blocks_) {
-        b.text = b.text.trimEnd();
+        // TextLayout leaves a leading empty line out of its height, so the next block overlaps.
+        b.text = b.text.trimCharactersAtStart("\n").trimEnd();
         if (b.text.startsWith("[!] ")) {
             b.error = true;
             b.text = b.text.substring(4);
@@ -262,7 +287,7 @@ void ConsoleTranscript::layoutBlocks() {
         const auto colour = b.error ? ActiveTheme::getColour(ActiveTheme::STATUS_ERROR)
                             : b.dim ? ActiveTheme::getColour(ActiveTheme::TEXT_DIM)
                                     : ActiveTheme::getTextColour();
-        s.append(b.text, bodyFont(), colour);
+        appendWithBold(s, b.text, colour);
 
         b.showLabel = b.role == Role::User || first || previous != Role::Magda;
         if (!first)

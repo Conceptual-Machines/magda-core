@@ -84,11 +84,14 @@ llm::Message toLlmMessage(const ConversationTurn& turn, const ToolNames& names) 
 }  // namespace
 
 LlmToolModel::LlmToolModel(llm::LLMClient& client, float temperature, TextStream onText,
-                           ToolCallStream onToolCall)
+                           ToolCallStream onToolCall, ToolArgumentsStream onToolArguments,
+                           ThinkingStream onThinking)
     : client_(client),
       temperature_(temperature),
       onText_(std::move(onText)),
-      onToolCall_(std::move(onToolCall)) {}
+      onToolCall_(std::move(onToolCall)),
+      onToolArguments_(std::move(onToolArguments)),
+      onThinking_(std::move(onThinking)) {}
 
 ModelResponse LlmToolModel::generate(const ModelRequest& request,
                                      const CancellationToken& cancellation) {
@@ -127,17 +130,23 @@ ModelResponse LlmToolModel::generate(const ModelRequest& request,
         llmRequest.messages.push_back(toLlmMessage(turn, names));
 
     const auto response =
-        onText_ ? client_.sendStreamingRequestDetailed(
-                      llmRequest,
-                      [&](const llm::StreamDelta& delta) {
-                          if (cancellation.isCancellationRequested())
-                              return false;
-                          if (delta.type == llm::StreamDeltaType::ToolCallStart && onToolCall_)
-                              onToolCall_(names.operation(delta.toolName));
-                          return delta.type != llm::StreamDeltaType::Text || delta.text.isEmpty() ||
-                                 onText_(delta.text);
-                      })
-                : client_.sendRequest(llmRequest);
+        onText_
+            ? client_.sendStreamingRequestDetailed(
+                  llmRequest,
+                  [&](const llm::StreamDelta& delta) {
+                      if (cancellation.isCancellationRequested())
+                          return false;
+                      if (delta.type == llm::StreamDeltaType::ToolCallStart && onToolCall_)
+                          onToolCall_(names.operation(delta.toolName));
+                      if (delta.type == llm::StreamDeltaType::ToolCallArguments && onToolArguments_)
+                          onToolArguments_(delta.argumentsDelta);
+                      if (delta.type == llm::StreamDeltaType::Thinking && onThinking_ &&
+                          delta.text.isNotEmpty())
+                          onThinking_(delta.text);
+                      return delta.type != llm::StreamDeltaType::Text || delta.text.isEmpty() ||
+                             onText_(delta.text);
+                  })
+            : client_.sendRequest(llmRequest);
     if (cancellation.isCancellationRequested())
         return {.success = false, .error = "cancelled"};
 

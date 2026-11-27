@@ -70,6 +70,7 @@ juce::var toJson(const RemoteJobDto& job) {
     set(value, "kind", job.kind);
     set(value, "state", juce::String(toString(job.state)));
     set(value, "progress", job.progress);
+    set(value, "stage", job.stage);
     set(value, "cancellable", job.cancellable && !isTerminal(job.state));
     set(value, "cancelRequested", job.cancelRequested);
     set(value, "projectBound", job.projectBound);
@@ -214,7 +215,8 @@ bool RemoteJobManager::markRunning(const juce::String& id) {
     return changed;
 }
 
-bool RemoteJobManager::reportProgress(const juce::String& id, double progress) {
+bool RemoteJobManager::reportProgress(const juce::String& id, double progress,
+                                      const juce::String& stage) {
     if (!std::isfinite(progress) || progress < 0.0 || progress > 1.0)
         return false;
     bool changed = false;
@@ -225,8 +227,11 @@ bool RemoteJobManager::reportProgress(const juce::String& id, double progress) {
         if (found == entries_.end() || isTerminal(found->dto.state) ||
             progress < found->dto.progress)
             return false;
-        changed = progress != found->dto.progress;
+        changed =
+            progress != found->dto.progress || (stage.isNotEmpty() && stage != found->dto.stage);
         found->dto.progress = progress;
+        if (stage.isNotEmpty())
+            found->dto.stage = stage;
     }
     if (changed)
         notifyChanged();

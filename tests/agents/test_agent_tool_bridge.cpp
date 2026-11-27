@@ -440,19 +440,26 @@ TEST_CASE("LlmToolModel streams the model's text and keeps its tool calls",
     call.arguments = object({{"clipId", 1}});
     client.scripted.toolCalls.push_back(call);
     client.deltas = {
+        {.type = llm::StreamDeltaType::Thinking, .text = "Find the clip first."},
         {.type = llm::StreamDeltaType::Text, .text = "Analys"},
         {.type = llm::StreamDeltaType::ToolCallStart, .toolName = "clips_analyzeSpeech"},
+        {.type = llm::StreamDeltaType::ToolCallArguments, .argumentsDelta = "{\"clip"},
+        {.type = llm::StreamDeltaType::ToolCallArguments, .argumentsDelta = "Id\":1}"},
         {.type = llm::StreamDeltaType::Text, .text = "ing."}};
 
     juce::String streamed;
     juce::StringArray started;
+    juce::String arguments;
+    juce::String thought;
     LlmToolModel model(
         client, 0.1f,
         [&](const juce::String& text) {
             streamed += text;
             return true;
         },
-        [&](const juce::String& name) { started.add(name); });
+        [&](const juce::String& name) { started.add(name); },
+        [&](const juce::String& piece) { arguments += piece; },
+        [&](const juce::String& piece) { thought += piece; });
     ModelRequest request;
     request.tools = {{.name = "clips.analyzeSpeech",
                       .description = "Analyse speech",
@@ -463,6 +470,8 @@ TEST_CASE("LlmToolModel streams the model's text and keeps its tool calls",
     const auto response = model.generate(request, {});
     CHECK(streamed == "Analysing.");
     CHECK(started == juce::StringArray{"clips.analyzeSpeech"});
+    CHECK(arguments == "{\"clipId\":1}");
+    CHECK(thought == "Find the clip first.");
     REQUIRE(response.toolCalls.size() == 1);
     CHECK(response.toolCalls.front().name == "clips.analyzeSpeech");
 }

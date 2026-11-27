@@ -219,6 +219,7 @@ set(TEST_SOURCES
     agents/test_dsl_track_workflow.cpp
     agents/test_agent_device_catalog.cpp
     agents/test_chord_agent.cpp
+    agents/test_llm_client_provider.cpp
     dsp/test_faust_agent.cpp
     # The prompts' worked examples must satisfy the validator (Faust instrument
     # [idx:N] report)
