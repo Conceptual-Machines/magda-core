@@ -580,12 +580,14 @@
     "paths.row.data": "数据",
     "paths.row.presets": "预设",
     "paths.row.capture": "捕获历史",
+    "paths.row.agents": "智能体",
     "paths.row.render": "渲染输出",
     "paths.row.location": "位置",
     "paths.row.editor": "外部音频编辑器",
     "paths.desc.data": "日志、脚本、插件缓存",
     "paths.desc.presets": "链、机架、设备",
     "paths.desc.capture": "捕获缓冲区保留的录音",
+    "paths.desc.agents": "AI 控制台的智能体，每个一个文件夹",
     "paths.system_temp": "系统临时文件夹",
     "paths.files_indexed": "已索引 {0} 个文件",
     "paths.embeddings": "{0} 个含音频嵌入",
@@ -615,7 +617,10 @@
     "gestures.action": "操作",
     "gestures.input": "输入",
     "gestures.sensitivity": "灵敏度",
-    "gestures.invert": "反转"
+    "gestures.invert": "反转",
+    "gestures.swap_title": "输入已被占用",
+    "gestures.swap_message": "{1} 已在使用 {0}。\n要交换输入吗？之后 {1} 将使用 {2}。",
+    "gestures.swap": "交换"
   },
   "controllers": {
     "tab.profiles": "{0} 配置",

@@ -580,12 +580,14 @@
     "paths.row.data": "Данные",
     "paths.row.presets": "Пресеты",
     "paths.row.capture": "История захвата",
+    "paths.row.agents": "Агенты",
     "paths.row.render": "Вывод рендера",
     "paths.row.location": "Расположение",
     "paths.row.editor": "Внешний аудиоредактор",
     "paths.desc.data": "Логи, скрипты, кэш плагинов",
     "paths.desc.presets": "Цепочки, рэки, устройства",
     "paths.desc.capture": "Записи, сохранённые буфером захвата",
+    "paths.desc.agents": "Агенты ИИ-консоли, по папке на каждого",
     "paths.system_temp": "Системная временная папка",
     "paths.files_indexed": "Проиндексировано файлов: {0}",
     "paths.embeddings": "С аудиоэмбеддингами: {0}",
@@ -615,7 +617,10 @@
     "gestures.action": "Действие",
     "gestures.input": "Ввод",
     "gestures.sensitivity": "Чувствительность",
-    "gestures.invert": "Инвертировать"
+    "gestures.invert": "Инвертировать",
+    "gestures.swap_title": "Ввод уже используется",
+    "gestures.swap_message": "{1} уже использует {0}.\nПоменять вводы местами? Тогда {1} будет использовать {2}.",
+    "gestures.swap": "Поменять"
   },
   "controllers": {
     "tab.profiles": "{0}-профили",
