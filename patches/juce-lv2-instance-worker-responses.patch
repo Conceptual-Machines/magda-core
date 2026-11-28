@@ -1,0 +1,136 @@
+diff --git a/modules/juce_audio_processors_headless/format_types/juce_LV2PluginFormatImpl.h b/modules/juce_audio_processors_headless/format_types/juce_LV2PluginFormatImpl.h
+index 974d9777a8..6f7af4e09c 100644
+--- a/modules/juce_audio_processors_headless/format_types/juce_LV2PluginFormatImpl.h
++++ b/modules/juce_audio_processors_headless/format_types/juce_LV2PluginFormatImpl.h
+@@ -1041,13 +1041,15 @@ private:
+     Keeps track of active plugin instances, so that we can avoid sending work
+     messages to dead plugins.
+ */
++using WorkerResponseQueue = WorkQueue<WorkResponder>;
++
+ class HandleRegistry
+ {
+ public:
+-    void insert (LV2_Handle handle)
++    void insert (LV2_Handle handle, WorkerResponseQueue& responses)
+     {
+         const SpinLock::ScopedLockType lock (mutex);
+-        handles.insert (handle);
++        handles.emplace (handle, &responses);
+     }
+ 
+     void erase (LV2_Handle handle)
+@@ -1061,14 +1063,14 @@ public:
+     {
+         const SpinLock::ScopedLockType lock (mutex);
+ 
+-        if (handles.find (handle) != handles.cend())
+-            return callback();
++        if (const auto it = handles.find (handle); it != handles.end())
++            return callback (*it->second);
+ 
+         return LV2_WORKER_ERR_UNKNOWN;
+     }
+ 
+ private:
+-    std::set<LV2_Handle> handles;
++    std::map<LV2_Handle, WorkerResponseQueue*> handles;
+     SpinLock mutex;
+ 
+     JUCE_LEAK_DETECTOR (HandleRegistry)
+@@ -1085,6 +1087,8 @@ private:
+ class SharedThreadedWorker final : public WorkerResponseListener
+ {
+ public:
++    static constexpr auto queueSize = 8192;
++
+     ~SharedThreadedWorker() noexcept override
+     {
+         shouldExit = true;
+@@ -1095,7 +1099,7 @@ public:
+                                 uint32_t size,
+                                 const void* data)
+     {
+-        return registry.ifContains (submitter.handle, [&]
++        return registry.ifContains (submitter.handle, [&] (WorkerResponseQueue&)
+         {
+             return incoming.push (submitter, size, data);
+         });
+@@ -1105,34 +1109,22 @@ public:
+                                          uint32_t size,
+                                          const void* data) override
+     {
+-        return registry.ifContains (responder.handle, [&]
++        return registry.ifContains (responder.handle, [&] (WorkerResponseQueue& responses)
+         {
+-            return outgoing.push (responder, size, data);
++            return responses.push (responder, size, data);
+         });
+     }
+ 
+-    void processResponses()
++    void registerHandle (LV2_Handle handle, WorkerResponseQueue& responses)
+     {
+-        for (;;)
+-        {
+-            auto workerResponder = outgoing.pop (message);
+-
+-            if (! message.empty() && workerResponder.isValid())
+-                workerResponder.processResponse (static_cast<uint32_t> (message.size()), message.data());
+-            else
+-                break;
+-        }
++        registry.insert (handle, responses);
+     }
+ 
+-    void registerHandle   (LV2_Handle handle) { registry.insert (handle); }
+-    void deregisterHandle (LV2_Handle handle) { registry.erase  (handle); }
++    void deregisterHandle (LV2_Handle handle) { registry.erase (handle); }
+ 
+ private:
+-    static constexpr auto queueSize = 8192;
+     std::atomic<bool> shouldExit { false };
+     WorkQueue<WorkSubmitter> incoming { queueSize };
+-    WorkQueue<WorkResponder> outgoing { queueSize };
+-    std::vector<char> message = std::vector<char> (queueSize);
+     std::thread thread { [this]
+     {
+         std::vector<char> buffer (queueSize);
+@@ -1165,13 +1157,26 @@ public:
+     explicit WorkScheduler (HandleHolder& handleHolderIn)
+         : handleHolder (handleHolderIn) {}
+ 
+-    void processResponses() { workerThread->processResponses(); }
++    void processResponses()
++    {
++        // Only this instance's render context reads its responses. Other
++        // instances may be rendering concurrently.
++        for (;;)
++        {
++            const auto responder = responses.pop (message);
++
++            if (! responder.isValid())
++                break;
++
++            responder.processResponse (static_cast<uint32_t> (message.size()), message.data());
++        }
++    }
+ 
+     LV2_Worker_Schedule& getWorkerSchedule() { return schedule; }
+ 
+     void setNonRealtime (bool nonRealtime) { realtime = ! nonRealtime; }
+ 
+-    void registerHandle   (LV2_Handle handle) { workerThread->registerHandle   (handle); }
++    void registerHandle (LV2_Handle handle) { workerThread->registerHandle (handle, responses); }
+     void deregisterHandle (LV2_Handle handle) { workerThread->deregisterHandle (handle); }
+ 
+ private:
+@@ -1197,6 +1202,8 @@ private:
+         return static_cast<WorkScheduler*> (handle)->scheduleWork (size, data);
+     }
+ 
++    WorkerResponseQueue responses { SharedThreadedWorker::queueSize };
++    std::vector<char> message = std::vector<char> (SharedThreadedWorker::queueSize);
+     SharedResourcePointer<SharedThreadedWorker> workerThread;
+     HandleHolder& handleHolder;
+     LV2_Worker_Schedule schedule { this, scheduleWork };
