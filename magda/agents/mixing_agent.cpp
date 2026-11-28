@@ -20,7 +20,9 @@ const char* MixAnalysisAgent::getSystemPrompt() {
            "non-aggressive highs; trap leans on heavy sub; etc. Do NOT flag a genre-appropriate "
            "balance, brightness or loudness as a fault. Only call out tonal/dynamic traits that "
            "are problems even within that genre's norms.\n"
-           "Each row is: name [role] | LUFS-I (integrated loudness) | peak dBFS (sample) | TP "
+           "Each row is: name [role] | LUFS-I (integrated loudness) | LRA (loudness range in LU, "
+           "EBU Tech 3342: how far the loudness moves over time; '-' under 3 s) | peak dBFS "
+           "(sample) | TP "
            "(true peak dBTP, inter-sample; >0 means real clipping) | PLR (peak-to-loudness ratio, "
            "i.e. crest / how dynamic the track is, in LU) | PSR (peak-to-short-term) | corr "
            "(stereo correlation: 1 mono, ~0 wide, negative means out-of-phase) | width (0 mono .. "
@@ -71,9 +73,12 @@ juce::String MixAnalysisAgent::buildUserMessage(const Input& input) {
         if (!t.role.empty())
             r << " [" << t.role << "]";
         const juce::String tp = t.truePeakValid ? juce::String(t.truePeakDb, 1) : juce::String("-");
-        r << " | " << juce::String(t.integratedLufs, 1) << " | " << juce::String(t.samplePeakDb, 1)
-          << " | " << tp << " | " << juce::String(t.plr, 1) << " | " << juce::String(t.psr, 1)
-          << " | " << juce::String(t.correlation, 2) << " | " << juce::String(t.width, 2);
+        const juce::String lra =
+            t.loudnessRangeValid ? juce::String(t.loudnessRange, 1) : juce::String("-");
+        r << " | " << juce::String(t.integratedLufs, 1) << " | " << lra << " | "
+          << juce::String(t.samplePeakDb, 1) << " | " << tp << " | " << juce::String(t.plr, 1)
+          << " | " << juce::String(t.psr, 1) << " | " << juce::String(t.correlation, 2) << " | "
+          << juce::String(t.width, 2);
         if (!t.tonalDb.empty()) {
             r << "\n    tonal:";
             const auto& labels = MixAnalysisData::Track::tonalBandLabels;
@@ -112,7 +117,7 @@ juce::String MixAnalysisAgent::buildUserMessage(const Input& input) {
     }
 
     m << "Mix measurements (" << static_cast<int>(mix.tracks.size()) << " tracks).\n";
-    m << "Columns: name [role] | LUFS-I | peak dB | TP | PLR | PSR | corr | width\n";
+    m << "Columns: name [role] | LUFS-I | LRA | peak dB | TP | PLR | PSR | corr | width\n";
     for (const auto& t : mix.tracks)
         m << row(t) << "\n";
 

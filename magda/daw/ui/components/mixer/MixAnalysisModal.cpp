@@ -18,12 +18,15 @@ juce::String formatFindings(const MixAnalysisData& in) {
 
     juce::String out;
     out << "LEVELS (" << static_cast<int>(in.tracks.size()) << " tracks)\n";
-    out << col("NAME", 16) << col("LUFS", 7) << col("PEAK", 7) << col("PLR", 6) << col("COR", 6)
-        << "WID\n";
+    out << col("NAME", 16) << col("LUFS", 7) << col("LRA", 6) << col("PEAK", 7) << col("PLR", 6)
+        << col("COR", 6) << "WID\n";
     auto line = [&](const juce::String& name, const MixAnalysisData::Track& t) {
+        const auto lra =
+            t.loudnessRangeValid ? juce::String(t.loudnessRange, 1) : juce::String("-");
         out << col(name.substring(0, 15), 16) << col(juce::String(t.integratedLufs, 1), 7)
-            << col(juce::String(t.samplePeakDb, 1), 7) << col(juce::String(t.plr, 1), 6)
-            << col(juce::String(t.correlation, 2), 6) << juce::String(t.width, 2) << "\n";
+            << col(lra, 6) << col(juce::String(t.samplePeakDb, 1), 7)
+            << col(juce::String(t.plr, 1), 6) << col(juce::String(t.correlation, 2), 6)
+            << juce::String(t.width, 2) << "\n";
     };
     for (const auto& t : in.tracks)
         line(juce::String(t.name), t);

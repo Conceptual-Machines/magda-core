@@ -131,6 +131,24 @@ TEST_CASE("MixAnalysisAgent: heavy payload builds and is reasonably compact", "[
     REQUIRE(chars < 8000);
 }
 
+TEST_CASE("MixAnalysisAgent: each row carries the loudness range, or '-' without one",
+          "[mix_analysis][lra]") {
+    MixAnalysisAgent::Input in;
+    MixAnalysisData::Track measured;
+    measured.name = "Vocal";
+    measured.integratedLufs = -18.0f;
+    measured.loudnessRange = 7.4f;
+    measured.loudnessRangeValid = true;
+    MixAnalysisData::Track shortClip;
+    shortClip.name = "Riser";
+    shortClip.integratedLufs = -20.0f;
+    in.measurements.tracks = {measured, shortClip};
+
+    const auto payload = MixAnalysisAgent::buildUserMessage(in);
+    CHECK(payload.contains("Vocal | -18.0 | 7.4 | "));
+    CHECK(payload.contains("Riser | -20.0 | - | "));
+}
+
 // Hidden: hits the configured provider. Run with "[mix_analysis][llm]".
 TEST_CASE("MixAnalysisAgent: live analysis of a full mix", "[.][mix_analysis][llm]") {
     auto mix = buildHeavyMix();
