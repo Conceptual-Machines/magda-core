@@ -114,6 +114,12 @@ void MagdaAudioEngine::meterInto() {
         meters_.setRemotePeak(trackId, data);
     });
 
+    host_->meterOutputInto([this](bool measured, float peakL, float peakR) {
+        if (measured)
+            meters_.setOutputPeak(peakL, peakR);
+        else
+            meters_.clearOutputPeak();
+    });
     host_->meterDevicesInto(deviceMeters_);
 }
 
@@ -609,6 +615,22 @@ void MagdaAudioEngine::clearMasterInputSource() {
 
 bool MagdaAudioEngine::hasMasterInputSource() const {
     return host_->hasMasterInput();
+}
+
+bool MagdaAudioEngine::setAuditionSource(int slot, const juce::File& file, float gainDecibels,
+                                         double offsetBeats) {
+    return slot >= 0 && host_->setAuditionSource(static_cast<std::size_t>(slot), file, gainDecibels,
+                                                 offsetBeats);
+}
+
+void MagdaAudioEngine::clearAuditionSource(int slot) {
+    if (slot >= 0)
+        host_->clearAuditionSource(static_cast<std::size_t>(slot));
+}
+
+void MagdaAudioEngine::hearAuditionSource(int slot) {
+    host_->hearAuditionSource(slot >= 0 ? std::optional{static_cast<std::size_t>(slot)}
+                                        : std::nullopt);
 }
 
 void MagdaAudioEngine::setTrackFrozen(TrackId trackId, bool frozen) {

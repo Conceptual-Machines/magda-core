@@ -206,6 +206,48 @@ class CrossfadeRamp {
     std::atomic<int> remaining_{0};
 };
 
+/// How long an output select fades between two inputs (#3081).
+inline constexpr double kOutputSelectFadeSeconds = 0.015;
+
+/**
+ * @brief Which input an OutputSelect lets through, and the fade when that changes (#3081).
+ *
+ * Constant power, because the inputs are different material. A switch asked for during a fade
+ * waits for it to finish. Audio thread only once prepared.
+ */
+class OutputSelectFade {
+  public:
+    void prepare(int lengthSamples);
+
+    bool hasConfiguration(int lengthSamples) const {
+        return length_ == lengthSamples;
+    }
+
+    /// Starts a fade to @p wanted unless one is running. A select with fewer than the
+    /// @p inputs heard before is back on the master at once.
+    void retarget(int wanted, int inputs);
+
+    bool fading() const {
+        return remaining_ > 0;
+    }
+    int heard() const {
+        return heard_;
+    }
+    int fadingFrom() const {
+        return from_;
+    }
+
+    /// The fade from @p oldSide to @p newSide into @p dest, then @p newSide for the rest.
+    void process(juce::dsp::AudioBlock<float> dest, juce::dsp::AudioBlock<float> oldSide,
+                 juce::dsp::AudioBlock<float> newSide, int numSamples);
+
+  private:
+    int length_ = 0;
+    int remaining_ = 0;
+    int heard_ = 0;
+    int from_ = 0;
+};
+
 class PlanExecutor {
   public:
     /**
@@ -725,6 +767,9 @@ class PlanExecutor {
     juce::dsp::AudioBlock<float> audioIn(const PortRef& ref, int numSamples) const;
     juce::dsp::AudioBlock<float> audioOut(OpId op, int port, int numSamples) const;
 
+    /// @p in, folded to the tap's width, into the master tap.
+    void tapMaster(juce::dsp::AudioBlock<float> in, int numSamples);
+
     /// An output port as the SDK's view, over the same cached pointer row as audioBlock().
     ConstBufferView audioOutView(OpId op, int port, int numSamples) const;
     const juce::MidiBuffer& midiIn(const PortRef& ref) const;
@@ -785,6 +830,7 @@ class PlanExecutor {
     const std::shared_ptr<AudioDelayLine>& audioDelayFor(OpId op) const;
     const std::shared_ptr<MidiDelayLine>& midiDelayFor(OpId op) const;
     const std::shared_ptr<CrossfadeRamp>& crossfadeFor(OpId op) const;
+    const std::shared_ptr<OutputSelectFade>& outputSelectFor(OpId op) const;
     const std::shared_ptr<FeedbackCarry>& feedbackCarryFor(OpId op) const;
 
     /// The flag a note gate of this executor's plan keeps, for the executor
@@ -855,6 +901,14 @@ class PlanExecutor {
     std::vector<int> crossfadeForOp_;
     std::vector<std::shared_ptr<CrossfadeRamp>> crossfades_;
     int carriedCrossfades_ = 0;
+
+    /// Per op: the OutputSelect's fade, shared with the executor it was carried from; null for
+    /// every other op.
+    std::vector<std::shared_ptr<OutputSelectFade>> outputSelectForOp_;
+
+    /// Whether the master tap is filled at the output select, from the master path, rather
+    /// than at the master's Output: what is heard there may be an audition source (#3081).
+    bool tapsMasterAtSelect_ = false;
 
     /// Per op: the carry a FeedbackSend fills or a FeedbackReturn reads, or
     /// -1. Both halves of one cut route index the same carry. Shared with the

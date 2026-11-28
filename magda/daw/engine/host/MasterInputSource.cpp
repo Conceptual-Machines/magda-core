@@ -20,6 +20,7 @@ TrackInfo masterInputTrack() {
     track.type = TrackType::Media;
     track.name = "Master input";
     track.audioOutputDevice = "master";
+    track.soloSafe = true;
     return track;
 }
 

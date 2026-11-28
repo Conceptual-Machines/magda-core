@@ -150,6 +150,10 @@ class MagdaAudioEngine final : public AudioEngine,
     bool setMasterInputSource(const juce::File& file) override;
     void clearMasterInputSource() override;
     bool hasMasterInputSource() const override;
+    bool setAuditionSource(int slot, const juce::File& file, float gainDecibels,
+                           double offsetBeats) override;
+    void clearAuditionSource(int slot) override;
+    void hearAuditionSource(int slot) override;
     void adoptTrackFreeze(TrackId trackId, const OfflineRenderRequest& request) override;
     void previewNoteOnTrack(const std::string& track_id, int noteNumber, int velocity,
                             bool isNoteOn) override;

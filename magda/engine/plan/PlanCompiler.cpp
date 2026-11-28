@@ -279,6 +279,9 @@ class Compiler {
 
     /// Send @p out where @p track's output routing names.
     void routeOutput(const TrackInfo& track, PortRef out);
+
+    /// The master path and each audition source, aligned, into the select and its meter.
+    PortRef emitOutputSelect(PortRef master);
     HardwareOutputRoute masterHardwareOutput(const TrackInfo& master);
 
     /// The Pad track that is pad @p padId's channel on grid @p gridId, or null.
@@ -371,6 +374,8 @@ class Compiler {
     /// Post-mute output: what the track's destination and any track taking this
     /// track as its audio input actually receive.
     std::map<TrackId, PortRef> trackRoutedOutput_;
+    /// What each audition track puts out, waiting for the master's output select (#3081).
+    std::map<TrackId, PortRef> auditionOutputs_;
     /// Chain-head MIDI of each emitted track: MIDI sidechains and internal MIDI
     /// routes read it, which is the source track's incoming MIDI rather than
     /// whatever its own chain made of it.
@@ -1018,6 +1023,8 @@ std::vector<PortRef> Compiler::alignInputs(const OpKey& key, OpKind kind,
                 return OpRole::FaderInputDelay;
             case OpKind::Subtract:
                 return OpRole::SubtractInputDelay;
+            case OpKind::OutputSelect:
+                return OpRole::OutputSelectInputDelay;
             default:
                 jassertfalse;  // nothing else fans in
                 return OpRole::MixInputDelay;
@@ -2090,11 +2097,18 @@ void Compiler::routeOutput(const TrackInfo& track, PortRef out) {
     const auto isMaster = track.id == master_.id;
 
     if (isMaster) {
+        if (!options_.auditionTracks.empty())
+            out = emitOutputSelect(out);
         const OpKey outputKey{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
                               INVALID_DEVICE_ID, OpRole::HardwareOutput, 0};
         const auto output = addOp(OpKind::Output, outputKey, {out}, {});
         plan_.ops[static_cast<std::size_t>(output)].hardwareOutput = masterHardwareOutput(track);
         plan_.outputOps.push_back(output);
+        return;
+    }
+
+    if (std::ranges::contains(options_.auditionTracks, track.id)) {
+        auditionOutputs_[track.id] = out;
         return;
     }
 
@@ -2144,6 +2158,32 @@ void Compiler::routeOutput(const TrackInfo& track, PortRef out) {
         return;
     }
     pendingInputs_[destination].push_back(out);
+}
+
+PortRef Compiler::emitOutputSelect(PortRef master) {
+    std::vector<PortRef> inputs{master};
+    for (const auto trackId : options_.auditionTracks) {
+        if (inputs.size() > kMaxAuditionSources) {
+            diagnose("track " + std::to_string(trackId) + ": past the " +
+                     std::to_string(kMaxAuditionSources) + " audition sources, not heard");
+            continue;
+        }
+        const auto found = auditionOutputs_.find(trackId);
+        if (found == auditionOutputs_.end()) {
+            diagnose("audition track " + std::to_string(trackId) + " was not compiled");
+            continue;
+        }
+        inputs.push_back(found->second);
+    }
+
+    const OpKey selectKey{master_.id,        INVALID_RACK_ID,      INVALID_CHAIN_ID,
+                          INVALID_DEVICE_ID, OpRole::OutputSelect, 0};
+    const auto select =
+        addOp(OpKind::OutputSelect, selectKey,
+              alignInputs(selectKey, OpKind::OutputSelect, std::move(inputs)), {SignalKind::Audio});
+
+    return PortRef{
+        addOp(OpKind::Meter, outputMeterKey(), {PortRef{select, 0}}, {SignalKind::Audio}), 0};
 }
 
 void Compiler::emitModulationTaps() {

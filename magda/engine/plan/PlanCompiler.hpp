@@ -69,6 +69,11 @@ struct CompileOptions {
     /// Tracks holding a device this build does not register (#3101), which render as a disabled
     /// one does. The host names them: the device catalogs are not the compiler's to read.
     std::set<TrackId> tracksMissingDevices;
+
+    /// Tracks played beside the master path rather than into it (#3081), in the order the
+    /// output select numbers them from 1. Each skips the master chain and fader; at most
+    /// kMaxAuditionSources.
+    std::vector<TrackId> auditionTracks;
 };
 
 /**
