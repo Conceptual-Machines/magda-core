@@ -6,10 +6,50 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <map>
+#include <vector>
 
+#include "ContributedCommands.hpp"
 #include "core/UndoManager.hpp"
 
 namespace magda {
+
+class MenuManager;
+
+/** @brief The menu bar's built-in menus, in bar order. */
+enum class Menu { File, Edit, View, Transport, Track, Window, Help };
+
+/** @brief Where in a built-in menu contributed items go, set off by a separator. */
+enum class MenuSection { Start, End };
+
+/**
+ * @brief The items one contribution adds, filled each time its menu is built (#3076).
+ *
+ * Items take ids from a range of their own, so the built-in menu ids never move.
+ */
+class MenuItems {
+  public:
+    void addItem(const juce::String& text, std::function<void()> action, bool enabled = true,
+                 bool ticked = false);
+
+    /** @brief A command registered with the main command manager: it shows its key and runs as
+     *         that command. */
+    void addCommandItem(juce::CommandID commandID);
+
+    void addSeparator();
+
+  private:
+    friend class MenuManager;
+    MenuItems(MenuManager& owner, juce::PopupMenu& menu, int firstId, int endId)
+        : owner_(owner), menu_(menu), nextId_(firstId), endId_(endId) {}
+
+    MenuManager& owner_;
+    juce::PopupMenu& menu_;
+    int nextId_;
+    int endId_;
+};
+
+using MenuBuilder = std::function<void(MenuItems&)>;
 
 class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
   public:
@@ -132,10 +172,13 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
     // render the command's current key from the mapping set instead of a
     // hardcoded per-platform string, so remaps (#20) stay in sync. Owned by
     // MainComponent; cleared (nullptr) on its destruction.
-    void setCommandManager(juce::ApplicationCommandManager* commandManager) {
+    void setCommandManager(juce::ApplicationCommandManager* commandManager,
+                           std::function<void()> reloadKeyMappings = {}) {
         commandManager_ = commandManager;
+        reloadKeyMappings_ = std::move(reloadKeyMappings);
+        if (commandManager_ != nullptr)
+            registerContributedCommands();
     }
-
     // Update menu item states
     void updateMenuStates(bool canUndo, bool canRedo, bool hasSelection, bool hasEditCursor,
                           bool leftPanelVisible, bool rightPanelVisible, bool bottomPanelVisible,
@@ -147,7 +190,40 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
     }
 
     /** @brief The macOS app menu's extra items: Settings, where Mac apps keep it (#3162). */
-    juce::PopupMenu getAppleMenuItems() const;
+    juce::PopupMenu getAppleMenuItems();
+
+    // ===== Contributions (#3076) =====
+
+    using ContributionId = int;
+
+    /** @brief A menu of the contributor's own, at @p position in the bar (clamped). */
+    ContributionId addTopLevelMenu(const juce::String& title, int position, MenuBuilder build);
+
+    /** @brief Items in a built-in menu, at its start or its end. */
+    ContributionId addItems(Menu menu, MenuSection section, MenuBuilder build);
+
+    /** @brief Items in the macOS app menu, after Settings. */
+    ContributionId addAppleMenuItems(MenuBuilder build);
+
+    void removeContribution(ContributionId id);
+
+    /** @brief Rebuild every menu, for a contributor whose items changed. */
+    void refresh();
+
+    juce::ApplicationCommandManager* getCommandManager() const {
+        return commandManager_;
+    }
+
+    /** @brief An extension's commands: they get keys, show in Shortcuts and run as commands. */
+    void addCommandTarget(juce::ApplicationCommandTarget* target);
+
+    /** @brief Stops routing to @p target. Its commands stay registered, so their keys are kept. */
+    void removeCommandTarget(juce::ApplicationCommandTarget* target);
+
+    /** @brief The target after the main component in the command chain. */
+    ContributedCommands& getContributedCommands() {
+        return contributedCommands_;
+    }
 
     // UndoManagerListener
     void undoStateChanged() override {
@@ -169,7 +245,44 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
     juce::String keyHint(juce::CommandID commandID) const;
     juce::String settingsItemText() const;
 
+    friend class MenuItems;
+
+    struct Contribution {
+        enum class Kind { TopLevel, Items, AppleMenu };
+        ContributionId id = 0;
+        Kind kind = Kind::Items;
+        juce::String title;
+        int position = 0;
+        Menu menu = Menu::File;
+        MenuSection section = MenuSection::End;
+        MenuBuilder build;
+    };
+
+    /// One menu in the bar: a built-in one, or a contributed top-level menu.
+    struct BarSlot {
+        int builtIn = -1;
+        const Contribution* contributed = nullptr;
+    };
+
+    std::vector<BarSlot> barLayout() const;
+    void addBuiltInItems(juce::PopupMenu& menu, int builtIn);
+    void addContributedItems(juce::PopupMenu& menu, Menu builtIn, MenuSection section, int& nextId,
+                             int endId);
+    void buildContribution(const Contribution& contribution, juce::PopupMenu& menu, int& nextId,
+                           int endId);
+    void clearContributedActions(int firstId, int endId);
+    ContributionId addContribution(Contribution contribution);
+
+    void registerContributedCommands();
+
     juce::ApplicationCommandManager* commandManager_ = nullptr;
+    std::function<void()> reloadKeyMappings_;
+    ContributedCommands contributedCommands_;
+    std::vector<juce::ApplicationCommandTarget*> commandTargets_;
+
+    std::vector<Contribution> contributions_;
+    std::map<int, std::function<void()>> contributedActions_;
+    ContributionId nextContributionId_ = 1;
 
     // Menu IDs
     enum MenuIDs {

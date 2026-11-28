@@ -668,7 +668,11 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
     // Let the menu bar render its shortcut hints from these (live) mappings
     // instead of hardcoded per-platform strings (#1352).
-    MenuManager::getInstance().setCommandManager(&commandManager);
+    // Extensions add commands after the saved remaps load, so each addition loads them again.
+    MenuManager::getInstance().setCommandManager(&commandManager, [this] {
+        if (keyMappingStore_ != nullptr)
+            keyMappingStore_->restore();
+    });
 
     // Plugin editor windows are separate top-level windows in the engine layer,
     // outside this component's key chain. Inject the command manager so they can
@@ -1623,8 +1627,8 @@ MainWindow::MainComponent::~MainComponent() {
 // ============================================================================
 
 juce::ApplicationCommandTarget* MainWindow::MainComponent::getNextCommandTarget() {
-    // We're the top-level command target
-    return nullptr;
+    // Commands this component does not list go on to the extensions' (#3076).
+    return &MenuManager::getInstance().getContributedCommands();
 }
 
 void MainWindow::MainComponent::paint(juce::Graphics& g) {

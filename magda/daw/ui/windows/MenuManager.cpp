@@ -3,6 +3,8 @@
 
 #include "MenuManager.hpp"
 
+#include <algorithm>
+
 #include "CommandIDs.hpp"
 #include "Config.hpp"
 #include "core/StringTable.hpp"
@@ -129,22 +131,207 @@ juce::String MenuManager::settingsItemText() const {
     return trEllipsis("settings.title") + keyHint(CommandIDs::openPreferences);
 }
 
-juce::PopupMenu MenuManager::getAppleMenuItems() const {
+namespace {
+
+// Contributed items take ids above every built-in one: a range per menu, and one for the app menu.
+constexpr int kContributedBase = 100000;
+constexpr int kSlotIds = 1000;
+constexpr int kAppleMenuSlot = 99;
+constexpr int kBuiltInMenus = 7;
+
+int firstIdOfSlot(int slot) {
+    return kContributedBase + slot * kSlotIds;
+}
+
+}  // namespace
+
+void MenuItems::addItem(const juce::String& text, std::function<void()> action, bool enabled,
+                        bool ticked) {
+    if (nextId_ >= endId_) {
+        jassertfalse;  // more items than one menu's id range holds
+        return;
+    }
+    const int id = nextId_++;
+    owner_.contributedActions_[id] = std::move(action);
+    menu_.addItem(id, text, enabled, ticked);
+}
+
+void MenuItems::addCommandItem(juce::CommandID commandID) {
+    if (auto* commands = owner_.getCommandManager())
+        menu_.addCommandItem(commands, commandID);
+}
+
+void MenuItems::addSeparator() {
+    menu_.addSeparator();
+}
+
+juce::PopupMenu MenuManager::getAppleMenuItems() {
     juce::PopupMenu menu;
     menu.addItem(Preferences, settingsItemText(), true, false);
+
+    const int firstId = firstIdOfSlot(kAppleMenuSlot);
+    const int endId = firstId + kSlotIds;
+    clearContributedActions(firstId, endId);
+    int nextId = firstId;
+    juce::PopupMenu contributed;
+    for (const auto& contribution : contributions_)
+        if (contribution.kind == Contribution::Kind::AppleMenu)
+            buildContribution(contribution, contributed, nextId, endId);
+    if (contributed.getNumItems() > 0) {
+        menu.addSeparator();
+        for (juce::PopupMenu::MenuItemIterator it(contributed); it.next();)
+            menu.addItem(it.getItem());
+    }
     return menu;
 }
 
+MenuManager::ContributionId MenuManager::addTopLevelMenu(const juce::String& title, int position,
+                                                         MenuBuilder build) {
+    return addContribution({.kind = Contribution::Kind::TopLevel,
+                            .title = title,
+                            .position = position,
+                            .build = std::move(build)});
+}
+
+MenuManager::ContributionId MenuManager::addItems(Menu menu, MenuSection section,
+                                                  MenuBuilder build) {
+    return addContribution({.kind = Contribution::Kind::Items,
+                            .menu = menu,
+                            .section = section,
+                            .build = std::move(build)});
+}
+
+MenuManager::ContributionId MenuManager::addAppleMenuItems(MenuBuilder build) {
+    return addContribution({.kind = Contribution::Kind::AppleMenu, .build = std::move(build)});
+}
+
+MenuManager::ContributionId MenuManager::addContribution(Contribution contribution) {
+    contribution.id = nextContributionId_++;
+    const auto id = contribution.id;
+    contributions_.push_back(std::move(contribution));
+    refresh();
+    return id;
+}
+
+void MenuManager::removeContribution(ContributionId id) {
+    std::erase_if(contributions_, [id](const Contribution& c) { return c.id == id; });
+    refresh();
+}
+
+void MenuManager::addCommandTarget(juce::ApplicationCommandTarget* target) {
+    contributedCommands_.add(target);
+    if (std::ranges::find(commandTargets_, target) == commandTargets_.end())
+        commandTargets_.push_back(target);
+    if (commandManager_ != nullptr)
+        registerContributedCommands();
+}
+
+void MenuManager::removeCommandTarget(juce::ApplicationCommandTarget* target) {
+    // JUCE's removeCommand drops a command's keys, and the shortcut store would save that.
+    contributedCommands_.remove(target);
+    std::erase(commandTargets_, target);
+}
+
+void MenuManager::registerContributedCommands() {
+    for (auto* target : commandTargets_)
+        commandManager_->registerAllCommandsForTarget(target);
+    // The saved remaps loaded before these commands existed, so they load again.
+    if (reloadKeyMappings_)
+        reloadKeyMappings_();
+}
+
+void MenuManager::refresh() {
+    menuItemsChanged();
+#if JUCE_MAC
+    // The app menu's items are copied when the bar is set, so a change sets it again.
+    if (juce::MenuBarModel::getMacMainMenu() == this) {
+        const auto appleMenu = getAppleMenuItems();
+        juce::MenuBarModel::setMacMainMenu(this, &appleMenu);
+    }
+#endif
+}
+
+std::vector<MenuManager::BarSlot> MenuManager::barLayout() const {
+    std::vector<BarSlot> layout;
+    for (int builtIn = 0; builtIn < kBuiltInMenus; ++builtIn)
+        layout.push_back({.builtIn = builtIn});
+    for (const auto& contribution : contributions_) {
+        if (contribution.kind != Contribution::Kind::TopLevel)
+            continue;
+        const auto at = std::clamp(contribution.position, 0, static_cast<int>(layout.size()));
+        layout.insert(layout.begin() + at, {.contributed = &contribution});
+    }
+    return layout;
+}
+
+void MenuManager::clearContributedActions(int firstId, int endId) {
+    contributedActions_.erase(contributedActions_.lower_bound(firstId),
+                              contributedActions_.lower_bound(endId));
+}
+
+void MenuManager::buildContribution(const Contribution& contribution, juce::PopupMenu& menu,
+                                    int& nextId, int endId) {
+    MenuItems items(*this, menu, nextId, endId);
+    if (contribution.build)
+        contribution.build(items);
+    nextId = items.nextId_;
+}
+
+void MenuManager::addContributedItems(juce::PopupMenu& menu, Menu builtIn, MenuSection section,
+                                      int& nextId, int endId) {
+    juce::PopupMenu contributed;
+    for (const auto& contribution : contributions_)
+        if (contribution.kind == Contribution::Kind::Items && contribution.menu == builtIn &&
+            contribution.section == section)
+            buildContribution(contribution, contributed, nextId, endId);
+    if (contributed.getNumItems() == 0)
+        return;
+
+    if (section == MenuSection::End)
+        menu.addSeparator();
+    for (juce::PopupMenu::MenuItemIterator it(contributed); it.next();)
+        menu.addItem(it.getItem());
+    if (section == MenuSection::Start)
+        menu.addSeparator();
+}
+
 juce::StringArray MenuManager::getMenuBarNames() {
-    return {tr("menu.file"),  tr("menu.edit"),   tr("menu.view"), tr("menu.transport"),
-            tr("menu.track"), tr("menu.window"), tr("menu.help")};
+    const juce::StringArray builtIn{tr("menu.file"),      tr("menu.edit"),  tr("menu.view"),
+                                    tr("menu.transport"), tr("menu.track"), tr("menu.window"),
+                                    tr("menu.help")};
+    juce::StringArray names;
+    for (const auto& slot : barLayout())
+        names.add(slot.contributed != nullptr ? slot.contributed->title : builtIn[slot.builtIn]);
+    return names;
 }
 
 juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                                              const juce::String& /*menuName*/) {
     juce::PopupMenu menu;
+    const auto layout = barLayout();
+    if (!juce::isPositiveAndBelow(topLevelMenuIndex, static_cast<int>(layout.size())))
+        return menu;
 
-    switch (topLevelMenuIndex) {
+    const int firstId = firstIdOfSlot(topLevelMenuIndex);
+    const int endId = firstId + kSlotIds;
+    clearContributedActions(firstId, endId);
+    int nextId = firstId;
+
+    const auto& slot = layout[static_cast<size_t>(topLevelMenuIndex)];
+    if (slot.contributed != nullptr) {
+        buildContribution(*slot.contributed, menu, nextId, endId);
+        return menu;
+    }
+
+    const auto builtIn = static_cast<Menu>(slot.builtIn);
+    addContributedItems(menu, builtIn, MenuSection::Start, nextId, endId);
+    addBuiltInItems(menu, slot.builtIn);
+    addContributedItems(menu, builtIn, MenuSection::End, nextId, endId);
+    return menu;
+}
+
+void MenuManager::addBuiltInItems(juce::PopupMenu& menu, int builtIn) {
+    switch (builtIn) {
         case 0:  // File
         {
             menu.addItem(NewProject, tr("menu.file.new_project") + keyHint(CommandIDs::newProject),
@@ -444,11 +631,19 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
         default:
             break;
     }
-
-    return menu;
 }
 
 void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
+    if (menuItemID >= kContributedBase) {
+        // A copy: the action may refresh the bar, which rebuilds the table it came from.
+        const auto found = contributedActions_.find(menuItemID);
+        if (found != contributedActions_.end() && found->second) {
+            const auto action = found->second;
+            action();
+        }
+        return;
+    }
+
     switch (menuItemID) {
         // File menu
         case NewProject:
