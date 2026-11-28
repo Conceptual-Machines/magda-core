@@ -3,7 +3,35 @@
 !!! note "Chord Engine device"
     The Chord Panel is the [Chord Engine](../devices/chord-engine.md) device's view, docked beside the clip editors. Everything it does is described in full on the Chord Engine page; this page covers where the panel appears and how it differs.
 
-![Chord Panel — K&S Mode](../assets/images/devices/chord-engine-ks.png)
+<div class="magda-ui mq mq-panel" markdown="span">
+<span class="mq-ce">
+<span class="mq-col">
+<span class="mq-sec">[<span class="mq-cap">Chord</span>](#chord-detection)<span class="mq-btn">C</span></span>
+<span class="mq-chordbox"><span class="mq-chordtitle"><span class="mq-chordname">C4 maj</span><span class="mq-badge">I</span></span></span>
+<span class="mq-status">MIDI in &middot; play a chord or pick one</span>
+<span class="mq-sec">[<span class="mq-cap">History</span>](#chord-detection):general-delete:</span>
+<span class="mq-hist"><span class="mq-chip">G3 maj<small>V</small></span>&rarr;<span class="mq-chip">C4 maj<small>I</small></span></span>
+</span>
+<span class="mq-col">
+<span class="mq-tabs"><span class="mq-tab on">:ai-psychology:</span>[<span class="mq-tab">:ai-ai-sound-designer:</span>](#ai-mode)<span class="mq-sub">after C4 maj</span><span class="mq-legend mq-sub"><span class="mq-fn mq-t">tonic</span><span class="mq-fn mq-p">pre-dominant</span><span class="mq-fn mq-d">dominant</span></span></span>
+<span class="mq-group">[<span class="mq-cap">Diatonic</span>](#suggestions) <span class="mq-sub">in key</span></span>
+<span class="mq-tiles"><span class="mq-tile mq-t">C maj7<small>I7</small></span><span class="mq-tile mq-p">F maj7<small>IV7</small></span><span class="mq-tile mq-d">G maj7<small>V7</small></span><span class="mq-tile mq-t">A min7<small>vi7</small></span><span class="mq-tile mq-p">D min<small>ii</small></span><span class="mq-tile mq-t">E min<small>iii</small></span><span class="mq-tile mq-p">F maj<small>IV</small></span><span class="mq-tile mq-d">G maj<small>V</small></span></span>
+<span class="mq-group">[<span class="mq-cap">Beyond the key</span>](#suggestions) <span class="mq-sub">secondary, borrowed &amp; substitutes</span></span>
+<span class="mq-tiles"><span class="mq-tile mq-d">A 7<small>V/x</small></span><span class="mq-tile mq-d">B 7<small>V/x</small></span><span class="mq-tile mq-d">C 7<small>V/x</small></span><span class="mq-tile mq-d">D 7<small>V/x</small></span></span>
+</span>
+<span class="mq-col">
+<span class="mq-sec">[<span class="mq-cap">Key</span>](#key-detection)[:browser-browser:](#browse)</span>
+<span class="mq-keybox">C major</span>
+<span class="mq-sec" style="margin-top:0.8em">[<span class="mq-cap">Scales</span>](#scale-detection)</span>
+<span class="mq-scale">C Major (Ionian)</span>
+<span class="mq-scale">C Mixolydian</span>
+<span class="mq-scale">C Lydian</span>
+<span class="mq-scale">C Major Pentatonic</span>
+<span class="mq-scale">G Major (Ionian)</span>
+</span>
+</span>
+<span class="mq-foot">[:panels-right_close:](#where-it-appears)<span class="mq-slider"></span><span class="mq-mono">30%</span><span class="mq-vsep"></span>[<span class="mq-seg"><span class="on">7th</span><span>9th</span><span>11th</span><span>13th</span><span>Alt</span></span>](#footer-controls)[<span class="mq-filter">:general-funnel:</span>](#footer-controls){ .mq-push }</span>
+</div>
 
 The Chord Panel is a real-time chord analysis and suggestion tool. It detects chords as you play, identifies the musical key, lists matching scales, and suggests what chord to play next.
 
@@ -65,8 +93,6 @@ The centre column shows chord suggestions ranked by musical relevance, in two gr
 The browse button beside the key (*Browse scales*) swaps the suggestions for a list of every scale, with root-note buttons to narrow it to one key. The back arrow (*Back to suggestions*) returns to the suggestions.
 
 ## AI Mode
-
-![Chord Panel — AI Mode](../assets/images/devices/chord-engine-ai.png)
 
 Switch to the **AI** tab, with the icons at the top of the suggestions column, to generate chord progressions from text descriptions. Type a prompt describing the style or mood (e.g. "Soulful I-iv-V7", "Jazzy backdoor voicing") in the prompt at the foot of the panel and the AI returns labelled progressions as rows of chord buttons. Press a chord to audition it, or drag it onto the editor beside the panel.
 

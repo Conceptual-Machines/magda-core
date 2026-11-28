@@ -93,19 +93,17 @@ MAGDA shows controller coverage as small dots on macro knobs, parameter slots, a
 
 A device header can show two dots side-by-side (green for profile coverage, orange for any Learn'd binding inside the device).
 
-![Macro panel with green automap dots](../assets/images/interface/controllers-automap.png)
-
-*Above: a synth focused with an automap-mapped controller. Each macro knob carries a green dot — the automap profile is driving them, and the device-header dot mirrors the same green.*
-
-![Synth filter showing an orange MIDI-learn dot on FREQ](../assets/images/interface/controllers-midilearn.png)
-
-*Above: the FREQ slider has an orange dot — a user MIDI Learn binding is in effect. The device-header dot turns orange to mirror it.*
+<div class="magda-ui mc mc-fit" markdown="span">
+<span class="mc-panels">
+<span class="mc-row mc-dhdr"><span class="mc-on-mac">:knob-knob:</span> :trackchain-icon-mods-boldm: :ai-ai-sound-designer:<span class="mc-sep"></span><span class="mc-preset">Presets :general-chevron_down:</span> :general-save:<span class="mc-sep"></span>[<span class="mc-name">Poly Synth</span><span class="mc-hdot" style="--mc-c: #43c07a"></span><span class="mc-hdot" style="--mc-c: #ff6b35"></span>](#indicator-legend)<span class="mc-led mc-push"></span></span>
+<span class="mc-panel"><span class="mc-ptitle"><span class="mc-caps mc-macro">MACROS</span><span class="mc-push mc-dim">&lsaquo;&ensp;1/2&ensp;&rsaquo;</span><span class="mc-dim">+</span></span>[<span class="mc-grid4"><span class="mc-card mc-mcard"><span class="mc-bind" style="--mc-c: #43c07a"></span><svg class="mc-knob" viewBox="0 0 32 32"><path d="M8.2 23.8A11 11 0 1 1 23.8 23.8" stroke="#2f3640" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M8.2 23.8A11 11 0 0 1 21.9 6.7" stroke="#7777dd" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M16 16L19.8 10.1" stroke="#e8edf1" stroke-width="2" stroke-linecap="round"/></svg><span class="mc-row"><span class="mc-val">62%</span>:general-link_flat:</span></span><span class="mc-card mc-mcard"><span class="mc-bind" style="--mc-c: #43c07a"></span><svg class="mc-knob" viewBox="0 0 32 32"><path d="M8.2 23.8A11 11 0 1 1 23.8 23.8" stroke="#2f3640" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M8.2 23.8A11 11 0 0 1 8.9 7.6" stroke="#7777dd" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M16 16L11.5 10.7" stroke="#e8edf1" stroke-width="2" stroke-linecap="round"/></svg><span class="mc-row"><span class="mc-val">35%</span>:general-link_flat:</span></span><span class="mc-card mc-mcard"><span class="mc-bind" style="--mc-c: rgb(124 133 141 / 55%)"></span><svg class="mc-knob" viewBox="0 0 32 32"><path d="M8.2 23.8A11 11 0 1 1 23.8 23.8" stroke="#2f3640" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M8.2 23.8A11 11 0 0 1 16.0 5.0" stroke="#7777dd" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M16 16L16.0 9.0" stroke="#e8edf1" stroke-width="2" stroke-linecap="round"/></svg><span class="mc-row"><span class="mc-val">50%</span>:general-link_flat:</span></span><span class="mc-card mc-mcard"><span class="mc-bind" style="--mc-c: #ff6b35"></span><svg class="mc-knob" viewBox="0 0 32 32"><path d="M8.2 23.8A11 11 0 1 1 23.8 23.8" stroke="#2f3640" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M8.2 23.8A11 11 0 1 1 26.9 14.3" stroke="#7777dd" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M16 16L22.9 14.9" stroke="#e8edf1" stroke-width="2" stroke-linecap="round"/></svg><span class="mc-row"><span class="mc-val">80%</span>:general-link_flat:</span></span></span>](#indicator-legend)</span>
+<span class="mc-panel"><span class="mc-tabs"><span class="mc-sel mc-caps">FILTER 1</span></span><span class="mc-cells" style="--mc-cols: 2">[<span class="mc-cell">Cutoff<b>3.0 kHz</b><span class="mc-bind" style="--mc-c: #ff6b35"></span></span>](#midi-learn)<span class="mc-cell">Reso<b>30.0%</b></span></span></span>
+</span>
+</div>
 
 ## Generating a Profile from Description
 
 If MAGDA doesn't ship a profile for your controller, the AI Assistant can write one for you. In the AI panel, type `/co` to autocomplete `/controller`, then describe the controller after the command:
-
-![/controller autocomplete in the AI panel](../assets/images/interface/controllers-slash.png)
 
 ```
 /controller Akai MPK Mini Mk3, 8 knobs on CC 70-77, channel 1

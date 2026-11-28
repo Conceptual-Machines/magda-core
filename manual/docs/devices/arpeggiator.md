@@ -4,8 +4,6 @@ The Arpeggiator is a MIDI device that takes held chords and plays them back as a
 
 ## Overview
 
-![Arpeggiator](../assets/images/devices/arpeggiator.png)
-
 The Arpeggiator sits on a track's device chain before an instrument. It intercepts incoming MIDI chords and outputs arpeggiated note sequences. Hold a chord on your keyboard and the arpeggiator cycles through its notes at the configured rate and pattern.
 
 ## Parameters

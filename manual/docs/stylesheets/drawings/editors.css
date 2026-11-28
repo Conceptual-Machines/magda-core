@@ -1,0 +1,1041 @@
+/* Drawings for the editors pages; the palette is .magda-ui in extra.css. */
+
+/* The MIDI editors: toolbar, rail, row headers, grid and the control-lane drawer. */
+.md-typeset .me-editor {
+  --me-note: #dab27a;
+  --me-cols: 48;
+  --me-rows: 25;
+  --me-row: 0.65em;
+  --me-lane: 5.5em;
+  --me-head: 7em;
+  --me-inset: 1px;
+  --me-black: rgba(0, 0, 0, 0.3);
+  display: grid;
+  grid-template-columns: 2.2em var(--me-head) minmax(0, 1fr);
+  grid-template-rows: auto 1.7em calc(var(--me-rows) * var(--me-row)) var(--me-lane);
+  overflow: hidden;
+  background: var(--mw-panel);
+  font-size: 0.6rem;
+  line-height: 1.2;
+}
+
+.md-typeset .me-editor .twemoji {
+  height: 1.5em;
+}
+
+.md-typeset .me-editor .twemoji svg {
+  width: 1.5em;
+  max-height: none;
+}
+
+.md-typeset .me-toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.35em 0.5em;
+  border-bottom: 1px solid var(--mw-stroke);
+  background: var(--mw-transport);
+  white-space: nowrap;
+}
+
+.md-typeset .me-toolbar > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+}
+
+.md-typeset .me-editor .me-gap {
+  flex: 1;
+}
+
+.md-typeset .me-editor a.me-btn,
+.md-typeset .me-editor .me-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.1em;
+  height: 2.1em;
+  padding: 0 0.25em;
+  border-radius: 3px;
+  color: var(--mw-secondary);
+}
+
+.md-typeset .me-editor .me-tools {
+  padding: 2px;
+  border-radius: 4px;
+  background: var(--mw-bg);
+}
+
+.md-typeset .me-editor .me-on {
+  background: #2c3139;
+  box-shadow: inset 0 0 0 1px #3b424c;
+}
+
+.md-typeset .me-editor .me-lit {
+  background: #1d3a52;
+  box-shadow: inset 0 0 0 1px var(--mw-accent);
+}
+
+.md-typeset .me-editor .me-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 2.1em;
+  padding: 0 0.8em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 3px;
+  color: var(--mw-dim);
+  font-weight: 600;
+}
+
+.md-typeset .me-editor .me-key::before {
+  content: "";
+  width: 0.7em;
+  height: 0.7em;
+  margin-right: 0.5em;
+  border-radius: 2px;
+  background: var(--mw-dim);
+}
+
+.md-typeset .me-editor .me-purple {
+  border-color: #5b5bd6;
+  background: #5b5bd6;
+  color: var(--mw-text);
+}
+
+.md-typeset .me-editor .me-power {
+  background: rgba(67, 192, 122, 0.18);
+  color: var(--mw-positive);
+}
+
+.md-typeset .me-rail {
+  grid-column: 1;
+  grid-row: 2 / 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4em;
+  padding-top: 0.4em;
+  border-right: 1px solid var(--mw-stroke);
+  background: var(--mw-transport);
+}
+
+.md-typeset .me-ruler {
+  grid-column: 3;
+  grid-row: 2;
+  display: flex;
+  border-bottom: 1px solid var(--mw-stroke);
+  color: var(--mw-dim);
+}
+
+.md-typeset .me-ruler span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0.25em 0 0 0.3em;
+  border-left: 1px solid var(--mw-stroke);
+}
+
+.md-typeset .me-ruler b {
+  color: var(--mw-text);
+}
+
+/* Piano keys: the same 12-row pattern as the grid, top row a C. */
+.md-typeset .me-keys {
+  grid-column: 2;
+  grid-row: 3;
+  position: relative;
+  border-right: 1px solid var(--mw-stroke);
+  background: #12151a;
+}
+
+.md-typeset .me-keys::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 0 2.6em;
+  background:
+    linear-gradient(to bottom, #2a2e35 1px, transparent 1px) 0 0 / 100% var(--me-row),
+    linear-gradient(to bottom, #e9ecef 0 16.667%, #15181c 16.667% 25%, #e9ecef 25% 33.333%,
+      #15181c 33.333% 41.667%, #e9ecef 41.667% 50%, #15181c 50% 58.333%, #e9ecef 58.333% 75%,
+      #15181c 75% 83.333%, #e9ecef 83.333% 91.667%, #15181c 91.667% 100%)
+      0 0 / 100% calc(12 * var(--me-row));
+}
+
+.md-typeset .me-keys span {
+  position: absolute;
+  left: 0.5em;
+  top: calc(var(--y) * var(--me-row));
+  color: var(--mw-secondary);
+  line-height: var(--me-row);
+  font-size: 0.85em;
+}
+
+.md-typeset .me-grid {
+  grid-column: 3;
+  grid-row: 3;
+  background:
+    linear-gradient(to right, rgba(255, 255, 255, 0.17) 1px, transparent 1px) 0 0 / calc(100% / var(--me-cols) * 8) 100%,
+    linear-gradient(to right, rgba(255, 255, 255, 0.07) 1px, transparent 1px) 0 0 / calc(100% / var(--me-cols) * 2) 100%,
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px) 0 0 / calc(100% / var(--me-cols)) 100%,
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.35) 1px, transparent 1px) 0 0 / 100% var(--me-row),
+    linear-gradient(to bottom, transparent 0 16.667%, var(--me-black) 16.667% 25%, transparent 25% 33.333%,
+      var(--me-black) 33.333% 41.667%, transparent 41.667% 50%, var(--me-black) 50% 58.333%, transparent 58.333% 75%,
+      var(--me-black) 75% 83.333%, transparent 83.333% 91.667%, var(--me-black) 91.667% 100%)
+      0 0 / 100% calc(12 * var(--me-row));
+  background-color: #1b1f25;
+}
+
+.md-typeset .me-lanehead {
+  grid-column: 2;
+  grid-row: 4;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 0.4em 0.3em;
+  border-top: 1px solid var(--mw-stroke);
+  border-right: 1px solid var(--mw-stroke);
+  color: var(--mw-dim);
+}
+
+.md-typeset .me-lanehead > span {
+  display: flex;
+  gap: 0.1em;
+}
+
+.md-typeset .me-lanehead small {
+  align-self: flex-end;
+  font-size: 0.8em;
+}
+
+.md-typeset .me-lane {
+  grid-column: 3;
+  grid-row: 4;
+  border-top: 1px solid var(--mw-stroke);
+  background:
+    linear-gradient(to bottom, transparent calc(50% - 0.5px), rgba(255, 255, 255, 0.05) 0 calc(50% + 0.5px), transparent 0),
+    var(--mw-bg);
+}
+
+/* Each note draws its own velocity stem and dot in the lane below. */
+.md-typeset .me-notes {
+  grid-column: 3;
+  grid-row: 3 / 5;
+  position: relative;
+  pointer-events: none;
+}
+
+.md-typeset .me-notes i {
+  position: absolute;
+  left: calc(var(--x) * 100% / var(--me-cols));
+  top: calc(var(--y) * var(--me-row) + var(--me-inset));
+  width: calc(var(--w, 1) * 100% / var(--me-cols) - 1px);
+  height: calc(var(--me-row) - 2 * var(--me-inset));
+  border-radius: 2px;
+  background: var(--me-note);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+
+.md-typeset .me-notes i::before,
+.md-typeset .me-notes i::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: calc((var(--me-rows) - var(--y)) * var(--me-row) - var(--me-inset) + 0.6em + (127 - var(--v, 100)) / 127 * (var(--me-lane) - 1.2em));
+  width: 1px;
+  height: calc(var(--v, 100) / 127 * (var(--me-lane) - 1.2em));
+  background: var(--me-note);
+}
+
+.md-typeset .me-notes i::before {
+  left: -0.2em;
+  width: 0.45em;
+  height: 0.45em;
+  margin-top: -0.2em;
+  border-radius: 50%;
+}
+
+.md-typeset .me-notes .me-playhead {
+  position: absolute;
+  top: 0;
+  left: calc(var(--x) * 100% / var(--me-cols));
+  width: 1px;
+  height: calc(var(--me-rows) * var(--me-row));
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.md-typeset .me-editor a:hover .twemoji,
+.md-typeset .me-editor a:hover {
+  color: var(--mw-accent);
+}
+
+/* Drum Grid Editor: pad rows instead of keys, hits on eighths. */
+.md-typeset .me-drums {
+  --me-note: #d9968b;
+  --me-cols: 24;
+  --me-rows: 8;
+  --me-row: 1.9em;
+  --me-head: 12em;
+  --me-inset: 0.2em;
+  --me-black: transparent;
+}
+
+.md-typeset .me-drums .me-notes i {
+  width: calc(75% / var(--me-cols));
+}
+
+.md-typeset .me-pads {
+  grid-column: 2;
+  grid-row: 3;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--mw-stroke);
+  background: #14171c;
+}
+
+.md-typeset .me-pads a {
+  display: contents;
+}
+
+.md-typeset .me-pads a > span {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  height: var(--me-row);
+  padding: 0 0.5em;
+  border-bottom: 1px solid #0c0f14;
+  color: var(--mw-text);
+  font-size: 1.05em;
+}
+
+.md-typeset .me-pads a > span::before {
+  content: "";
+  border: 0.3em solid transparent;
+  border-left: 0.45em solid var(--mw-dim);
+  border-right: 0;
+}
+
+.md-typeset .me-pads small {
+  margin-left: auto;
+  color: var(--mw-dim);
+  font-size: 0.75em;
+}
+
+.md-typeset .me-pads em {
+  width: 1.4em;
+  border: 1px solid var(--mw-dim);
+  border-radius: 2px;
+  color: var(--mw-secondary);
+  font-size: 0.7em;
+  font-style: normal;
+  text-align: center;
+}
+
+/* Piano Roll with the Time Bend panel open on the right. */
+.md-typeset .me-bend {
+  --me-cols: 32;
+  grid-template-columns: 2.2em var(--me-head) minmax(0, 1fr) 20em;
+}
+
+.md-typeset .me-notes .me-ghost {
+  opacity: 0.3;
+}
+
+.md-typeset .me-notes .me-ghost::before,
+.md-typeset .me-notes .me-ghost::after {
+  display: none;
+}
+
+.md-typeset .me-tb {
+  grid-column: 4;
+  grid-row: 2 / 5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+  padding: 0.4em;
+  border-left: 1px solid var(--mw-stroke);
+  background: var(--mw-panel);
+  white-space: nowrap;
+}
+
+.md-typeset .me-tb > span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15em;
+}
+
+.md-typeset .me-tb > span > * {
+  flex-shrink: 0;
+}
+
+.md-typeset .me-tb .me-grp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15em;
+}
+
+.md-typeset .me-tb .me-row {
+  padding: 0.15em 0.2em;
+  border-radius: 3px;
+  background: var(--mw-surface);
+}
+
+.md-typeset .me-tb .me-btn {
+  min-width: 1.8em;
+  height: 1.8em;
+  padding: 0 0.4em;
+  font-size: 0.85em;
+  font-weight: 700;
+}
+
+.md-typeset .me-tb .me-chip {
+  height: 1.9em;
+  padding: 0 0.6em;
+  background: var(--mw-surface);
+  color: var(--mw-secondary);
+  font-size: 0.9em;
+}
+
+.md-typeset .me-tb .me-on {
+  background: #33475a;
+  box-shadow: none;
+  color: #9cc3e0;
+}
+
+.md-typeset .me-tb .me-cap {
+  margin-left: auto;
+  color: var(--mw-secondary);
+  font-size: 0.9em;
+}
+
+.md-typeset .me-tb .me-val {
+  padding: 0.2em 0.5em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 3px;
+  color: var(--mw-text);
+  font-size: 1.1em;
+}
+
+.md-typeset .me-tb a.me-curve {
+  display: block;
+  flex: 1;
+  min-height: 0;
+}
+
+.md-typeset .me-tb svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Waveform Editor: rail, ruler and audio, with the properties panel on the right. */
+.md-typeset .me-wave {
+  --me-clip: #d9a6dc;
+  grid-template-columns: 2.2em minmax(0, 1fr) 24em;
+  grid-template-rows: auto 1.7em 18.5em 1.1em;
+}
+
+.md-typeset .me-wave .me-ruler {
+  grid-column: 2;
+}
+
+.md-typeset .me-editor .me-name {
+  gap: 0.6em;
+  color: var(--mw-text);
+  font-family: var(--md-code-font-family);
+  font-weight: 400;
+}
+
+.md-typeset .me-editor .me-name::before {
+  content: "";
+  width: 0.8em;
+  height: 0.8em;
+  border-radius: 2px;
+  background: var(--me-clip);
+}
+
+.md-typeset .me-editor .me-green {
+  background: rgba(67, 192, 122, 0.12);
+  box-shadow: inset 0 0 0 1px var(--mw-positive);
+  color: var(--mw-positive);
+}
+
+.md-typeset .me-rail .me-gap {
+  flex: 1;
+}
+
+.md-typeset .me-rail {
+  padding-bottom: 0.4em;
+}
+
+.md-typeset .me-audio {
+  grid-column: 2;
+  grid-row: 3;
+  position: relative;
+  background: #111418;
+}
+
+.md-typeset .me-audio svg {
+  position: absolute;
+  inset: 1.6em 0 0;
+  width: 100%;
+  height: calc(100% - 1.6em);
+}
+
+.md-typeset .me-audio .me-file {
+  position: absolute;
+  top: 1.8em;
+  left: 0.6em;
+  color: var(--me-clip);
+  font-size: 1.1em;
+}
+
+.md-typeset .me-audio .me-labels {
+  position: absolute;
+  inset: 0;
+}
+
+.md-typeset .me-labels span {
+  position: absolute;
+  top: 0.3em;
+  bottom: 0;
+  left: calc(var(--x) * 1%);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.3em;
+  color: var(--mw-text);
+}
+
+.md-typeset .me-labels span::before {
+  content: "";
+  width: 0.7em;
+  height: 0.8em;
+  background: var(--c);
+  clip-path: polygon(0 0, 100% 0, 100% 65%, 50% 100%, 0 65%);
+}
+
+.md-typeset .me-labels span::after {
+  content: "";
+  position: absolute;
+  top: 0.9em;
+  bottom: 0;
+  left: 0.33em;
+  width: 1px;
+  background: var(--c);
+  opacity: 0.6;
+}
+
+.md-typeset .me-scroll {
+  grid-column: 2;
+  grid-row: 4;
+  padding: 0.3em 0;
+  background: #111418;
+}
+
+.md-typeset .me-scroll a {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(to right, #3f6f96 0 24%, #1e242d 24%);
+}
+
+.md-typeset .me-props {
+  grid-column: 3;
+  grid-row: 2 / 5;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 0.8em;
+  padding: 0.5em 0.6em;
+  border-left: 1px solid var(--mw-stroke);
+  white-space: nowrap;
+}
+
+.md-typeset .me-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+  min-width: 0;
+}
+
+.md-typeset .me-props .me-sec {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  margin-top: 0.35em;
+  color: var(--mw-dim);
+  font-family: var(--md-code-font-family);
+  font-size: 0.85em;
+  letter-spacing: 0.12em;
+}
+
+.md-typeset .me-props .me-sec::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--mw-stroke);
+}
+
+.md-typeset .me-props .me-row .me-sec {
+  flex: 1;
+  margin-top: 0;
+}
+
+.md-typeset .me-props .me-fold::before {
+  content: "";
+  border: 0.3em solid transparent;
+  border-top: 0.45em solid var(--mw-dim);
+  border-bottom: 0;
+}
+
+.md-typeset .me-props .me-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+  color: var(--mw-secondary);
+}
+
+.md-typeset .me-props .me-row > .me-field {
+  flex: 1;
+}
+
+.md-typeset .me-props .me-kv {
+  display: grid;
+  grid-template-columns: 2.8em minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.4em;
+  color: var(--mw-secondary);
+}
+
+.md-typeset .me-props .me-kv > span:first-child {
+  text-align: right;
+}
+
+.md-typeset .me-props .me-field {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.3em;
+  padding: 0.25em 0.4em;
+  border-radius: 3px;
+  background: #0f1216;
+  color: var(--mw-text);
+  font-family: var(--md-code-font-family);
+  font-size: 0.9em;
+}
+
+.md-typeset .me-props small {
+  color: var(--mw-dim);
+  font-size: 0.85em;
+}
+
+.md-typeset .me-props .me-menu {
+  justify-content: space-between;
+  font-family: inherit;
+}
+
+.md-typeset .me-props .me-menu::after {
+  content: "\25BE";
+  color: var(--mw-secondary);
+}
+
+.md-typeset .me-props .me-tog {
+  flex: 1;
+  padding: 0.4em 0.4em;
+  border-radius: 3px;
+  background: var(--mw-surface);
+  color: var(--mw-secondary);
+  font-size: 0.8em;
+  font-weight: 700;
+  text-align: center;
+}
+
+.md-typeset .me-props .me-tog.me-on {
+  background: #33475a;
+  box-shadow: none;
+  color: #9cc3e0;
+}
+
+.md-typeset .me-props .me-icons .twemoji {
+  height: 1.6em;
+  padding: 0.2em;
+  border-radius: 2px;
+  background: var(--mw-surface);
+}
+
+.md-typeset .me-props .me-icons .twemoji svg {
+  width: 1.2em;
+}
+
+.md-typeset .me-props .me-switch {
+  flex: none;
+  width: 2.2em;
+  height: 1.1em;
+  border-radius: 0.55em;
+  background: var(--mw-accent) radial-gradient(circle at calc(100% - 0.55em) 50%, #e8edf1 0.35em, transparent 0.38em);
+}
+
+/* Drum Grid device: pads and pad panel, then the selected pad's chain, then the side strip. */
+.md-typeset .me-device {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.8em;
+  gap: 2px;
+  padding: 2px;
+  font-size: 0.6rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.md-typeset .me-device .twemoji {
+  height: 1.5em;
+}
+
+.md-typeset .me-device .twemoji svg {
+  width: 1.5em;
+  max-height: none;
+}
+
+.md-typeset .me-device > span:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.md-typeset .me-dev {
+  flex: 1 1 36em;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 4px;
+  background: var(--mw-panel);
+}
+
+.md-typeset .me-dhead {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.35em 0.6em;
+  border-bottom: 1px solid var(--mw-stroke);
+  color: var(--mw-secondary);
+}
+
+.md-typeset .me-dhead .me-presets {
+  display: inline-flex;
+  justify-content: space-between;
+  width: 9em;
+  padding: 0.35em 0.6em;
+  border-radius: 3px;
+  background: var(--mw-surface);
+  color: var(--mw-text);
+}
+
+.md-typeset .me-dhead .me-presets::after {
+  content: "\25BE";
+  color: var(--mw-dim);
+}
+
+.md-typeset .me-dhead b {
+  color: var(--mw-text);
+  font-size: 1.3em;
+}
+
+.md-typeset .me-dhead::after {
+  content: "";
+  width: 0.6em;
+  height: 0.6em;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--mw-stroke);
+}
+
+.md-typeset .me-dbody {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  padding: 0.4em;
+}
+
+.md-typeset .me-dside {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+}
+
+.md-typeset .me-dside .me-gap {
+  flex: 1;
+}
+
+.md-typeset .me-device .me-ib {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2em;
+  height: 2.2em;
+  border-radius: 3px;
+  color: var(--mw-secondary);
+}
+
+.md-typeset .me-device .me-ib.me-on {
+  background: #263646;
+  color: #8fb8da;
+}
+
+.md-typeset .me-pagers {
+  color: var(--mw-dim);
+  font-size: 0.8em;
+  text-align: center;
+}
+
+.md-typeset .me-pgrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(3.6em, 5.4em));
+  grid-auto-rows: 3.4em;
+  gap: 0.35em;
+}
+
+.md-typeset .me-pgrid > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #333b45;
+  border-radius: 4px;
+  color: var(--mw-dim);
+  font-family: var(--md-code-font-family);
+  font-size: 0.9em;
+}
+
+.md-typeset .me-pgrid > .me-pad {
+  position: relative;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 0.3em 0.4em 0.3em 0.7em;
+  border: 1px solid #45648a;
+  background: #1f2732;
+  font-family: inherit;
+  font-size: 1em;
+}
+
+.md-typeset .me-pgrid > .me-pad::before {
+  content: "";
+  position: absolute;
+  left: 0.25em;
+  top: 0.35em;
+  bottom: 0.35em;
+  width: 2px;
+  background: var(--c);
+}
+
+.md-typeset .me-pgrid > .me-pad::after {
+  content: "";
+  position: absolute;
+  top: 0.55em;
+  right: 0.5em;
+  border: 0.3em solid transparent;
+  border-left: 0.45em solid var(--mw-text);
+  border-right: 0;
+}
+
+.md-typeset .me-pgrid > .me-sel {
+  border-color: #6f9fd6;
+}
+
+.md-typeset .me-pad small {
+  color: var(--mw-dim);
+  font-family: var(--md-code-font-family);
+}
+
+.md-typeset .me-pad b {
+  color: var(--mw-text);
+  font-size: 1.25em;
+}
+
+.md-typeset .me-ppanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  min-width: 10em;
+  padding-left: 0.4em;
+  border-left: 1px solid var(--mw-stroke);
+  color: var(--mw-secondary);
+}
+
+.md-typeset .me-ppanel b {
+  color: var(--mw-text);
+  font-size: 1.3em;
+}
+
+.md-typeset .me-ppanel b::before {
+  content: "";
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin-right: 0.5em;
+  border-radius: 50%;
+  background: #5b8fd0;
+}
+
+.md-typeset .me-ppanel code {
+  align-self: flex-start;
+  padding: 0;
+  background: none;
+  color: var(--mw-dim);
+}
+
+.md-typeset .me-ppanel .me-bar {
+  font-family: var(--md-code-font-family);
+}
+
+.md-typeset .me-ppanel .me-bar {
+  padding: 0.35em;
+  border-radius: 3px;
+  background: var(--mw-bg);
+  color: var(--mw-text);
+  text-align: center;
+}
+
+.md-typeset .me-ppanel .me-gain {
+  background: linear-gradient(to right, #3b5b80 0 72%, var(--mw-bg) 72%);
+}
+
+.md-typeset .me-ppanel .me-pan {
+  background: linear-gradient(to right, var(--mw-bg) calc(50% - 0.5px), var(--mw-dim) 0 calc(50% + 0.5px), var(--mw-bg) 0);
+}
+
+.md-typeset .me-ppanel .me-row {
+  display: flex;
+  gap: 0.4em;
+  margin-top: auto;
+}
+
+.md-typeset .me-device .me-power {
+  background: rgba(67, 192, 122, 0.18);
+  color: var(--mw-positive);
+}
+
+.md-typeset .me-tabs {
+  display: flex;
+  gap: 1.6em;
+  padding: 0.2em 0 0.4em;
+  color: #6a6fb8;
+  font-family: var(--md-code-font-family);
+  letter-spacing: 0.15em;
+}
+
+.md-typeset .me-tabs span:first-child {
+  border-bottom: 2px solid var(--mw-accent);
+  color: #a9c4e4;
+}
+
+.md-typeset .me-tabs span + span {
+  color: var(--mw-secondary);
+}
+
+.md-typeset .me-params {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(5.2em, 6.4em));
+  grid-auto-rows: 3.6em;
+  gap: 0.3em;
+}
+
+.md-typeset .me-params > span {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.25em;
+  padding: 0 0.6em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 3px;
+  color: var(--mw-secondary);
+}
+
+.md-typeset .me-params b {
+  color: var(--mw-text);
+  font-size: 1.2em;
+}
+
+.md-typeset .me-scope {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 10em;
+  border-radius: 3px;
+  background: var(--mw-bg);
+}
+
+.md-typeset .me-scope svg {
+  flex: 1;
+  width: 100%;
+}
+
+.md-typeset .me-scope span {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 0.5em 0.3em;
+  color: var(--mw-dim);
+  font-family: var(--md-code-font-family);
+  font-size: 0.8em;
+  font-style: normal;
+}
+
+.md-typeset .me-scope i {
+  font-style: normal;
+}
+
+.md-typeset .me-drop {
+  flex: 0 0 2.2em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #333b45;
+  border-radius: 4px;
+  color: var(--mw-dim);
+  font-size: 1.6em;
+}
+
+/* Side strip: power, then a stereo meter with the gain fader's line across it. */
+.md-typeset .me-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.4em 0.3em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 4px;
+  background: var(--mw-panel);
+}
+
+.md-typeset .me-strip .me-meter {
+  flex: 1;
+  width: 1.4em;
+  min-height: 6em;
+  background:
+    linear-gradient(to bottom, transparent 22%, #d8d8d8 22% calc(22% + 2px), transparent 0),
+    linear-gradient(to right, transparent 15%, #48a85e 15% 45%, transparent 45% 55%, #48a85e 55% 85%, transparent 85%) 0 100% / 100% 45% no-repeat,
+    linear-gradient(to right, transparent 15%, #2a3a2e 15% 45%, transparent 45% 55%, #2a3a2e 55% 85%, transparent 85%);
+}
+
+/* Narrow pages: the side panels move below the editor. */
+@media screen and (max-width: 37.5em) {
+  .md-typeset .me-bend,
+  .md-typeset .me-wave {
+    grid-template-columns: 2.2em var(--me-head) minmax(0, 1fr);
+  }
+
+  .md-typeset .me-wave {
+    grid-template-columns: 2.2em minmax(0, 1fr);
+  }
+
+  .md-typeset .me-tb,
+  .md-typeset .me-props {
+    grid-column: 1 / -1;
+    grid-row: 5;
+    border-top: 1px solid var(--mw-stroke);
+    border-left: 0;
+  }
+
+  .md-typeset .me-tb a.me-curve {
+    flex: none;
+    height: 12em;
+  }
+}

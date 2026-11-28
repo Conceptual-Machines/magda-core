@@ -1,0 +1,1098 @@
+/* Drawings for the chords pages; the palette is .magda-ui in extra.css. */
+
+/* Each drawing is laid out for the 680 px column and scales down with it. */
+.md-typeset .mq {
+  --mq-dev: #1b1e24;
+  --mq-head: #17191e;
+  --mq-well: #111317;
+  --mq-tile: #1f2329;
+  --mq-line: #2a3038;
+  --mq-blue: #7c9df0;
+  --mq-blue-bg: #283750;
+  --mq-tonic: #4f8cf5;
+  --mq-pre: #7468ea;
+  --mq-dom: #e8913a;
+  --mq-green: #6fd08f;
+  --mq-purple: #a99af5;
+  --mq-orange: #f0a35e;
+  --mq-tie: #8fa6f5;
+  container-type: inline-size;
+  overflow: hidden;
+  border: 1px solid var(--mq-line);
+  background: var(--mq-dev);
+}
+
+.md-typeset .mq > * {
+  font-size: min(0.68rem, 1.6cqw);
+}
+
+.md-typeset .mq .twemoji {
+  height: 1.45em;
+  vertical-align: middle;
+}
+
+.md-typeset .mq .twemoji svg {
+  width: 1.45em;
+  max-height: none;
+}
+
+/* The app recolours its icons at runtime, so the drawings paint them in the text colour. */
+.md-typeset .mq .twemoji svg [stroke]:not([stroke="none"]) {
+  stroke: currentcolor;
+}
+
+.md-typeset .mq .twemoji svg [fill]:not([fill="none"]) {
+  fill: currentcolor;
+}
+
+.md-typeset .mq a:hover {
+  color: var(--mw-accent);
+}
+
+.md-typeset .mq-mono,
+.md-typeset .mq-cap,
+.md-typeset .mq-sub {
+  font-family: var(--md-code-font-family);
+}
+
+.md-typeset .mq-cap {
+  color: var(--mw-dim);
+  font-size: 0.85em;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.md-typeset .mq-sub {
+  color: var(--mw-dim);
+  font-size: 0.85em;
+  letter-spacing: 0.04em;
+}
+
+.md-typeset .mq-dim {
+  color: var(--mw-dim);
+}
+
+/* Device frame: header and body, with the side strip down the right. */
+.md-typeset .mq-device {
+  display: grid;
+  grid-template-columns: 1fr 2.8em;
+}
+
+.md-typeset .mq-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.md-typeset .mq-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  height: 2.8em;
+  padding: 0 0.8em;
+  border-bottom: 1px solid var(--mq-line);
+  background: var(--mq-head);
+  color: var(--mw-secondary);
+  white-space: nowrap;
+}
+
+.md-typeset .mq-name {
+  color: var(--mw-text);
+  font-weight: 700;
+}
+
+.md-typeset .mq-led {
+  width: 0.65em;
+  height: 0.65em;
+  margin-left: auto;
+  border-radius: 50%;
+  background: #353a42;
+}
+
+.md-typeset .mq-vsep {
+  align-self: stretch;
+  width: 1px;
+  margin: 0.6em 0.1em;
+  background: var(--mq-line);
+}
+
+.md-typeset .mq-presets {
+  display: inline-flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 10em;
+  padding: 0.3em 0.6em;
+  border-radius: 4px;
+  background: var(--mq-tile);
+  color: var(--mw-text);
+}
+
+.md-typeset .mq-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.45em 0;
+  border-left: 1px solid var(--mq-line);
+  background: var(--mq-head);
+}
+
+.md-typeset .mq-power {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2em;
+  height: 2em;
+  border-radius: 4px;
+  background: #1f3a28;
+  color: var(--mw-positive);
+}
+
+/* MIDI devices show incoming notes in place of the meter. */
+.md-typeset .mq-noteview {
+  flex: 1;
+  width: 0.9em;
+  border-radius: 2px;
+  background: var(--mq-well) linear-gradient(var(--mw-positive), var(--mw-positive)) no-repeat 0 62% / 100% 2px;
+}
+
+.md-typeset .mq-delta {
+  color: var(--mw-secondary);
+  font-weight: 700;
+}
+
+/* Chord Engine: chord, suggestions and key columns over a footer. */
+.md-typeset .mq-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.md-typeset .mq-ce {
+  display: grid;
+  grid-template-columns: 26% 1fr 19%;
+  flex: 1;
+}
+
+.md-typeset .mq-col,
+.md-typeset .mq-chordbox,
+.md-typeset .mq-group,
+.md-typeset .mq-scale {
+  display: block;
+}
+
+.md-typeset .mq-col {
+  min-width: 0;
+  padding: 0.8em;
+  border-right: 1px solid var(--mq-line);
+}
+
+.md-typeset .mq-col:last-child {
+  border-right: 0;
+}
+
+.md-typeset .mq-sec {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 2em;
+  margin-bottom: 0.4em;
+}
+
+.md-typeset .mq-btn {
+  padding: 0.15em 0.9em;
+  border: 1px solid var(--mq-line);
+  border-radius: 4px;
+  background: var(--mq-well);
+  color: var(--mw-secondary);
+  font-family: var(--md-code-font-family);
+}
+
+.md-typeset .mq-chordbox {
+  padding: 0.7em 0.9em;
+  border: 1px solid #2c323b;
+  border-radius: 6px;
+  background: var(--mq-well);
+}
+
+.md-typeset .mq-chordtitle {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+}
+
+.md-typeset .mq-chordname {
+  font-size: 1.8em;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.md-typeset .mq-badge {
+  padding: 0.15em 0.5em;
+  border-radius: 4px;
+  background: rgba(124, 157, 240, 0.16);
+  color: var(--mq-blue);
+  font-family: var(--md-code-font-family);
+}
+
+.md-typeset .mq-voicing {
+  margin-left: auto;
+  color: var(--mw-dim);
+  font-family: var(--md-code-font-family);
+  font-size: 0.9em;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+
+/* Two octaves; black keys sit at (i + 0.68) / 14 of the width, as in paintCurrentChord. */
+.md-typeset .mq-keys {
+  display: flex;
+  position: relative;
+  gap: 1px;
+  height: 3.2em;
+  margin-top: 0.6em;
+}
+
+.md-typeset .mq-keys > span {
+  flex: 1;
+  border-radius: 2px;
+  background: #d9dee4;
+}
+
+.md-typeset .mq-keys > i {
+  position: absolute;
+  top: 0;
+  width: 4.4%;
+  height: 60%;
+  border-radius: 2px;
+  background: var(--mq-well);
+}
+
+.md-typeset .mq-keys > .on {
+  background: var(--mq-blue);
+}
+
+.md-typeset .mq-keys > i.on {
+  background: #5670b0;
+}
+
+.md-typeset .mq-status {
+  display: block;
+  margin: 0.7em 0;
+  color: var(--mw-dim);
+  font-family: var(--md-code-font-family);
+  font-size: 0.9em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.md-typeset .mq-status::before {
+  content: "";
+  display: inline-block;
+  width: 0.65em;
+  height: 0.65em;
+  margin-right: 0.6em;
+  border-radius: 50%;
+  background: var(--mw-positive);
+}
+
+.md-typeset .mq-hist {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4em;
+  color: var(--mw-dim);
+}
+
+.md-typeset .mq-chip {
+  display: inline-flex;
+  flex-direction: column;
+  padding: 0.35em 0.65em;
+  border: 1px solid var(--mq-line);
+  border-radius: 4px;
+  background: var(--mq-tile);
+  color: var(--mw-text);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.md-typeset .mq-chip small,
+.md-typeset .mq-tile small {
+  color: var(--mw-dim);
+  font-family: var(--md-code-font-family);
+  font-size: 0.85em;
+  font-weight: 400;
+}
+
+.md-typeset .mq-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin-bottom: 0.2em;
+  white-space: nowrap;
+}
+
+.md-typeset .mq-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4em;
+  height: 2.4em;
+  border-radius: 5px;
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mq-tab.on {
+  background: var(--mq-blue-bg);
+  color: var(--mq-blue);
+}
+
+.md-typeset .mq-legend {
+  display: inline-flex;
+  gap: 0.8em;
+  margin-left: auto;
+  font-size: 0.8em;
+}
+
+.md-typeset .mq-push {
+  margin-left: auto;
+}
+
+.md-typeset .mq-fn::before,
+.md-typeset .mq-tile::after {
+  content: "";
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  border-radius: 50%;
+  background: var(--fn);
+}
+
+.md-typeset .mq-fn::before {
+  margin-right: 0.45em;
+}
+
+.md-typeset .mq-t { --fn: var(--mq-tonic); }
+.md-typeset .mq-p { --fn: var(--mq-pre); }
+.md-typeset .mq-d { --fn: var(--mq-dom); }
+
+.md-typeset .mq-group {
+  margin: 0.8em 0 0.45em;
+}
+
+.md-typeset .mq-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.4em;
+}
+
+.md-typeset .mq-tile {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  padding: 0.5em 0.65em;
+  border: 1px solid var(--mq-line);
+  border-radius: 5px;
+  background: var(--mq-tile);
+  font-size: 1.05em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.md-typeset .mq-tile::after {
+  position: absolute;
+  top: 0.7em;
+  right: 0.7em;
+}
+
+.md-typeset .mq-keyrow {
+  display: flex;
+  gap: 0.4em;
+}
+
+.md-typeset .mq-keybox {
+  display: block;
+  flex: 1;
+  padding: 0.5em 0.7em;
+  border: 1px solid #2c323b;
+  border-radius: 6px;
+  background: var(--mq-well);
+  font-size: 1.35em;
+  white-space: nowrap;
+}
+
+.md-typeset .mq-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6em;
+  border: 1px solid #2c323b;
+  border-radius: 6px;
+  background: var(--mq-well);
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mq-scale {
+  margin-bottom: 0.35em;
+  padding: 0.45em 0.7em;
+  border: 1px solid var(--mq-line);
+  border-radius: 4px;
+  background: var(--mq-tile);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.md-typeset .mq-foot {
+  display: flex;
+  align-items: center;
+  gap: 1.1em;
+  padding: 0.6em 0.9em;
+  border-top: 1px solid var(--mq-line);
+  white-space: nowrap;
+}
+
+.md-typeset .mq-slider {
+  position: relative;
+  width: 7em;
+  height: 0.3em;
+  border-radius: 0.2em;
+  background: #2a2f37 linear-gradient(var(--mq-blue), var(--mq-blue)) no-repeat 0 0 / 30% 100%;
+}
+
+.md-typeset .mq-slider::after {
+  content: "";
+  position: absolute;
+  top: -0.35em;
+  left: calc(30% - 0.5em);
+  width: 1em;
+  height: 1em;
+  border-radius: 50%;
+  background: var(--mq-blue);
+}
+
+.md-typeset .mq-seg {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--mq-line);
+  border-radius: 6px;
+  background: var(--mq-well);
+}
+
+.md-typeset .mq-seg > span {
+  padding: 0.3em 0.85em;
+  border-radius: 4px;
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mq-seg > .on {
+  background: #2b3038;
+  color: var(--mw-text);
+}
+
+.md-typeset .mq-filter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4em;
+  height: 2.2em;
+  border-radius: 5px;
+  background: var(--mq-blue-bg);
+  color: var(--mq-blue);
+}
+
+/* Piano roll with its chord row; one grid row per semitone, four bars wide. */
+.md-typeset .mq-roll {
+  display: flex;
+  --row: 0.72em;
+}
+
+.md-typeset .mq-chordedit {
+  --row: 0.56em;
+}
+
+.md-typeset .mq-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  padding: 0.6em 0.35em;
+  border-right: 1px solid var(--mq-line);
+  background: var(--mq-head);
+}
+
+.md-typeset .mq-railbtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2em;
+  height: 2.2em;
+  border-radius: 4px;
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mq-railbtn.on {
+  background: rgba(124, 157, 240, 0.18);
+  color: var(--mq-blue);
+}
+
+.md-typeset .mq-rollbody {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 4.8em 1fr;
+  min-width: 0;
+}
+
+.md-typeset .mq-rh {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3em;
+  padding: 0 0.4em 0 0.6em;
+  white-space: nowrap;
+  border-right: 1px solid var(--mq-line);
+  border-bottom: 1px solid var(--mq-line);
+  background: var(--mq-head);
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mq-rh .mq-cap {
+  letter-spacing: 0.08em;
+}
+
+.md-typeset .mq-lane {
+  display: block;
+  position: relative;
+  height: 3em;
+  border-bottom: 1px solid var(--mq-line);
+  background: var(--mq-well);
+}
+
+.md-typeset .mq-chordedit .mq-lane {
+  height: 5.5em;
+}
+
+.md-typeset .mq-cb {
+  display: flex;
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0 0.8em;
+  border-left: 2px solid #4f6d8f;
+  border-radius: 3px;
+  background: #222c3a;
+  color: var(--mw-text);
+  font-size: 1.05em;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.md-typeset .mq-chordedit .mq-cb {
+  font-size: 1.4em;
+}
+
+.md-typeset .mq-cb.on {
+  border: 1px solid #6f9fd0;
+  background: #2b3b52;
+}
+
+.md-typeset .mq-cb small {
+  color: var(--mw-secondary);
+  font-family: var(--md-code-font-family);
+  font-size: 0.7em;
+  letter-spacing: 0.1em;
+}
+
+.md-typeset .mq-ruler {
+  display: block;
+  position: relative;
+  height: 1.9em;
+  border-bottom: 1px solid var(--mq-line);
+  background: var(--mq-head);
+}
+
+.md-typeset .mq-ruler > span {
+  position: absolute;
+  bottom: 0;
+  height: 45%;
+  padding-left: 0.3em;
+  border-left: 1px solid #3a414b;
+  color: var(--mw-dim);
+  font-size: 0.85em;
+  line-height: 1;
+}
+
+.md-typeset .mq-ruler > .bar {
+  height: 75%;
+  color: var(--mw-text);
+  font-size: 1em;
+  font-weight: 700;
+}
+
+.md-typeset .mq-pkeys,
+.md-typeset .mq-rows {
+  display: grid;
+  grid-template-rows: repeat(var(--rows), var(--row));
+}
+
+.md-typeset .mq-pkeys {
+  border-right: 1px solid var(--mq-line);
+  background: #e3e6ea;
+}
+
+.md-typeset .mq-pkeys > span {
+  overflow: hidden;
+  padding-right: 0.3em;
+  border-bottom: 1px solid #c3c8ce;
+  color: #4a5058;
+  font-size: calc(var(--row) * 0.95);
+  line-height: 1;
+  text-align: right;
+}
+
+.md-typeset .mq-pkeys > .b {
+  border-bottom: 0;
+  background: linear-gradient(to right, #15171b 62%, #e3e6ea 62%);
+}
+
+.md-typeset .mq-grid {
+  display: block;
+  position: relative;
+  height: calc(var(--rows) * var(--row));
+}
+
+.md-typeset .mq-rows {
+  position: absolute;
+  inset: 0;
+}
+
+.md-typeset .mq-rows > .w { background: #181b20; }
+.md-typeset .mq-rows > .b { background: #121418; }
+
+/* Bar lines every quarter of the width, beat lines every sixteenth. */
+.md-typeset .mq-grid::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, #353c46 1px, transparent 1px),
+    linear-gradient(to right, #23282f 1px, transparent 1px);
+  background-size: 25% 100%, 6.25% 100%;
+}
+
+.md-typeset .mq-pn {
+  position: absolute;
+  z-index: 1;
+  height: calc(var(--row) - 2px);
+  margin-top: 1px;
+  border: 1px solid #a5c4e6;
+  border-radius: 2px;
+  background: #7aa7d8;
+}
+
+/* Step and Poly Sequencer faceplates: steps on the left, the time bend on the right. */
+.md-typeset .mq-hicons {
+  display: inline-flex;
+  gap: 0.7em;
+}
+
+.md-typeset .mq-rec { color: #e5484d; }
+.md-typeset .mq-thru { color: var(--mw-positive); }
+
+.md-typeset .mq-seqbody {
+  display: grid;
+  grid-template-columns: 2.8em 1fr 32%;
+  flex: 1;
+}
+
+.md-typeset .mq-sbar {
+  display: block;
+  padding: 0.5em 0.3em;
+  border-right: 1px solid var(--mq-line);
+}
+
+.md-typeset .mq-steps {
+  display: block;
+  min-width: 0;
+  padding: 0.55em 0.7em 0.6em 0.4em;
+  border-right: 1px solid var(--mq-line);
+}
+
+.md-typeset .mq-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35em 0.45em;
+  margin-left: 1.2em;
+  color: var(--mw-secondary);
+  font-size: 0.95em;
+  white-space: nowrap;
+}
+
+.md-typeset .mq-box {
+  padding: 0.2em 0.55em;
+  border: 1px solid var(--mq-line);
+  border-radius: 4px;
+  background: var(--mq-well);
+  color: var(--mw-text);
+  font-weight: 600;
+}
+
+.md-typeset .mq-caps > span {
+  padding: 0.15em 0.5em;
+  font-family: var(--md-code-font-family);
+  font-size: 0.85em;
+  letter-spacing: 0.1em;
+}
+
+.md-typeset .mq-sgrid {
+  display: grid;
+  grid-template-columns: 4.4em repeat(var(--n), minmax(0, 1fr));
+  gap: 0.3em 0.25em;
+  align-items: center;
+  margin-top: 0.4em;
+}
+
+.md-typeset .mq-sruler {
+  display: contents;
+  color: var(--mw-dim);
+  font-size: 0.9em;
+}
+
+.md-typeset .mq-sruler > span {
+  white-space: nowrap;
+}
+
+.md-typeset .mq-sruler > .play {
+  color: var(--mw-positive);
+}
+
+.md-typeset .mq-rl {
+  display: block;
+  color: var(--mw-secondary);
+  text-align: right;
+}
+
+.md-typeset .mq-slab {
+  color: var(--mw-secondary);
+  font-size: 1.1em;
+  text-align: right;
+}
+
+.md-typeset .mq-cell {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  height: 1.9em;
+  border: 1px solid #262b32;
+  border-radius: 4px;
+  background: #16191d;
+}
+
+.md-typeset .mq-cell::after {
+  content: "";
+  width: 72%;
+  height: 0.2em;
+  border-radius: 0.1em;
+  background: var(--bar, transparent);
+}
+
+.md-typeset .mq-cell.gt { --bar: var(--mq-green); border-color: #3f7d52; background: #1c2d22; }
+.md-typeset .mq-cell.gl { --bar: var(--mq-purple); border-color: #6a60b5; background: #262443; }
+.md-typeset .mq-cell.ac { --bar: var(--mq-orange); border-color: #a66a33; background: #34271b; }
+.md-typeset .mq-cell.ti { --bar: var(--mq-tie); border-color: #5468a8; background: #1f2740; }
+.md-typeset .mq-cell.ve { --bar: #6f8fe8; }
+.md-typeset .mq-cell.pr { --bar: #9a7ae0; }
+
+.md-typeset .mq-cell.pr::after {
+  height: 1.2em;
+  width: 50%;
+}
+
+.md-typeset .mq-nbox {
+  height: 2.4em;
+  color: var(--mw-text);
+  font-family: var(--md-code-font-family);
+  font-size: 0.95em;
+  font-weight: 600;
+}
+
+.md-typeset .mq-nbox::after {
+  display: none;
+}
+
+.md-typeset .mq-nbox.sel { border: 2px solid var(--mw-positive); }
+.md-typeset .mq-nbox.play { background: #1d3325; color: var(--mw-dim); }
+.md-typeset .mq-nbox.hi { color: var(--mw-text); }
+
+.md-typeset .mq-sgrid[style*="32"] {
+  column-gap: 0.15em;
+}
+
+.md-typeset .mq-seq .mq-sgrid[style*="32"] .mq-nbox {
+  color: var(--mw-dim);
+  font-weight: 400;
+}
+
+.md-typeset .mq-seq .mq-sgrid[style*="32"] .mq-nbox.hi {
+  color: var(--mw-text);
+}
+
+.md-typeset .mq-bend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  min-width: 0;
+  padding: 0.55em;
+}
+
+.md-typeset .mq-brow {
+  display: flex;
+  align-items: center;
+  gap: 0.22em;
+  font-size: 0.8em;
+  white-space: nowrap;
+}
+
+.md-typeset .mq-brow > * {
+  flex-shrink: 0;
+}
+
+.md-typeset .mq-bpow {
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mq-bbtn {
+  padding: 0.3em 0.45em;
+  border-radius: 4px;
+  background: #1f2329;
+  color: var(--mw-secondary);
+  font-size: 0.9em;
+  font-weight: 600;
+}
+
+.md-typeset .mq-bbtn.on {
+  background: var(--mq-blue-bg);
+  color: #8fb0e8;
+}
+
+.md-typeset .mq-blab {
+  margin-left: 0.2em;
+  color: var(--mw-dim);
+  font-size: 0.9em;
+}
+
+.md-typeset .mq-bend .mq-box {
+  padding: 0.2em 0.35em;
+}
+
+.md-typeset .mq-curve {
+  width: 100%;
+  margin-top: auto;
+  background: #181b20;
+}
+
+.md-typeset .mq-cgrid,
+.md-typeset .mq-cplay {
+  fill: none;
+  stroke: #262b32;
+  stroke-width: 0.8;
+}
+
+.md-typeset .mq-cplay { stroke: #3d566a; }
+.md-typeset .mq-cfill { fill: rgba(78, 106, 133, 0.12); }
+.md-typeset .mq-cline { fill: none; stroke: #4e6a85; stroke-width: 2; }
+.md-typeset .mq-cmid { fill: #181b20; stroke: #8a96a3; stroke-width: 1.2; }
+.md-typeset .mq-cend { fill: #c87a3a; }
+
+/* AI Chat tab of the left panel, drawn at about the panel's own width. */
+.md-typeset .mq-chat {
+  display: flex;
+  flex-direction: column;
+  max-width: 26rem;
+  background: var(--mq-well);
+}
+
+.md-typeset .mq-chat > * {
+  font-size: min(0.68rem, 2.5cqw);
+}
+
+.md-typeset .mq-chead,
+.md-typeset .mq-ctrl,
+.md-typeset .mq-ptabs {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.6em 0.8em;
+  white-space: nowrap;
+}
+
+.md-typeset .mq-chead {
+  border-bottom: 1px solid var(--mq-line);
+  background: var(--mq-head);
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mq-mark {
+  color: var(--mw-text);
+  font-size: 1.3em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.md-typeset .mq-mark::before {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-right: 0.6em;
+  background: var(--mw-accent);
+  transform: rotate(45deg) translateY(-0.1em);
+}
+
+.md-typeset .mq-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.3em 0.6em;
+  border: 1px solid var(--mq-line);
+  border-radius: 5px;
+  background: var(--mq-tile);
+  color: var(--mw-secondary);
+  font-family: var(--md-code-font-family);
+  font-size: 0.9em;
+}
+
+.md-typeset .mq-model::before {
+  content: "";
+  width: 0.6em;
+  height: 0.6em;
+  border-radius: 50%;
+  background: var(--mw-positive);
+}
+
+.md-typeset .mq-conv {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  padding: 0.9em 0.8em 1.2em;
+}
+
+.md-typeset .mq-you {
+  align-self: flex-end;
+  margin-top: 0.4em;
+  color: var(--mw-secondary);
+  font-family: var(--md-code-font-family);
+  font-size: 0.85em;
+  letter-spacing: 0.1em;
+}
+
+.md-typeset .mq-you em {
+  color: var(--mw-accent);
+  font-style: normal;
+  letter-spacing: 0.04em;
+}
+
+.md-typeset .mq-bubble {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 0.6em 0.8em;
+  border: 1px solid #39414c;
+  border-radius: 6px;
+  background: var(--mq-tile);
+  font-size: 1.1em;
+}
+
+.md-typeset .mq-who {
+  margin-top: 0.8em;
+  color: var(--mw-dim);
+  font-family: var(--md-code-font-family);
+  font-size: 0.8em;
+  letter-spacing: 0.12em;
+}
+
+.md-typeset .mq-reply {
+  display: block;
+  font-size: 1.1em;
+  line-height: 1.45;
+}
+
+.md-typeset .mq-prompt {
+  display: block;
+  height: 5em;
+  margin: 0 0.8em;
+  border: 1px solid #39414c;
+  border-radius: 5px;
+}
+
+.md-typeset .mq-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: 0.35em 0.6em;
+  border: 1px solid var(--mq-line);
+  border-radius: 5px;
+  background: var(--mq-tile);
+  color: var(--mw-dim);
+}
+
+.md-typeset .mq-target::before {
+  content: "";
+  width: 0.9em;
+  height: 0.9em;
+  border-radius: 2px;
+  background: #ff9c36;
+}
+
+.md-typeset .mq-target b {
+  color: var(--mw-text);
+  font-size: 1.15em;
+  font-weight: 500;
+}
+
+.md-typeset .mq-hint {
+  color: var(--mw-dim);
+  font-family: var(--md-code-font-family);
+  font-size: 0.85em;
+}
+
+.md-typeset .mq-hint kbd {
+  margin-right: 0.4em;
+  padding: 0.1em 0.35em;
+  border: 1px solid var(--mq-line);
+  border-radius: 3px;
+  background: none;
+  box-shadow: none;
+  color: var(--mw-dim);
+  font-size: 1em;
+}
+
+.md-typeset .mq-ctrl .mq-hint:first-of-type {
+  margin-left: auto;
+}
+
+.md-typeset .mq-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 0.3em 0.6em;
+  border: 1px solid var(--mq-line);
+  border-radius: 5px;
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mq-ptabs {
+  justify-content: center;
+  border-top: 1px solid var(--mq-line);
+  background: var(--mq-head);
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mq-ptabs .on {
+  border-radius: 4px;
+  background: var(--mq-blue-bg);
+  color: var(--mq-blue);
+}

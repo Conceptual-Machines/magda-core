@@ -2,7 +2,25 @@
 
 Each track has an **FX chain** — an ordered list of audio processors applied to the track's signal.
 
-![Track Chain](assets/images/panels/track-chain.png)
+<div class="magda-ui mc mc-chain" markdown="span">
+<span class="mc-row mc-tchdr">[:knob-knob: :trackchain-icon-mods-boldm:](panels/track-chain.md#header-controls)<span class="mc-sep"></span>:trackchain-icon-racks-boldm: :trackchain-multiband-rack: :trackchain-gain-staging:<span class="mc-sep"></span>[<span class="mc-preset">Presets :general-chevron_down:</span>](#track-chain-presets) :general-save:<span class="mc-sep"></span><span class="mc-name">7&ensp;Keys</span><span class="mc-push"></span>[:analysis-postfx:](#post-fx-section) :trackchain-oscilloscope3: :trackchain-icon-spectrum-boldm: :trackchain-icon-levels-boldm:<span class="mc-sep"></span><span class="mc-led"></span> :general-master_on::general-solo:<span class="mc-sep"></span><span class="mc-mono">-4.4 dB</span> <span class="mc-mono">L20</span><span class="mc-sep"></span><span class="mc-power">:general-power:</span> <span class="mc-fold">:general-chevron_down:</span></span>
+<span class="mc-devices">
+<span class="mc-dev mc-grow">
+<span class="mc-row mc-dhdr">:knob-knob: :trackchain-icon-mods-boldm:<span class="mc-sep"></span>:general-sidechain:<span class="mc-sep"></span>[<span class="mc-preset">Presets :general-chevron_down:</span>](#presets) :general-save:<span class="mc-sep"></span>[<span class="mc-name">Compressor</span>](#device-layout)<span class="mc-led mc-push"></span></span>
+<span class="mc-dside"><span class="mc-on">:trackchain-device-params:</span><span class="mc-on">:trackchain-device-faceplate:</span></span>
+<span class="mc-dbody"><span class="mc-col"><span class="mc-tabs"><span class="mc-sel">Curve</span><span>Timing</span><span>Level</span></span><span class="mc-cells"><span class="mc-cell">Threshold<b>-18.0 dB</b></span><span class="mc-cell">Ratio<b>4.0</b></span><span class="mc-cell">Knee<b>+6.0 dB</b></span></span></span><span class="mc-graph"><svg viewBox="0 0 100 80" preserveAspectRatio="none"><path d="M0 20H100M0 40H100M0 60H100M25 0V80M50 0V80M75 0V80" stroke="#232a33" stroke-width="1" fill="none" vector-effect="non-scaling-stroke"/><path d="M62 0V80" stroke="#c98a4a" stroke-width="1" vector-effect="non-scaling-stroke"/><path d="M0 76L60 40Q66 37 74 36L100 32" stroke="#5fc27a" stroke-width="2" fill="none" vector-effect="non-scaling-stroke"/></svg></span></span>
+<span class="mc-strip">[<span class="mc-power">:general-power:</span>](#device-power)<span class="mc-mix"><span class="mc-caps">MIX</span>100</span><span class="mc-meter"><i></i><i></i></span>[<span class="mc-delta">Δ</span>](#delta-solo)</span>
+</span>
+<span class="mc-dev">
+<span class="mc-row mc-dhdr">:knob-knob: :trackchain-icon-mods-boldm:<span class="mc-sep"></span><span class="mc-preset">Presets :general-chevron_down:</span> :general-save:<span class="mc-sep"></span><span class="mc-name">Reverb</span><span class="mc-led mc-push"></span></span>
+<span class="mc-dside"><span class="mc-on">:trackchain-device-params:</span><span>:trackchain-device-faceplate:</span></span>
+<span class="mc-dbody"><span class="mc-cells" style="--mc-cols: 1"><span class="mc-cell">Predelay<b>20.0 ms</b></span><span class="mc-cell">Decay<b>50.0</b></span></span><span class="mc-graph" style="flex-basis: 5em"><svg viewBox="0 0 100 80" preserveAspectRatio="none"><path d="M70 0V80" stroke="#7c858d" stroke-width="1" stroke-dasharray="3 3" fill="none" vector-effect="non-scaling-stroke"/><path d="M4 76V8C10 40 24 66 50 73S90 76 100 76Z" fill="#5b8dd6" fill-opacity="0.85"/></svg></span></span>
+<span class="mc-strip"><span class="mc-power">:general-power:</span><span class="mc-mix"><span class="mc-caps">MIX</span>30</span><span class="mc-meter"><i></i><i></i></span><span class="mc-delta">Δ</span></span>
+</span>
+[+](#working-with-devices){ .mc-add }
+</span>
+</div>
+
 
 ## Overview
 
@@ -31,9 +49,9 @@ See [Plugin Parameters](plugin-parameters.md) for per-plugin parameter visibilit
 
 Every device in the chain has the same height. Its parts:
 
-- **Header** — on the left, the **Macros** and **Mods** buttons that open the device's [macro](modulation/macros.md) and [modulator](modulation/modulators.md) panels, plus routing buttons when the device has them (MIDI thru, sidechain source, multi-output routing). Then the [preset box](#presets) and the device name. On the right, plugin devices carry **Locate** and a button that opens the plugin's own window. A small MIDI light flashes green when a note arrives on the track's MIDI input, but only while the track [monitors its input](tracks.md#input-monitoring). With monitoring off, incoming notes leave it dark.
+- **Header** — on the left, the **Macros** and **Mods** buttons that open the device's [macro](modulation/macros.md) and [modulator](modulation/modulators.md) panels. A third button follows on some devices: the **AI** icon on a device with an AI agent, such as Poly Synth (see [Per-Device AI Panel](panels/ai-assistant.md#per-device-ai-panel)), or the **Sidechain source** button on a device that takes a sidechain, such as the Compressor. The Step Sequencer and Poly Sequencer also show **Randomize pattern** and **Step record**. Other routing buttons follow when the device has them (MIDI thru, multi-output routing). Then the [preset box](#presets) and the device name. On the right, plugin devices carry **Locate** and a button that opens the plugin's own window. The Step Sequencer and Poly Sequencer carry a copy button: click it to copy the pattern, or drag it to the timeline. A small MIDI light flashes green when a note arrives on the track's MIDI input, but only while the track [monitors its input](tracks.md#input-monitoring). With monitoring off, incoming notes leave it dark.
 - **Sidebar** — down the left edge of the body, the toggles for the device's panels (for example its parameters or its faceplate) and the arrows that page through its parameters.
-- **Side strip** — down the right edge, the device's power button at the top, then its peak meter with the gain fader over it. Effects with a dry/wet mix also show a **Dry / Wet Mix** knob, and effects carry the **Δ** [delta-solo](#delta-solo) button at the bottom. MIDI devices show a strip of incoming notes in place of the meter.
+- **Side strip** — down the right edge, the device's power button at the top, then its peak meter with the gain fader over it. Effects with a dry/wet mix also show a **Dry / Wet Mix** knob. Effects and the Arpeggiator, Strum, Step Sequencer and Poly Sequencer carry the **Δ** [delta-solo](#delta-solo) button at the bottom. Instruments, the Chord Engine and the Utility do not. MIDI devices show a strip of incoming notes in place of the meter.
 
 A plugin's parameter grid shows one row fewer when the plugin sits inside a rack or a Drum Grid pad, so each value still fits under its name.
 
@@ -45,7 +63,7 @@ The gain fader in a device's or rack's side strip ignores the scroll wheel until
 
 ### Delta Solo
 
-The **Δ** button at the bottom of an effect's side strip (tooltip *Delta Solo: processed signal minus dry input*) lets you hear only what that device changes: MAGDA subtracts the device's latency-aligned dry input from its processed output, so you audition the difference alone. It is the direct way to check exactly what a compressor, EQ, or saturator is doing to the signal.
+The **Δ** button at the bottom of the side strip (tooltip *Delta Solo: processed signal minus dry input*) lets you hear only what that device changes: MAGDA subtracts the device's latency-aligned dry input from its processed output, so you audition the difference alone. It is the direct way to check exactly what a compressor, EQ, or saturator is doing to the signal.
 
 Delta solo and bypass are mutually exclusive: turning on delta solo powers the device on, and powering the device off clears delta solo. The button lights cyan while active.
 
@@ -88,7 +106,24 @@ Racks keep a small chevron beside their name. Its menu lists your rack presets, 
 
 ## Racks
 
-![Rack](assets/images/devices/rack.png)
+<div class="magda-ui mc" markdown="span">
+<span class="mc-rack">
+<span class="mc-row mc-dhdr">[:knob-knob: :trackchain-icon-mods-boldm:](#rack-controls)<span class="mc-sep"></span>[<span class="mc-name">Rack</span>](#rack-controls) [:general-chevron_down:](#rack-presets)<span class="mc-led mc-push"></span></span>
+<span class="mc-dside"><span class="mc-on">:trackchain-icon-padpanel-boldm:</span><span class="mc-on">:trackchain-icon-padchain-boldm:</span>[0](#rack-controls){ .mc-field .mc-foot .mc-mono }</span>
+<span class="mc-rlist">[<span class="mc-tabs"><span class="mc-sel mc-caps">MIX</span><span class="mc-caps">KEY</span><span class="mc-caps">VEL</span><span class="mc-caps">FADE</span></span>](#chains)
+<span class="mc-crow"><span class="mc-dot" style="--mc-c: #5b9bd5"></span><span class="mc-name">Drive</span><span class="mc-vol">0.0 dB</span><span class="mc-pan">C</span>:general-speaker: :general-solo:<span class="mc-power">:general-power:</span>:general-close:</span>
+<span class="mc-crow"><span class="mc-dot" style="--mc-c: #5fae6a"></span><span class="mc-name">Echo</span><span class="mc-vol">0.0 dB</span><span class="mc-pan">C</span>:general-speaker: :general-solo:<span class="mc-power">:general-power:</span>:general-close:</span>
+<span class="mc-crow mc-sel"><span class="mc-dot" style="--mc-c: #d0675e"></span><span class="mc-name">Space</span><span class="mc-vol">0.0 dB</span><span class="mc-pan">C</span>:general-speaker: :general-solo:<span class="mc-power">:general-power:</span>:general-close:</span>
+</span>
+<span class="mc-rchain"><span class="mc-dev">
+<span class="mc-row mc-dhdr">:knob-knob: :trackchain-icon-mods-boldm:<span class="mc-sep"></span><span class="mc-preset">Presets :general-chevron_down:</span> :general-save:<span class="mc-sep"></span><span class="mc-name">Reverb</span><span class="mc-led mc-push"></span></span>
+<span class="mc-dside"><span class="mc-on">:trackchain-device-params:</span><span>:trackchain-device-faceplate:</span></span>
+<span class="mc-dbody"><span class="mc-cells" style="--mc-cols: 1"><span class="mc-cell">Predelay<b>20.0 ms</b></span><span class="mc-cell">Decay<b>50.0</b></span></span><span class="mc-graph" style="flex-basis: 5em"><svg viewBox="0 0 100 80" preserveAspectRatio="none"><path d="M70 0V80" stroke="#7c858d" stroke-width="1" stroke-dasharray="3 3" fill="none" vector-effect="non-scaling-stroke"/><path d="M4 76V8C10 40 24 66 50 73S90 76 100 76Z" fill="#5b8dd6" fill-opacity="0.85"/></svg></span></span>
+<span class="mc-strip"><span class="mc-power">:general-power:</span><span class="mc-mix"><span class="mc-caps">MIX</span>30</span><span class="mc-meter"><i></i><i></i></span><span class="mc-delta">Δ</span></span>
+</span><span class="mc-add">+</span></span>
+<span class="mc-strip">[<span class="mc-power">:general-power:</span>](#rack-controls)<span class="mc-meter"><i></i><i></i></span></span>
+</span>
+</div>
 
 A rack is a container that holds one or more **parallel chains**. Signal flows into the rack, splits across chains, and mixes back together at the output.
 
@@ -103,7 +138,7 @@ A rack lists its chains on its left. With the **MIX** tab selected, each chain r
 
 - **Volume** — Level control for the chain's output
 - **Pan** — Stereo positioning of the chain
-- **Mute** (M) / **Solo** (S) — Mute or solo individual chains
+- **Mute** (speaker) / **Solo** (ring) — Mute or solo individual chains
 - **Power** and **remove** buttons
 
 The **KEY**, **VEL** and **FADE** tabs show each chain's key range, velocity range, and range on the rack's **Chain select** control instead. The **VEL** tab also holds the round-robin switch. A rack inside a Drum Grid pad has no **KEY** tab, since the pad plays a single note.

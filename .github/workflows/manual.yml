@@ -24,13 +24,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r manual/requirements.txt
 
-      - name: Build manual
-        run: mkdocs build --site-dir ../site
+      - name: Build manual and PDF
+        run: make pdf CHROME=google-chrome
         working-directory: manual
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./site
+          publish_dir: ./manual/site
           cname: docs.magda.land

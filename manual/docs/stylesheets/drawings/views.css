@@ -1,0 +1,1097 @@
+/* Drawings for the views pages; the palette is .magda-ui in extra.css. */
+
+.md-typeset .mv {
+  --mv-lane: #16171b;
+  --mv-head: #262c33;
+  --mv-field: #1c2228;
+  --mv-btn: #31363b;
+  --mv-slot: #15191f;
+  --mv-meter: linear-gradient(to top, #5a9c54 0 62%, #a09d58 74%);
+  position: relative;
+  padding: 2px;
+  font-size: 0.64rem;
+  white-space: nowrap;
+}
+
+/* The app recolours its icons at runtime; here they take the text colour. */
+.md-typeset .mv .twemoji {
+  height: 1.3em;
+  vertical-align: middle;
+}
+
+.md-typeset .mv .twemoji svg {
+  width: 1.3em;
+  max-height: none;
+}
+
+.md-typeset .mv .twemoji svg [stroke] {
+  stroke: currentcolor;
+}
+
+.md-typeset .mv .twemoji svg [fill]:not([fill="none"]) {
+  fill: currentcolor;
+}
+
+.md-typeset .mv a {
+  text-decoration: none;
+}
+
+/* Track colours, sampled from the reference project. */
+.md-typeset .mv .mv-drums { --c: #c0604c; --n: #d99686; }
+.md-typeset .mv .mv-bass { --c: #b07a3c; --n: #d9a866; }
+.md-typeset .mv .mv-keys { --c: #5a8f58; --n: #93c88c; }
+.md-typeset .mv .mv-pluck { --c: #3f8a85; --n: #66bdb3; }
+.md-typeset .mv .mv-pad { --c: #4a6cb5; --n: #8aa2dc; }
+.md-typeset .mv .mv-arp { --c: #6a55b5; --n: #a690e4; }
+.md-typeset .mv .mv-lead { --c: #b85590; --n: #dc8cbc; }
+.md-typeset .mv .mv-aux { --c: #8f98a6; --n: #b5bcc6; }
+
+/* Shared controls: value fields, buttons, meters, the MIDI activity dot. */
+.md-typeset .mv .mv-field,
+.md-typeset .mv .mv-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 1.7em;
+  border-radius: 3px;
+  background: var(--mv-field);
+  color: var(--mw-secondary);
+  font-family: var(--md-code-font-family);
+}
+
+.md-typeset .mv .mv-btn {
+  background: var(--mv-btn);
+  font-family: inherit;
+}
+
+.md-typeset .mv .mv-vol {
+  background: linear-gradient(to right, #2b323a 0 var(--v, 70%), var(--mv-field) 0);
+}
+
+.md-typeset .mv .mv-dot {
+  width: 0.75em;
+  height: 0.75em;
+  border: 2px solid rgb(0 0 0 / 0.35);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.45);
+}
+
+.md-typeset .mv .mv-vmeter {
+  display: flex;
+  gap: 2px;
+}
+
+.md-typeset .mv .mv-vmeter::before,
+.md-typeset .mv .mv-vmeter::after {
+  content: "";
+  flex: 1;
+  background: var(--mv-meter) bottom / 100% var(--m, 60%) no-repeat, #1c2227;
+}
+
+.md-typeset .mv .mv-hmeter {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: 0.55em;
+}
+
+.md-typeset .mv .mv-hmeter::before,
+.md-typeset .mv .mv-hmeter::after {
+  content: "";
+  flex: 1;
+  background: linear-gradient(to right, #5a9c54 0 calc(var(--m, 60%) * 0.75), #a09d58 0 var(--m, 60%), #1c2227 0);
+}
+
+/* Arrangement: header column, lanes, and a narrow column for the height buttons. */
+.md-typeset .mv-arr {
+  display: grid;
+  grid-template-columns: 15em minmax(0, 1fr) 1.4em;
+  gap: 0 2px;
+  background: var(--mv-lane);
+}
+
+.md-typeset .mv-arr .mv-corner {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0 0.4em;
+  background: #101216;
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mv-arr .mv-corner .twemoji,
+.md-typeset .mv-arr .mv-corner .twemoji svg {
+  width: 1.45em;
+  height: 1.45em;
+}
+
+.md-typeset .mv-arr .mv-corner .twemoji {
+  padding: 0.1em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 3px;
+}
+
+.md-typeset .mv-arr .mv-corner .mv-io {
+  margin-left: auto;
+}
+
+.md-typeset .mv-arr .mv-ruler {
+  position: relative;
+  height: 3.4em;
+  background: #15191f;
+  color: var(--mw-secondary);
+  border-bottom: 1px solid var(--mw-stroke);
+}
+
+.md-typeset .mv-arr .mv-bar {
+  position: absolute;
+  top: 0.5em;
+  left: var(--x);
+  transform: translateX(-50%);
+  font-size: 1.15em;
+}
+
+.md-typeset .mv-arr .mv-bar.mv-strong {
+  color: var(--mw-text);
+  font-weight: 600;
+}
+
+/* Bar ticks along the bottom of the ruler, one per bar from bar 12.5. */
+.md-typeset .mv-arr .mv-ruler::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 0.7em;
+  background: repeating-linear-gradient(to right, transparent 0 calc(5.69% - 1px), var(--mw-stroke) 0 5.69%) -0.59% 0 / 100% 0.45em no-repeat,
+    repeating-linear-gradient(to right, transparent 0 calc(11.37% - 1px), #4a525c 0 11.37%) -6.27% 0 / 100% 100% no-repeat;
+}
+
+.md-typeset .mv-arr .mv-loopbar {
+  position: absolute;
+  top: 2.15em;
+  left: 5.1%;
+  width: 91%;
+  height: 0.35em;
+  border-radius: 2px;
+  background: #4f9a6c;
+}
+
+.md-typeset .mv-arr .mv-phead {
+  position: absolute;
+  bottom: 0.15em;
+  left: 5.1%;
+  transform: translateX(-50%);
+  border: 0.45em solid transparent;
+  border-top: 0.6em solid var(--mw-text);
+  border-bottom: 0;
+}
+
+.md-typeset .mv-arr .mv-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #101216;
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mv-arr .mv-side .twemoji,
+.md-typeset .mv-arr .mv-side .twemoji svg {
+  height: 1.05em;
+  width: 1.05em;
+}
+
+.md-typeset .mv-arr .mv-heads,
+.md-typeset .mv-arr .mv-lanes {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.md-typeset .mv-arr .mv-th {
+  display: grid;
+  grid-template-columns: 1fr 1.25em;
+  grid-template-rows: 1.75em 1fr;
+  gap: 2px;
+  height: 5.6em;
+  padding: 0 0 3px;
+  background: var(--mv-head);
+  border-bottom: 1px solid #101216;
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mv-arr .mv-name {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0 0.6em 0 1.5em;
+  background: linear-gradient(to right, color-mix(in srgb, var(--c) 18%, #16171b), var(--c));
+  color: var(--mw-text);
+  font-weight: 600;
+}
+
+.md-typeset .mv-arr .mv-name .twemoji {
+  margin-left: -1.2em;
+}
+
+.md-typeset .mv-arr .mv-name .mv-dot {
+  margin-left: auto;
+}
+
+.md-typeset .mv-arr .mv-ctrls {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 3px 4px;
+  padding: 0 0.3em;
+  align-content: center;
+}
+
+.md-typeset .mv-arr .mv-ctrls .mv-vol {
+  grid-column: 1 / 5;
+  justify-content: flex-start;
+  padding-left: 2.4em;
+}
+
+/* Header buttons sit in dark boxes, as in the app. */
+.md-typeset .mv .mv-ctrls > .twemoji,
+.md-typeset .mv .mv-boxed > .twemoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.7em;
+  border-radius: 3px;
+  background: #2a2f35;
+}
+
+.md-typeset .mv-arr .mv-th .mv-vmeter {
+  margin: 0 2px 0 0;
+}
+
+.md-typeset .mv-arr .mv-lane {
+  position: relative;
+  display: flex;
+  height: 5.6em;
+  border-bottom: 1px solid #101216;
+}
+
+.md-typeset .mv-arr .mv-clip {
+  position: relative;
+  flex: 0 1 var(--w);
+  border: 1px solid color-mix(in srgb, var(--c) 70%, #000);
+  border-top: 1.3em solid var(--c);
+  border-radius: 2px;
+  background-color: color-mix(in srgb, var(--c) 17%, #16171b);
+  background-repeat: no-repeat;
+}
+
+.md-typeset .mv-arr .mv-clip b {
+  position: absolute;
+  top: -1.2em;
+  left: 0.4em;
+  color: var(--mw-text);
+  font-weight: 400;
+}
+
+.md-typeset .mv-arr .mv-clip.mv-cont {
+  border-top-color: color-mix(in srgb, var(--c) 60%, #16171b);
+}
+
+/* MIDI notes, drawn as rows of dashes in the track's note colour. */
+.md-typeset .mv-arr .mv-p-drums {
+  background-image: repeating-linear-gradient(to right, var(--n) 0 0.9em, transparent 0 2.2em),
+    repeating-linear-gradient(to right, var(--n) 0 0.9em, transparent 0 4.4em),
+    repeating-linear-gradient(to right, transparent 0 1.1em, var(--n) 0 2em, transparent 0 4.4em);
+  background-size: 100% 0.25em, 100% 0.55em, 100% 0.25em;
+  background-position: 0.4em 38%, 0.4em 58%, 0.4em 75%;
+}
+
+.md-typeset .mv-arr .mv-p-bass {
+  background-image: repeating-linear-gradient(to right, var(--n) 0 1.8em, transparent 0 7em),
+    repeating-linear-gradient(to right, transparent 0 3em, var(--n) 0 4.6em, transparent 0 7em),
+    repeating-linear-gradient(to right, transparent 0 5.2em, var(--n) 0 6.4em, transparent 0 9em),
+    repeating-linear-gradient(to right, transparent 0 1.2em, var(--n) 0 2.4em, transparent 0 11em);
+  background-size: 100% 0.2em;
+  background-position: 0.6em 85%, 0.6em 55%, 0.6em 30%, 0.6em 15%;
+}
+
+.md-typeset .mv-arr .mv-p-keys {
+  background-image: repeating-linear-gradient(to right, var(--n) 0 4.2em, transparent 0 4.8em, var(--n) 0 6.2em, transparent 0 7em),
+    repeating-linear-gradient(to right, var(--n) 0 2.6em, transparent 0 3.2em, var(--n) 0 6.2em, transparent 0 7em),
+    repeating-linear-gradient(to right, var(--n) 0 4.2em, transparent 0 4.8em, var(--n) 0 6.2em, transparent 0 7em),
+    repeating-linear-gradient(to right, transparent 0 3.2em, var(--n) 0 6.2em, transparent 0 14em);
+  background-size: 100% 0.3em;
+  background-position: 0.3em 12%, 0.3em 40%, 0.3em 65%, 0.3em 92%;
+}
+
+.md-typeset .mv-arr .mv-p-pluck {
+  background-image: repeating-linear-gradient(to right, var(--n) 0 1em, transparent 0 3.4em),
+    repeating-linear-gradient(to right, transparent 0 1.7em, var(--n) 0 2.6em, transparent 0 6.8em),
+    repeating-linear-gradient(to right, transparent 0 4.4em, var(--n) 0 5.3em, transparent 0 8.5em),
+    repeating-linear-gradient(to right, transparent 0 2.4em, var(--n) 0 3.2em, transparent 0 10.2em);
+  background-size: 100% 0.2em;
+  background-position: 0.4em 72%, 0.4em 50%, 0.4em 25%, 0.4em 90%;
+}
+
+.md-typeset .mv-arr .mv-p-pad {
+  background-image: repeating-linear-gradient(to right, var(--n) 0 calc(11.4% - 0.3em), transparent 0 11.4%),
+    repeating-linear-gradient(to right, var(--n) 0 calc(22.8% - 0.3em), transparent 0 22.8%),
+    repeating-linear-gradient(to right, transparent 0 11.4%, var(--n) 0 calc(22.8% - 0.3em), transparent 0 22.8%);
+  background-size: 100% 0.2em;
+  background-position: 0 18%, 0 30%, 0 88%;
+}
+
+.md-typeset .mv-arr .mv-p-arp {
+  background-image: repeating-linear-gradient(to right, var(--n) 0 0.6em, transparent 0 1em);
+  background-size: 100% 0.2em;
+  background-position: 0 50%;
+}
+
+.md-typeset .mv-arr .mv-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 30.8%;
+  width: 1px;
+  background: #c8cfd6;
+  pointer-events: none;
+}
+
+.md-typeset .mv-arr .mv-auxhead {
+  display: grid;
+  grid-template-columns: 3.6em 1.5em 1.5em 1fr 2.6em 1em;
+  align-items: center;
+  gap: 3px;
+  height: 2.6em;
+  padding: 0 0.3em 0 0.6em;
+  background: #15191f;
+  border-bottom: 1px solid #101216;
+  color: var(--mw-text);
+}
+
+.md-typeset .mv-arr .mv-auxhead .mv-btn {
+  background: transparent;
+}
+
+.md-typeset .mv-arr .mv-auxhead .mv-vmeter {
+  height: 1.9em;
+}
+
+.md-typeset .mv-arr .mv-auxlane {
+  height: 2.6em;
+  border-bottom: 1px solid #101216;
+}
+
+.md-typeset .mv-arr .mv-masterhead {
+  display: grid;
+  grid-template-columns: 1fr 1.9em;
+  gap: 3px 4px;
+  padding: 0.5em 0.3em;
+  background: #15191f;
+  color: var(--mw-secondary);
+  border-top: 1px solid var(--mw-stroke);
+}
+
+.md-typeset .mv-arr .mv-masterhead .mv-hmeter {
+  align-self: center;
+  height: 0.9em;
+}
+
+/* The song navigator: tick numbers every 32 bars, the clips in miniature, the viewport. */
+.md-typeset .mv-nav {
+  position: relative;
+  min-height: 5.6em;
+  background: repeating-linear-gradient(to right, var(--mw-stroke) 0 1px, transparent 0 5.94%) 0.7% 0 / 100% 100% no-repeat, #15191f;
+  border-top: 1px solid var(--mw-stroke);
+  color: var(--mw-dim);
+}
+
+.md-typeset .mv-nav .mv-ticks {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.25em 0 0 0.3%;
+  width: 95.9%;
+  border-bottom: 1px solid var(--mw-stroke);
+  font-family: var(--md-code-font-family);
+  font-size: 0.85em;
+  background: #15191f;
+}
+
+.md-typeset .mv-nav .mv-mini {
+  position: absolute;
+  top: 1.9em;
+  left: 0.7%;
+  width: 5.9%;
+  height: 2.9em;
+  background: linear-gradient(#c0604c, #c0604c) 30% 15% / 50% 2px,
+    linear-gradient(#b07a3c, #b07a3c) 30% 35% / 80% 2px,
+    linear-gradient(#5a8f58, #5a8f58) 0 50% / 100% 2px,
+    linear-gradient(#3f8a85, #3f8a85) 0 62% / 75% 2px,
+    linear-gradient(#4a6cb5, #4a6cb5) 0 74% / 100% 2px,
+    linear-gradient(#6a55b5, #6a55b5) 100% 86% / 60% 2px,
+    linear-gradient(#b85590, #b85590) 100% 98% / 60% 2px;
+  background-repeat: no-repeat;
+}
+
+.md-typeset .mv-nav .mv-view {
+  position: absolute;
+  top: 1.6em;
+  bottom: 0.3em;
+  left: 2.6%;
+  width: 1.8%;
+  border: 1px solid #5a8fd0;
+  background: rgb(90 143 208 / 0.15);
+}
+
+.md-typeset .mv-nav .mv-marks {
+  position: absolute;
+  top: 1.6em;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(#e8edf1, #e8edf1) 3.3% 0 / 1px 100% no-repeat;
+}
+
+/* The navigator on its own, for a 40-bar song at the large master height. */
+.md-typeset .mv-navonly {
+  grid-template-columns: 11em minmax(0, 1fr) 1.4em;
+  font-size: 0.7rem;
+}
+
+.md-typeset .mv-navonly .mv-nav {
+  min-height: 8em;
+  background: repeating-linear-gradient(to right, var(--mw-stroke) 0 1px, transparent 0 10%), #15191f;
+}
+
+.md-typeset .mv-navonly .mv-ticks {
+  position: relative;
+  width: auto;
+  height: 1.5em;
+}
+
+.md-typeset .mv-navonly .mv-ticks span {
+  position: absolute;
+  left: calc(var(--x) + 0.3em);
+}
+
+.md-typeset .mv-navonly .mv-rows {
+  position: absolute;
+  top: 2.1em;
+  right: 0;
+  bottom: 0.6em;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.md-typeset .mv-navonly .mv-rows span {
+  height: 3px;
+  background: linear-gradient(to right, transparent var(--s), var(--c) 0 var(--e), transparent 0);
+}
+
+.md-typeset .mv-navonly .mv-markers span {
+  position: absolute;
+  top: 1.5em;
+  bottom: 0;
+  left: var(--x);
+  width: 1px;
+  background: #8a929b;
+}
+
+.md-typeset .mv-navonly .mv-ph {
+  position: absolute;
+  top: 1.5em;
+  bottom: 0;
+  left: 35.7%;
+  width: 1px;
+  background: var(--mw-text);
+}
+
+.md-typeset .mv-navonly .mv-view {
+  top: 1.7em;
+  left: 30%;
+  width: 20%;
+}
+
+/* One track header, enlarged, with a legend beside each row. */
+.md-typeset .mv-track {
+  display: grid;
+  grid-template-columns: 17em 1.6em 1fr;
+  grid-template-rows: 2em 2.4em 2.4em;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.6em;
+  font-size: 0.82rem;
+}
+
+.md-typeset .mv-track > :not(.mv-legend) {
+  background-color: var(--mv-head);
+}
+
+.md-typeset .mv-track .mv-name {
+  grid-column: 1 / 3;
+  display: flex;
+  align-items: center;
+  padding: 0 0.6em 0 1.5em;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(to right, color-mix(in srgb, var(--c) 18%, #16171b), var(--c));
+  color: var(--mw-text);
+  font-weight: 600;
+}
+
+.md-typeset .mv-track .mv-name .mv-dot {
+  margin-left: auto;
+}
+
+.md-typeset .mv-track .mv-ctrls {
+  grid-column: 1;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  align-items: center;
+  gap: 4px;
+  padding: 0 0.4em;
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mv-track .mv-ctrls .mv-vol {
+  grid-column: 1 / 5;
+}
+
+.md-typeset .mv-track .mv-vmeter {
+  grid-column: 2;
+  grid-row: 2 / 4;
+  padding: 0.3em 0.3em 0.3em 0;
+}
+
+.md-typeset .mv-track .mv-legend {
+  grid-column: 3;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding-left: 0.8em;
+  color: var(--mw-dim);
+  font-size: 0.85em;
+  white-space: normal;
+}
+
+.md-typeset .mv-track .mv-legend::before {
+  content: "";
+  flex: 0 0 1.4em;
+  height: 1px;
+  background: var(--mw-dim);
+}
+
+.md-typeset .mv-track .mv-legend a {
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mv-track .mv-ctrls:last-of-type {
+  padding-bottom: 0.2em;
+  border-radius: 0 0 0 4px;
+}
+
+/* Session: the rail, the track columns, the aux columns, then the scenes column. */
+.md-typeset .mv-ses {
+  --mv-row: 1.95em;
+  display: flex;
+  gap: 0.35em;
+  padding: 0.4em 0.4em 0.4em 0;
+  background: #0f1014;
+}
+
+.md-typeset .mv .mv-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35em;
+  width: 2.2em;
+  padding: 0.25em 0;
+  border-right: 1px solid #1c2026;
+  color: #a9adb2;
+}
+
+.md-typeset .mv .mv-rail .twemoji,
+.md-typeset .mv .mv-rail .twemoji svg {
+  width: 1.5em;
+  height: 1.5em;
+}
+
+.md-typeset .mv .mv-railgap {
+  flex: 1;
+}
+
+.md-typeset .mv-ses .mv-cols {
+  display: flex;
+  flex: 7;
+  gap: 0.25em;
+  min-width: 0;
+}
+
+.md-typeset .mv-ses .mv-auxcols {
+  flex: 2;
+  margin-left: 0.3em;
+}
+
+.md-typeset .mv-ses .mv-col {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.3em;
+  min-width: 0;
+}
+
+.md-typeset .mv-ses .mv-scenes {
+  flex: 0 0 auto;
+  width: 6.6em;
+}
+
+.md-typeset .mv-ses .mv-head {
+  display: flex;
+  align-items: center;
+  height: 2.2em;
+  padding: 0 0.3em 0 0.45em;
+  overflow: hidden;
+  border-radius: 4px;
+  background: linear-gradient(to right, color-mix(in srgb, var(--c) 30%, #16171b), var(--c));
+  color: var(--mw-text);
+  font-size: 1.02em;
+  font-weight: 600;
+}
+
+.md-typeset .mv-ses .mv-head .mv-dot {
+  margin-left: auto;
+  flex: none;
+}
+
+.md-typeset .mv-ses .mv-scenes .mv-head {
+  background: #13171a;
+  color: var(--mw-dim);
+  font-weight: 400;
+  letter-spacing: 0.12em;
+}
+
+.md-typeset .mv-ses .mv-scenes .mv-head small {
+  font-size: 0.75em;
+}
+
+.md-typeset .mv-ses .mv-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+}
+
+.md-typeset .mv-ses .mv-slot {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  height: var(--mv-row);
+  padding: 0 0.3em;
+  font-size: 0.96em;
+  overflow: hidden;
+  border: 1px solid #1d2229;
+  border-radius: 4px;
+  background: var(--mv-slot);
+  color: var(--mw-text);
+}
+
+.md-typeset .mv-ses .mv-clip {
+  border-color: color-mix(in srgb, var(--c) 45%, #15191f);
+  background: color-mix(in srgb, var(--c) 24%, #15191f);
+}
+
+/* The launch triangle on a clip or a scene, and the square on an empty scene. */
+.md-typeset .mv-ses .mv-clip::before,
+.md-typeset .mv-ses .mv-scene::before {
+  content: "";
+  flex: none;
+  border: 0.36em solid transparent;
+  border-left: 0.6em solid #9ba2aa;
+  border-right: 0;
+}
+
+.md-typeset .mv-ses .mv-scene {
+  gap: 0.5em;
+  padding-left: 0.3em;
+  border-color: #1e232a;
+  background: #191d23;
+}
+
+.md-typeset .mv-ses .mv-scene i {
+  width: 1em;
+  color: var(--mw-dim);
+  font-size: 0.75em;
+  font-style: normal;
+  text-align: center;
+}
+
+.md-typeset .mv-ses .mv-scene i {
+  order: -1;
+}
+
+.md-typeset .mv-ses .mv-empty::before {
+  width: 0.8em;
+  height: 0.8em;
+  border: 0;
+  background: #8d939b;
+}
+
+.md-typeset .mv-ses .mv-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--mv-row);
+  border: 1px dashed #262b32;
+  border-radius: 4px;
+  color: var(--mw-dim);
+  font-size: 1.2em;
+}
+
+.md-typeset .mv-ses .mv-gap {
+  height: 2.5em;
+}
+
+.md-typeset .mv-ses .mv-stop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8em;
+  height: 2.1em;
+  border: 1px solid #22272e;
+  border-radius: 4px;
+  background: #131519;
+  color: var(--mw-dim);
+  font-size: 0.85em;
+  letter-spacing: 0.12em;
+}
+
+.md-typeset .mv-ses .mv-stop::before {
+  content: "";
+  width: 0.85em;
+  height: 0.85em;
+  background: #757b84;
+}
+
+.md-typeset .mv-ses .mv-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.2em;
+  padding: 0.35em 0.2em 0.25em;
+  border: 1px solid #22282f;
+  border-top: 2px solid var(--c);
+  border-radius: 4px 4px 0 0;
+  border-bottom: 0.45em solid var(--c);
+  background: #252b32;
+  color: var(--mw-text);
+}
+
+.md-typeset .mv-ses .mv-strip .mv-hmeter {
+  grid-column: 1 / -1;
+  height: 0.5em;
+}
+
+.md-typeset .mv-ses .mv-strip .mv-field,
+.md-typeset .mv-ses .mv-strip .mv-btn {
+  height: 2.1em;
+  overflow: hidden;
+  background: #1a2026;
+  color: var(--mw-text);
+  font-size: 0.9em;
+  letter-spacing: -0.04em;
+}
+
+.md-typeset .mv-ses .mv-strip .mv-btn {
+  background: #2a2f35;
+}
+
+.md-typeset .mv-ses .mv-strip.mv-sel {
+  border-color: #e0c4b8;
+  border-bottom-color: var(--c);
+}
+
+.md-typeset .mv-ses .mv-master {
+  grid-template-columns: 1fr;
+  border-top-color: #22282f;
+  border-bottom-color: #262e36;
+}
+
+.md-typeset .mv-ses .mv-cap {
+  color: var(--mw-dim);
+  font-size: 0.75em;
+  letter-spacing: 0.12em;
+}
+
+.md-typeset .mv-ses .mv-master .mv-vol {
+  justify-content: center;
+}
+
+/* The two selected scenes, outlined across every column. */
+.md-typeset .mv-ses .mv-selbox {
+  position: absolute;
+  top: calc(0.4em + 2.2em + 0.3em - 0.2em);
+  right: 0.2em;
+  left: 2.45em;
+  height: calc(2 * var(--mv-row) + 0.3em + 0.4em);
+  border: 2px solid #53718b;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.md-typeset .mv .mv-rail a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35em;
+}
+
+.md-typeset .mv .mv-rail .mv-on .twemoji {
+  border-radius: 3px;
+  background: #23303b;
+  color: #7fa3c0;
+}
+
+/* Mixer: the rail, the track strips, the aux strips, then the master. */
+.md-typeset .mv-mix {
+  --mv-fh: 17em;
+  display: flex;
+  gap: 2px;
+  padding: 0.3em 0.3em 0.3em 0;
+  background: #0f1014;
+}
+
+.md-typeset .mv-mix .mv-rail {
+  margin-right: 0.3em;
+}
+
+.md-typeset .mv-mix .mv-mixgap {
+  flex: 0 0 0.8em;
+}
+
+.md-typeset .mv-mix .mv-strip {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.3em;
+  min-width: 0;
+  padding-bottom: 0.3em;
+  border: 1px solid #1d2228;
+  border-bottom: 0.45em solid var(--c);
+  background: #151a1f;
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mv-mix .mv-strip.mv-sel {
+  border-color: #c99a88;
+  border-bottom-color: var(--c);
+}
+
+.md-typeset .mv-mix .mv-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.4em;
+  background: linear-gradient(color-mix(in srgb, var(--c) 85%, #000), color-mix(in srgb, var(--c) 15%, #15191f));
+  color: var(--mw-text);
+}
+
+.md-typeset .mv-mix .mv-head .twemoji {
+  margin-right: auto;
+  margin-left: 0.2em;
+}
+
+.md-typeset .mv-mix .mv-head .twemoji + * {
+  margin-right: auto;
+}
+
+.md-typeset .mv-mix .mv-fx {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: 5.4em;
+  padding: 0 0.3em;
+  border-bottom: 2px solid #23292f;
+}
+
+.md-typeset .mv-mix .mv-fx span {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  height: 1.7em;
+  padding: 0 0.25em;
+  overflow: hidden;
+  background: #0d1013;
+  color: var(--mw-text);
+  font-size: 0.82em;
+}
+
+.md-typeset .mv-mix .mv-fx span::before {
+  content: "";
+  flex: none;
+  width: 0.65em;
+  height: 0.65em;
+  border-radius: 50%;
+  background: #52b576;
+}
+
+/* Meters behind the fader thumb, with the dB scale to their right. */
+.md-typeset .mv-mix .mv-fader {
+  position: relative;
+  display: flex;
+  height: var(--mv-fh);
+  margin: 0.4em 0.3em 0;
+}
+
+.md-typeset .mv-mix .mv-meters {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+}
+
+.md-typeset .mv-mix .mv-meters::before,
+.md-typeset .mv-mix .mv-meters::after {
+  content: "";
+  flex: 1;
+  background: linear-gradient(#1c2227, #1c2227) top / 100% calc(100% - var(--m)) no-repeat,
+    linear-gradient(to top, #5b9b54 30%, #a19f55 45%);
+}
+
+.md-typeset .mv-mix .mv-meters::after {
+  background: linear-gradient(#1c2227, #1c2227) top / 100% calc(100% - var(--r, var(--m))) no-repeat,
+    linear-gradient(to top, #5b9b54 30%, #a19f55 45%);
+}
+
+.md-typeset .mv-mix .mv-thumb {
+  position: absolute;
+  top: var(--y);
+  left: 0;
+  right: 1.6em;
+  height: 3px;
+  background: #c2d9ea;
+}
+
+.md-typeset .mv-mix .mv-scale {
+  position: relative;
+  flex: 0 0 1.6em;
+  color: var(--mw-secondary);
+  font-size: 0.85em;
+}
+
+.md-typeset .mv-mix .mv-scale i {
+  position: absolute;
+  top: var(--y);
+  right: 0;
+  font-style: normal;
+  transform: translateY(-50%);
+}
+
+.md-typeset .mv-mix .mv-scale .mv-zero {
+  color: var(--mw-text);
+  font-weight: 600;
+}
+
+.md-typeset .mv-mix .mv-scale .mv-zero::before {
+  content: "";
+  display: inline-block;
+  width: 0.6em;
+  height: 2px;
+  margin-right: 0.15em;
+  vertical-align: middle;
+  background: currentcolor;
+}
+
+.md-typeset .mv-mix .mv-peak {
+  margin: -0.2em 2em 0 0;
+  color: var(--mw-text);
+  font-family: var(--md-code-font-family);
+  font-size: 0.85em;
+  text-align: center;
+}
+
+.md-typeset .mv-mix .mv-io {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 3px;
+  padding: 0 0.3em;
+}
+
+.md-typeset .mv-mix .mv-io span,
+.md-typeset .mv-mix .mv-out span {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 1.9em;
+  padding: 0 0.3em;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #1f2429;
+  color: var(--mw-text);
+}
+
+.md-typeset .mv-mix .mv-io span::after,
+.md-typeset .mv-mix .mv-out span::after {
+  content: "";
+  border: 0.25em solid transparent;
+  border-top: 0.3em solid var(--mw-dim);
+  border-bottom: 0;
+}
+
+.md-typeset .mv-mix .mv-pan {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 1.9em;
+  margin: 0.2em 0.3em 0;
+  border-radius: 3px;
+  background: #1b2125;
+  color: var(--mw-text);
+}
+
+.md-typeset .mv-mix .mv-ms {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 3px;
+  padding: 0 0.3em;
+}
+
+.md-typeset .mv-mix .mv-ms .twemoji {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 1.8em;
+  border-radius: 3px;
+  background: #2a2f35;
+}
+
+/* The master is wider, with no colour band and its output under the meter. */
+.md-typeset .mv-mix .mv-master {
+  flex: 1.45;
+  border-bottom: 1px solid #1d2228;
+}
+
+.md-typeset .mv-mix .mv-master .mv-head {
+  justify-content: flex-start;
+  padding-left: 0.6em;
+  background: none;
+}
+
+.md-typeset .mv-mix .mv-master .mv-fader {
+  height: calc(var(--mv-fh) + 6.2em);
+  margin-top: 0.4em;
+}
+
+.md-typeset .mv-mix .mv-out {
+  padding: 0 0.3em;
+}
+
+/* On a phone the wide drawings scale down rather than scroll. */
+@media screen and (max-width: 40em) {
+  .md-typeset .mv-arr,
+  .md-typeset .mv-ses,
+  .md-typeset .mv-mix {
+    font-size: 0.4rem;
+  }
+}

@@ -8,19 +8,19 @@ MAGDA includes a built-in **AI assistant** — describe what you want in natural
 
 MAGDA is organized around three main views, each focused on a different stage of music production. Switch between them with the **Session**, **Arrangement** and **Mix** buttons in the footer bar.
 
-### ![Session](assets/images/icons/Session.svg){ width="24" } Session View
+### :footer-icon-session-boldm: Session View
 
 A grid-based clip launcher for real-time performance and idea sketching. Trigger clips and scenes on a grid, with a mini mixer strip at the bottom of each track.
 
 [Go to Session View →](session-view.md)
 
-### ![Arrangement](assets/images/icons/Arrangement.svg){ width="24" } Arrangement View
+### :footer-icon-arrangement-boldm: Arrangement View
 
 A traditional timeline for composing, recording, and editing. Lay out clips on tracks along a horizontal timeline with full zoom, selection, and editing tools.
 
 [Go to Arrangement View →](arrangement-view.md)
 
-### ![Mix](assets/images/icons/Mix.svg){ width="24" } Mixer View
+### :footer-icon-mix-boldm: Mixer View
 
 A channel-strip mixer for balancing levels, panning, routing, and adding effects. Each track gets a full-height fader with metering, I/O routing, and send slots.
 

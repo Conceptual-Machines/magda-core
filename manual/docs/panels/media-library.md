@@ -2,8 +2,6 @@
 
 The **Media Library** is the searchable, indexed side of the left browser panel. Where the [Media Explorer](browsers.md#media-explorer) walks your filesystem folder by folder, the Library lets you index folders once and then find sounds by family, shape, key, tempo, tags, or a plain-language description of what you want.
 
-![Media Library browser](../assets/images/panels/media-library.png)
-
 ## Disk and Library modes
 
 The buttons in the left panel's sidebar switch what the browser shows:

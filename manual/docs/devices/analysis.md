@@ -45,13 +45,14 @@ The Levels meter gives broadcast-grade numbers for the signal at its insert poin
 | Reading | What it tells you |
 |---------|--------------------|
 | **Integrated**, **Short-term**, **Momentary** | Loudness in LUFS (BS.1770) — the perceived level streaming services normalise to. |
+| **Range** | Loudness range in LU (EBU Tech 3342): how much the loudness changes from the quiet parts to the loud parts. A steady tone reads 0. The reading shows **-** until MAGDA has measured 3 seconds. |
 | **True peak** | Inter-sample peak, caught by oversampling — what a converter actually hits. |
 | **PLR** | Peak-to-loudness ratio — how dynamic the signal is. |
 | **PSR** | Peak-to-short-term ratio — how squashed the loudest moments are. |
 | **Correlation** | Stereo phase relationship — negative values warn of mono-compatibility problems. |
 | **Width** | Stereo width, from mono to fully wide. |
 
-The device is a transparent pass-through, and only spends CPU on measurement while its meter is actually visible. Reopening it resets the integrated readings, and **RESET** restarts integrated loudness, peak hold and PLR at any time.
+The device is a transparent pass-through, and only spends CPU on measurement while its meter is actually visible. Reopening it resets the integrated readings, and **RESET** restarts integrated loudness, loudness range, peak hold and PLR at any time.
 
 !!! note
     The analyzers refresh continuously and add no latency or gain to the signal, so you can leave them inserted anywhere in a chain. In the post-FX area, only one of each analysis device can exist per track, and an analyzer there has no power button or preset box, since it never changes the signal.

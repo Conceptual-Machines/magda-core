@@ -128,11 +128,29 @@ extra:
       link: https://magda.land
       name: MAGDA Website
 
+plugins:
+  - search
+  # Every page in one, at /print_page/, which CI prints to magda-manual.pdf. Must stay last.
+  - print-site:
+      add_to_navigation: false
+      add_cover_page: true
+      add_table_of_contents: true
+      toc_depth: 2
+      enumerate_headings: false
+      add_full_urls: false
+      print_page_title: "MAGDA Manual"
+      exclude:
+        - reference/remote-api-operations.md
+
 hooks:
   - hooks/openrpc.py
 
 extra_css:
   - stylesheets/extra.css
+  - stylesheets/drawings/views.css
+  - stylesheets/drawings/chain.css
+  - stylesheets/drawings/editors.css
+  - stylesheets/drawings/chords.css
 
 extra_javascript:
   - javascripts/site-header.js
@@ -149,6 +167,13 @@ markdown_extensions:
       alternate_style: true
   - pymdownx.keys
   - attr_list
+  # The app's own icons, inline so they take the text colour: :footer-icon-mix-boldm:
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+      options:
+        custom_icons:
+          - ../assets/icons
   - md_in_html
   - toc:
       permalink: true

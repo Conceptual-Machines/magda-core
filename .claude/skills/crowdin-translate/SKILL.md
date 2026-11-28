@@ -77,7 +77,7 @@ When the user explicitly wants a translation in a locale set without waiting on 
    ```
 3. Upload that locale only:
    ```bash
-   crowdin upload translations -l zh-CN     # or fr / de / es / etc.
+   crowdin upload translations -l zh-CN --auto-approve-imported     # or fr / de / es / etc.
    ```
    Crowdin language codes are the full BCP-47 form (`zh-CN`, `pt-BR`); the CLI maps them to the two-letter local file via `%two_letters_code%` in `crowdin.yml`.
 
@@ -87,6 +87,7 @@ Drop it from `lang/en.json` and push. The Crowdin Sync workflow removes it from 
 
 ## Gotchas
 
+- **Unapproved uploads export empty**: the sync workflow sets `export_only_approved`, so a translation uploaded without `--auto-approve-imported` sits on Crowdin (counted as 100% translated) but lands in the sync PR as `""`. Check the values in the PR diff, not only the keys.
 - **Empty source string**: an empty `en.json` value gives Crowdin nothing to anchor a translation on. Every locale will stay empty regardless of CLI uploads. Always give a source string a non-empty English value.
 - **Brand attributions are not translated**: lines like "powered by Tracktion Engine", "made with JUCE", "DSP by FAUST" are intentionally literal strings in C++ - not `tr()` keys - so they stay English in every locale. Don't add them to `en.json`.
 - **Don't push the token**: `.env` is gitignored; double-check before committing if you've touched it.

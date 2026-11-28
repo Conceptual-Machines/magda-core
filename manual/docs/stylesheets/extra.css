@@ -160,3 +160,284 @@ magda-site-header:not(:defined) {
   --md-primary-bg-color: #ffffff;
   --md-accent-fg-color: #5588aa;
 }
+
+/* Printing, and the PDF that CI prints from /print_page/. */
+@page {
+  margin: 18mm 14mm;
+
+  @bottom-right {
+    font-family: "Inter", sans-serif;
+    font-size: 8pt;
+    color: #76808e;
+  }
+}
+
+@media print {
+  magda-site-header {
+    display: none;
+  }
+
+  .md-typeset h1,
+  .md-typeset h2,
+  .md-typeset h3,
+  .md-typeset h4 {
+    break-after: avoid;
+  }
+
+  .md-typeset img,
+  .md-typeset figure,
+  .md-typeset pre,
+  .md-typeset .mermaid,
+  .md-typeset .admonition,
+  .md-typeset tr {
+    break-inside: avoid;
+  }
+}
+
+/* Drawings of the app, in its default dark theme in either scheme (ActiveTheme.cpp). */
+.md-typeset .magda-ui {
+  --mw-bg: #0c0f14;
+  --mw-panel: #151a21;
+  --mw-surface: #1e242d;
+  --mw-transport: #16181c;
+  --mw-stroke: #2c343e;
+  --mw-text: #e8edf1;
+  --mw-secondary: #aeb6bd;
+  --mw-dim: #7c858d;
+  --mw-accent: #5588aa;
+  --mw-attention: #ff8822;
+  --mw-positive: #43c07a;
+  --mw-modulation: #7777dd;
+  margin: 1em 0;
+  border-radius: 6px;
+  background: var(--mw-bg);
+  color: var(--mw-text);
+  font-size: 0.68rem;
+  line-height: 1.3;
+}
+
+/* Material fills the svg with currentcolor, which paints the app icons' unfilled outline paths. */
+.md-typeset .magda-ui .twemoji svg[fill="none"] {
+  fill: none;
+}
+
+.md-typeset .magda-ui a {
+  color: inherit;
+}
+
+.md-typeset .magda-ui a:hover {
+  color: var(--mw-accent);
+}
+
+.md-typeset .magda-window {
+  display: grid;
+  grid-template-columns: 18% 1fr 20%;
+  grid-template-rows: 2.6em minmax(11em, 1fr) 7em 2.2em;
+  grid-template-areas:
+    "transport transport transport"
+    "left center right"
+    "bottom bottom bottom"
+    "footer footer footer";
+  gap: 2px;
+  aspect-ratio: 16 / 9;
+  max-height: 28em;
+  padding: 2px;
+}
+
+.md-typeset .magda-window .mw-region {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3em;
+  min-width: 0;
+  background: var(--mw-panel);
+  text-align: center;
+}
+
+.md-typeset .magda-window .mw-transport,
+.md-typeset .magda-window .mw-footer {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 1em;
+  padding: 0 0.6em;
+  background: var(--mw-transport);
+}
+
+.md-typeset .magda-window .mw-transport { grid-area: transport; }
+.md-typeset .magda-window .mw-left { grid-area: left; }
+.md-typeset .magda-window .mw-center { grid-area: center; background: var(--mw-bg); }
+.md-typeset .magda-window .mw-right { grid-area: right; }
+.md-typeset .magda-window .mw-bottom { grid-area: bottom; background: var(--mw-surface); }
+.md-typeset .magda-window .mw-footer { grid-area: footer; }
+
+.md-typeset .magda-window .mw-label {
+  color: var(--mw-text);
+  font-weight: 600;
+  font-size: 1.15em;
+}
+
+.md-typeset .magda-window .mw-label:hover {
+  color: var(--mw-accent);
+}
+
+.md-typeset .magda-window .mw-sub,
+.md-typeset .magda-window .mw-info {
+  color: var(--mw-dim);
+}
+
+.md-typeset .magda-window .mw-icons {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.md-typeset .magda-window .mw-icons .twemoji {
+  height: 1.9em;
+}
+
+.md-typeset .magda-window .mw-icons .twemoji svg {
+  width: 1.9em;
+  max-height: none;
+}
+
+.md-typeset .magda-window .mw-views {
+  margin: 0 auto;
+  color: var(--mw-dim);
+}
+
+/* The Arrangement is drawn as the open view, in the footer's Arrangement colour. */
+.md-typeset .magda-window .mw-views .twemoji:nth-child(2) {
+  color: #ff8822;
+}
+
+.md-typeset .magda-window .mw-lcd {
+  padding: 0.15em 0.6em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 3px;
+  background: var(--mw-bg);
+  color: #ff8822;
+  font-family: var(--md-code-font-family);
+}
+
+.md-typeset .magda-window .mw-chip {
+  margin-left: auto;
+  padding: 0.1em 0.5em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 3px;
+  color: var(--mw-dim);
+}
+
+/* The transport bar: one row of wells, wrapping on a narrow page. */
+.md-typeset .magda-transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.35em;
+  background: var(--mw-transport);
+  font-size: 0.6rem;
+  white-space: nowrap;
+}
+
+.md-typeset .magda-transport > span {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+}
+
+.md-typeset .magda-transport .mt-well {
+  min-height: 2.4em;
+  padding: 0 0.7em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 4px;
+  background: var(--mw-transport);
+}
+
+.md-typeset .magda-transport .mt-buttons {
+  gap: 2px;
+}
+
+.md-typeset .magda-transport .twemoji {
+  height: 2.1em;
+}
+
+.md-typeset .magda-transport .twemoji svg {
+  width: 2.1em;
+  max-height: none;
+}
+
+.md-typeset .magda-transport .mt-small .twemoji,
+.md-typeset .magda-transport .mt-small .twemoji svg {
+  height: 1.6em;
+  width: 1.6em;
+}
+
+.md-typeset .magda-transport .mt-caption {
+  color: var(--mw-dim);
+  font-size: 0.8em;
+  letter-spacing: 0.05em;
+}
+
+.md-typeset .magda-transport .mt-time {
+  color: var(--mw-secondary);
+}
+
+.md-typeset .magda-transport .mt-green {
+  color: var(--mw-positive);
+}
+
+.md-typeset .magda-transport .mt-tempo,
+.md-typeset .magda-transport .mt-playhead {
+  font-size: 1.3em;
+  color: var(--mw-attention);
+}
+
+.md-typeset .magda-transport .mt-sig {
+  font-size: 1.3em;
+}
+
+.md-typeset .magda-transport .mt-chip {
+  padding: 0.25em 0.5em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 3px;
+  color: var(--mw-dim);
+}
+
+.md-typeset .magda-transport .mt-on {
+  border-color: #5b5bd6;
+  background: #5b5bd6;
+  color: var(--mw-text);
+  font-weight: 600;
+}
+
+.md-typeset .magda-transport .mt-led::before {
+  content: "";
+  display: inline-block;
+  width: 0.55em;
+  height: 0.55em;
+  margin-right: 0.4em;
+  border-radius: 50%;
+  background: var(--mw-dim);
+}
+
+.md-typeset .magda-transport .mt-countin {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  border-radius: 50%;
+  background: var(--mw-dim);
+}
+
+.md-typeset .magda-transport .mt-meter {
+  display: inline-block;
+  width: 5em;
+  border-bottom: 1px dotted var(--mw-dim);
+}
+
+.md-typeset .magda-transport .mt-cpu {
+  display: inline-flex;
+  gap: 1.2em;
+  padding-bottom: 0.25em;
+  border-bottom: 2px solid;
+  border-image: linear-gradient(to right, var(--mw-positive) 14%, var(--mw-surface) 14%) 1;
+}

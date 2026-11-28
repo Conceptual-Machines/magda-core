@@ -2,26 +2,22 @@
 
 The Mixer View provides a channel-strip interface for balancing levels, panning, routing, and applying effects. Switch to it by clicking **Mix** in the footer bar.
 
-![Mixer View](assets/images/mixer/mixer-view.png)
-
 ## Layout
 
-```
-┌──────────┬──────────┬──────────┬──────────┬─────────┐
-│ Track 1  │ Track 2  │ Track 3  │ Aux 1    │ Master  │
-│          │          │          │          │         │
-│ [Routing]│ [Routing]│ [Routing]│          │         │
-│ [Sends]  │ [Sends]  │ [Sends]  │          │         │
-│          │          │          │          │         │
-│  ┃  ┃    │  ┃  ┃    │  ┃  ┃    │  ┃  ┃    │  ┃  ┃   │
-│  ┃██┃    │  ┃█ ┃    │  ┃  ┃    │  ┃█ ┃    │  ┃██┃   │
-│  ┃██┃    │  ┃██┃    │  ┃█ ┃    │  ┃██┃    │  ┃██┃   │
-│  ┃██┃    │  ┃██┃    │  ┃██┃    │  ┃██┃    │  ┃██┃   │
-│  [Pan]   │  [Pan]   │  [Pan]   │  [Pan]   │         │
-│  M S R   │  M S R   │  M S R   │  M S     │ [Mute]  │
-│ Track 1  │ Track 2  │ Track 3  │ Aux 1    │ Master  │
-└──────────┴──────────┴──────────┴──────────┴─────────┘
-```
+<div class="magda-ui mv mv-mix" markdown="span">
+<span class="mv-rail">[:trackchain-icon-sends-boldm::trackchain-oscilloscope3::trackchain-icon-spectrum-boldm:<span class="mv-on">:trackchain-icon-inserts-boldm:</span>](#toggle-rail){ title="Toggle rail" }<span class="mv-railgap"></span>[:trackchain-icon-checkmix-boldm:](#mix-analysis){ title="Analyze" }<span class="mv-railgap"></span>[:toolbar-track_width_narrow::toolbar-track_width_medium::toolbar-track_height_large::general-record-monitor:<span class="mv-on">:general-input-output:</span>](#toggle-rail){ title="Toggle rail" }</span>
+<span class="mv-strip mv-drums mv-sel">[:general-chevron_right:Drums](#track-name-and-color){ .mv-head }[<span>Drum Grid</span><span>Compressor</span>](#mini-fx-chain){ .mv-fx }[<span class="mv-meters" style="--m:64%"></span><span class="mv-thumb" style="--y:30%"></span><span class="mv-scale"><i style="--y:0%">6</i><i style="--y:12.8%">3</i><i class="mv-zero" style="--y:24.7%">0</i><i style="--y:35.5%">3</i><i style="--y:45.4%">6</i><i style="--y:61.8%">12</i><i style="--y:74.4%">18</i><i style="--y:84.3%">24</i><i style="--y:95.7%">36</i><i style="--y:100%">48</i></span>](#volume-fader){ .mv-fader }[-2.1](#level-meters){ .mv-peak }[<span>Al..</span><span>N..</span><span>N..</span><span>M..</span>](#io-routing){ .mv-io }[C](#pan){ .mv-pan }[:general-master_on::general-solo:](#mute-solo-record){ .mv-ms }</span>
+<span class="mv-strip mv-bass">[Bass](#track-name-and-color){ .mv-head }[<span>FM0</span><span>Saturator</span>](#mini-fx-chain){ .mv-fx }[<span class="mv-meters" style="--m:44%"></span><span class="mv-thumb" style="--y:34%"></span><span class="mv-scale"><i style="--y:0%">6</i><i style="--y:12.8%">3</i><i class="mv-zero" style="--y:24.7%">0</i><i style="--y:35.5%">3</i><i style="--y:45.4%">6</i><i style="--y:61.8%">12</i><i style="--y:74.4%">18</i><i style="--y:84.3%">24</i><i style="--y:95.7%">36</i><i style="--y:100%">48</i></span>](#volume-fader){ .mv-fader }[-7.2](#level-meters){ .mv-peak }[<span>Al..</span><span>N..</span><span>N..</span><span>M..</span>](#io-routing){ .mv-io }[C](#pan){ .mv-pan }[:general-master_on::general-solo:](#mute-solo-record){ .mv-ms }</span>
+<span class="mv-strip mv-keys">[Keys](#track-name-and-color){ .mv-head }[<span>Poly Synth</span><span>Chorus</span>](#mini-fx-chain){ .mv-fx }[<span class="mv-meters" style="--m:40%;--r:27%"></span><span class="mv-thumb" style="--y:40.7%"></span><span class="mv-scale"><i style="--y:0%">6</i><i style="--y:12.8%">3</i><i class="mv-zero" style="--y:24.7%">0</i><i style="--y:35.5%">3</i><i style="--y:45.4%">6</i><i style="--y:61.8%">12</i><i style="--y:74.4%">18</i><i style="--y:84.3%">24</i><i style="--y:95.7%">36</i><i style="--y:100%">48</i></span>](#volume-fader){ .mv-fader }[-11.2](#level-meters){ .mv-peak }[<span>Al..</span><span>N..</span><span>N..</span><span>M..</span>](#io-routing){ .mv-io }[20L](#pan){ .mv-pan }[:general-master_on::general-solo:](#mute-solo-record){ .mv-ms }</span>
+<span class="mv-strip mv-pluck">[Pluck](#track-name-and-color){ .mv-head }[<span>Marimba</span><span>Delay</span>](#mini-fx-chain){ .mv-fx }[<span class="mv-meters" style="--m:6%;--r:12%"></span><span class="mv-thumb" style="--y:43%"></span><span class="mv-scale"><i style="--y:0%">6</i><i style="--y:12.8%">3</i><i class="mv-zero" style="--y:24.7%">0</i><i style="--y:35.5%">3</i><i style="--y:45.4%">6</i><i style="--y:61.8%">12</i><i style="--y:74.4%">18</i><i style="--y:84.3%">24</i><i style="--y:95.7%">36</i><i style="--y:100%">48</i></span>](#volume-fader){ .mv-fader }[-21.2](#level-meters){ .mv-peak }[<span>Al..</span><span>N..</span><span>N..</span><span>M..</span>](#io-routing){ .mv-io }[35R](#pan){ .mv-pan }[:general-master_on::general-solo:](#mute-solo-record){ .mv-ms }</span>
+<span class="mv-strip mv-pad">[Pad](#track-name-and-color){ .mv-head }[<span>Halo</span><span>Filter</span>](#mini-fx-chain){ .mv-fx }[<span class="mv-meters" style="--m:14%;--r:16%"></span><span class="mv-thumb" style="--y:45.6%"></span><span class="mv-scale"><i style="--y:0%">6</i><i style="--y:12.8%">3</i><i class="mv-zero" style="--y:24.7%">0</i><i style="--y:35.5%">3</i><i style="--y:45.4%">6</i><i style="--y:61.8%">12</i><i style="--y:74.4%">18</i><i style="--y:84.3%">24</i><i style="--y:95.7%">36</i><i style="--y:100%">48</i></span>](#volume-fader){ .mv-fader }[-13.8](#level-meters){ .mv-peak }[<span>Al..</span><span>N..</span><span>N..</span><span>M..</span>](#io-routing){ .mv-io }[9L](#pan){ .mv-pan }[:general-master_on::general-solo:](#mute-solo-record){ .mv-ms }</span>
+<span class="mv-strip mv-arp">[Arp](#track-name-and-color){ .mv-head }[<span>Arpeggiator</span><span>Poly Synth</span><span>Phaser</span>](#mini-fx-chain){ .mv-fx }[<span class="mv-meters" style="--m:21%;--r:30%"></span><span class="mv-thumb" style="--y:45.6%"></span><span class="mv-scale"><i style="--y:0%">6</i><i style="--y:12.8%">3</i><i class="mv-zero" style="--y:24.7%">0</i><i style="--y:35.5%">3</i><i style="--y:45.4%">6</i><i style="--y:61.8%">12</i><i style="--y:74.4%">18</i><i style="--y:84.3%">24</i><i style="--y:95.7%">36</i><i style="--y:100%">48</i></span>](#volume-fader){ .mv-fader }[-12.0](#level-meters){ .mv-peak }[<span>Al..</span><span>N..</span><span>N..</span><span>M..</span>](#io-routing){ .mv-io }[25R](#pan){ .mv-pan }[:general-master_on::general-solo:](#mute-solo-record){ .mv-ms }</span>
+<span class="mv-strip mv-lead">[Lead](#track-name-and-color){ .mv-head }[<span>Poly Synth</span><span>Grain Delay</span><span>EQ</span>](#mini-fx-chain){ .mv-fx }[<span class="mv-meters" style="--m:37%;--r:40%"></span><span class="mv-thumb" style="--y:36%"></span><span class="mv-scale"><i style="--y:0%">6</i><i style="--y:12.8%">3</i><i class="mv-zero" style="--y:24.7%">0</i><i style="--y:35.5%">3</i><i style="--y:45.4%">6</i><i style="--y:61.8%">12</i><i style="--y:74.4%">18</i><i style="--y:84.3%">24</i><i style="--y:95.7%">36</i><i style="--y:100%">48</i></span>](#volume-fader){ .mv-fader }[-11.2](#level-meters){ .mv-peak }[<span>Al..</span><span>N..</span><span>N..</span><span>M..</span>](#io-routing){ .mv-io }[5R](#pan){ .mv-pan }[:general-master_on::general-solo:](#mute-solo-record){ .mv-ms }</span>
+<span class="mv-mixgap"></span>
+<span class="mv-strip mv-aux">[Reverb](#track-name-and-color){ .mv-head }[<span>Reverb</span>](#mini-fx-chain){ .mv-fx }[<span class="mv-meters" style="--m:11%;--r:12%"></span><span class="mv-thumb" style="--y:36%"></span><span class="mv-scale"><i style="--y:0%">6</i><i style="--y:12.8%">3</i><i class="mv-zero" style="--y:24.7%">0</i><i style="--y:35.5%">3</i><i style="--y:45.4%">6</i><i style="--y:61.8%">12</i><i style="--y:74.4%">18</i><i style="--y:84.3%">24</i><i style="--y:95.7%">36</i><i style="--y:100%">48</i></span>](#volume-fader){ .mv-fader }[-23.9](#level-meters){ .mv-peak }[<span>Al..</span><span>N..</span><span>N..</span><span>M..</span>](#io-routing){ .mv-io }[C](#pan){ .mv-pan }[:general-master_on::general-solo:](#mute-solo-record){ .mv-ms }</span>
+<span class="mv-strip mv-aux">[Delay](#track-name-and-color){ .mv-head }[<span>Delay</span>](#mini-fx-chain){ .mv-fx }[<span class="mv-meters" style="--m:13%;--r:14%"></span><span class="mv-thumb" style="--y:36%"></span><span class="mv-scale"><i style="--y:0%">6</i><i style="--y:12.8%">3</i><i class="mv-zero" style="--y:24.7%">0</i><i style="--y:35.5%">3</i><i style="--y:45.4%">6</i><i style="--y:61.8%">12</i><i style="--y:74.4%">18</i><i style="--y:84.3%">24</i><i style="--y:95.7%">36</i><i style="--y:100%">48</i></span>](#volume-fader){ .mv-fader }[-22.7](#level-meters){ .mv-peak }[<span>Al..</span><span>N..</span><span>N..</span><span>M..</span>](#io-routing){ .mv-io }[C](#pan){ .mv-pan }[:general-master_on::general-solo:](#mute-solo-record){ .mv-ms }</span>
+<span class="mv-strip mv-master">[Master](#master-channel-strip){ .mv-head }[<span class="mv-meters" style="--m:72%;--r:70%"></span><span class="mv-thumb" style="--y:24.7%"></span><span class="mv-scale"><i style="--y:0%">6</i><i style="--y:12.8%">3</i><i class="mv-zero" style="--y:24.7%">0</i><i style="--y:35.5%">3</i><i style="--y:45.4%">6</i><i style="--y:61.8%">12</i><i style="--y:74.4%">18</i><i style="--y:84.3%">24</i><i style="--y:95.7%">36</i><i style="--y:100%">48</i></span>](#master-channel-strip){ .mv-fader }[0.4](#level-meters){ .mv-peak }[<span>Out 1 + Out 2</span>](#io-routing){ .mv-out }[:general-master_on:](#master-channel-strip){ .mv-ms }</span>
+</div>
 
 - **Channel strips** — One per track, scrollable horizontally
 - **Chord channel strip** — The [chord track](chord-track.md), always the first strip on the left
@@ -33,16 +29,20 @@ Click a channel strip to select it. Drag plugins onto a channel strip to add the
 
 ## Toggle Rail
 
-A vertical rail of toggles runs down the left edge of the mixer. Each button shows or hides a row across every channel strip, so you can pare the mixer back to just the controls you need:
+A vertical rail of toggles runs down the left edge of the mixer. Each toggle shows or hides a row across every channel strip, so you can pare the mixer back to just the controls you need. The toggles at the top of the rail are:
 
 - **Sends** — the send section
-- **I/O** — input and output routing selectors
-- **Monitor** — the record-arm and input-monitoring row
 - **Oscilloscope** — a mini oscilloscope per strip
 - **Spectrum** — a mini spectrum analyzer per strip
 - **FX Chain** — the strip's mini FX chain
 
-The rail's on/off state is remembered between sessions. Below the toggles sits the **Analyze** button — see [Mix Analysis](#mix-analysis).
+The **Analyze** button is in the middle of the rail (see [Mix Analysis](#mix-analysis)). The bottom of the rail has, from the top:
+
+- **Narrow**, **Medium** and **Wide track width** — set every channel strip to that width. Right-click one of them to edit the three widths
+- **Monitor** — the record-arm and input-monitoring row
+- **I/O** — input and output routing selectors
+
+The rail's on/off state is remembered between sessions.
 
 ## Channel Strip Controls
 
@@ -62,14 +62,14 @@ The pan control positions the track in the stereo field, from hard left to hard 
 
 ### Mute, Solo, Record
 
-- **Mute** (M) — Silence the track output
-- **Solo** (S) — Solo this track, muting all others
-- **Record** (R) — Arm the track for recording
+- **Mute** (speaker) — Silence the track output
+- **Solo** (ring) — Solo this track, muting all others
+- **Record** (dot) — Arm the track for recording
 - **Monitor** — Enable input monitoring
 
 ### Track Name and Color
 
-The track name and color bar are displayed at the bottom of each strip for identification.
+The track name is in the head at the top of each strip. The head shows the track color as a line across its top, or fills with the color when **Track colour** is set to **Full bar** in **Settings > Appearance**. A color bar also runs along the bottom of the strip.
 
 ### Mini FX Chain
 
@@ -81,14 +81,14 @@ With the **Oscilloscope** or **Spectrum** toggle on, a mini [analyzer](devices/a
 
 ## Master Channel Strip
 
-The master strip controls the final output level of the mix. It has its own volume fader and meters, and a speaker button that mutes the master. It has no pan control and no solo or record buttons.
+The master strip controls the final output level of the mix. It has its own volume fader and meters, and a speaker button that mutes the master. It has no pan control and no solo or record buttons. With the **I/O** toggle on, an output selector above the speaker button sets the hardware outputs the master plays through (for example *Out 1 + Out 2*).
 
 ## Mix Analysis
 
-The **Analyze** button at the bottom of the toggle rail runs a measured analysis of the mix and shows the findings in a small panel anchored to the button.
+The **Analyze** button in the middle of the toggle rail runs a measured analysis of the mix and shows the findings in a small panel anchored to the button.
 
 - **Scope** — with no channels selected, the whole mix is analysed; select channel strips first to scope the measurement to just those tracks. The panel title shows the scope and the range (the loop region if one is active, otherwise the whole song).
-- **Findings** — a per-track table of measured values (integrated loudness, peak, peak-to-loudness ratio, stereo correlation and width, with a row for the master) followed by any detected **collisions**: frequency ranges where two tracks mask each other, with a severity rating.
+- **Findings** — a per-track table of measured values (integrated loudness, loudness range, peak, peak-to-loudness ratio, stereo correlation and width, with a row for the master) followed by any detected **collisions**: frequency ranges where two tracks mask each other, with a severity rating.
 - **Re-run** the analysis after changes, or **Stop** a run in progress.
 
 The same measurements feed the [mixing agent](panels/ai-assistant.md#mixing-agent): once an analysis exists, the AI console in the mixer view picks it up as context, so you can ask for mix feedback grounded in real numbers rather than guesswork.
