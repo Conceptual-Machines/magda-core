@@ -203,6 +203,8 @@ int main() {
             // Parameter identity must survive offset indices, custom ordering and pages.
             ParamHostComponent grid(std::make_unique<StandardDeviceLayout>());
             DeviceInfo parameterModel;
+            // Internal, so an empty selection shows every parameter (#3218).
+            parameterModel.format = PluginFormat::Internal;
             for (int index = 2; index < 42; ++index) {
                 ParameterInfo parameter;
                 parameter.paramIndex = index;

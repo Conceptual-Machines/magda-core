@@ -299,6 +299,15 @@ std::optional<float> parseMs(juce::String text) {
     return static_cast<float>(lower.getDoubleValue());
 }
 
+/// A plugin's text that is a bare number, with @p unit after it (#3218).
+juce::String withUnit(const juce::String& text, const juce::String& unit) {
+    const auto number = text.trim();
+    if (unit.isEmpty() || !number.containsOnly("0123456789.,+- ") ||
+        !number.containsAnyOf("0123456789"))
+        return text;
+    return number + " " + unit;
+}
+
 }  // namespace
 
 juce::String formatValue(float realValue, const ParameterInfo& info, int decimalPlaces) {
@@ -311,7 +320,7 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
         const float teRaw = modelToTeValue(realToModelValue(realValue, info), info);
         auto text = info.displayText->format(teRaw);
         if (text.isNotEmpty())
-            return text;
+            return withUnit(text, info.unit);
     }
 
     // Sampled value table fallback (from ParameterConfigDialog or legacy).

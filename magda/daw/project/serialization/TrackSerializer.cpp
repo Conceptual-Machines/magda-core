@@ -385,7 +385,9 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
         obj->setProperty(key, juce::var(array));
     };
 
-    writeSlots("visibleParameterSlots", device.visibleParameters);
+    // Left out while the load still owes the plugin every parameter, so the next load does too.
+    if (!device.showEveryParameterOnLoad)
+        writeSlots("shownParameterSlots", device.visibleParameters);
     writeSlots("miniMixerParameterSlots", device.miniMixerParameters);
     writeSlots("aiSoundDesignerParameterSlots", device.aiSoundDesignerParameters);
     obj->setProperty("aiSoundDesignerPrompt", device.aiSoundDesignerPrompt);
@@ -578,7 +580,8 @@ void ProjectSerializer::read(const ser::ObjectReader& raw, DeviceInfo& outDevice
         read(item, param);
         outDevice.parameters.push_back(param);
     });
-    in.readArray("visibleParameterSlots", outDevice.visibleParameters);
+    in.readArray("shownParameterSlots", outDevice.visibleParameters);
+    in.optional("showEveryParameter", outDevice.showEveryParameterOnLoad);
     in.readArray("miniMixerParameterSlots", outDevice.miniMixerParameters);
     in.readArray("aiSoundDesignerParameterSlots", outDevice.aiSoundDesignerParameters);
     in.optional("aiSoundDesignerPrompt", outDevice.aiSoundDesignerPrompt);

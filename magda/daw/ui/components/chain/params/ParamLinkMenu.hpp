@@ -34,6 +34,10 @@ struct ParamLinkMenuCallbacks {
     std::function<void(magda::ChainNodePath, int paramIndex, juce::String paramName)> onMidiLearn;
     std::function<void(magda::ChainNodePath, int paramIndex)> onMidiClear;
     std::function<void(magda::ChainNodePath, int paramIndex)> onMidiEdit;  // greyed out for now
+
+    /// Offered as a Unit submenu when set, with @ref currentUnit ticked (#3218).
+    std::function<void(const juce::String& unit)> onUnitChosen;
+    juce::String currentUnit;
 };
 
 /**

@@ -6,6 +6,7 @@
 #include <juce_core/juce_core.h>
 
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "ParameterInfo.hpp"
@@ -30,6 +31,8 @@ struct PluginParameterConfigEntry {
 
     juce::String name;
     bool visible = false;
+    /// Where a visible parameter's knob sits among the others; unset ones follow, in plugin order.
+    std::optional<int> knobOrder;
     bool miniMixer = false;
     bool aiAgent = false;
     std::optional<juce::String> unit;
@@ -88,7 +91,24 @@ bool remove(const juce::String& uniqueId);
 /// A config describing `device` as it stands.
 PluginParameterConfig fromDevice(const DeviceInfo& device);
 
-/// Load `uniqueId`'s config onto `device`. False when none exists or it does not parse.
+/**
+ * @brief @p device's config as saved, with an entry for every parameter it has.
+ *
+ * Starts from fromDevice() and overlays the saved file, so a legacy file listing
+ * three indices does not shrink the plugin to three configurable parameters.
+ */
+PluginParameterConfig editableConfig(const DeviceInfo& device);
+
+/**
+ * @brief Load `uniqueId`'s config onto `device`. False when none exists or it does not parse.
+ *
+ * Selections are resolved against @p reported, everything the plugin has; a hosted
+ * device's own array holds only the parameters something addresses (#2629).
+ */
+bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device,
+                   std::span<const ParameterInfo> reported);
+
+/// @overload Resolved against the device's own parameters.
 bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device);
 
 /// @overload Filed under the device's `uniqueId`, or `pluginId` for older devices.
@@ -99,6 +119,17 @@ bool hasAiSoundDesignerParameters(const juce::String& uniqueId);
 
 /// Re-apply `uniqueId`'s config to every live device instance. Message thread only.
 void refreshLiveDevices(const juce::String& uniqueId);
+
+/**
+ * @brief Give @p slot a knob after @p device's others, in its plugin's saved set (#3218).
+ *
+ * @p device carries every parameter its plugin reports. False when the slot already
+ * has a knob or nothing was saved. Message thread only.
+ */
+bool addKnob(const DeviceInfo& device, int slot);
+
+/// Save @p unit for @p slot in @p device's plugin set; empty shows no unit (#3218).
+bool setUnit(const DeviceInfo& device, int slot, const juce::String& unit);
 
 }  // namespace PluginParameterConfigStore
 }  // namespace magda

@@ -1078,3 +1078,24 @@ TEST_CASE("ParameterUtils - choice index without choices", "[parameter][conversi
     REQUIRE(ParameterUtils::choiceIndexForModelValue(ParameterModelValue{0.7f}, info) == -1);
     REQUIRE(ParameterUtils::modelValueForChoiceIndex(3, info).value == Catch::Approx(0.0f));
 }
+
+TEST_CASE("A plugin's bare-number text shows the unit its parameter set gives it",
+          "[parameter][display][3218]") {
+    ParameterInfo info;
+    info.valueConvention = ParameterValueConvention::Normalized;
+    info.displayText = std::make_shared<ParameterInfo::DisplayTextProvider>();
+    info.displayText->formatter = [](const ParameterInfo::DisplayTextProvider&, float) {
+        return juce::String("12.5");
+    };
+
+    CHECK(ParameterUtils::formatValue(0.5f, info) == "12.5");
+
+    info.unit = "ms";
+    CHECK(ParameterUtils::formatValue(0.5f, info) == "12.5 ms");
+
+    // Text that carries its own words is the plugin's to keep.
+    info.displayText->formatter = [](const ParameterInfo::DisplayTextProvider&, float) {
+        return juce::String("12.5 Hz");
+    };
+    CHECK(ParameterUtils::formatValue(0.5f, info) == "12.5 Hz");
+}

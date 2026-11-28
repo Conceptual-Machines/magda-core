@@ -20,6 +20,7 @@
 #include "core/ModInfo.hpp"
 #include "core/ParameterUtils.hpp"
 #include "core/PluginCapabilities.hpp"
+#include "core/PluginParameterConfigStore.hpp"
 #include "core/PluginPresetScanner.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackAvailability.hpp"
@@ -393,7 +394,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device)
     // Learn button (parameter pick mode)
     learnButton_ = std::make_unique<magda::SvgButton>("Locate", BinaryData::locate_svg,
                                                       BinaryData::locate_svgSize);
-    learnButton_->setTooltip("Locate: move a control in the plug-in window to find its parameter");
+    learnButton_->setTooltip(
+        "Locate: move a control in the plug-in window to find its parameter, or add it as a knob");
     applyHeaderIconStyle(*learnButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     learnButton_->setEnabled(false);
     learnButton_->onClick = [this]() {
@@ -682,6 +684,14 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device)
                 if (auto* slot = self->paramGrid_->getSlot(i))
                     self->showAutomationLaneForParam(slot->getParamIndex());
         };
+        if (!isInternalDevice())
+            paramSlot->onUnitChosen = [safeThis = juce::Component::SafePointer(this),
+                                       i](const juce::String& unit) {
+                if (const auto& self = safeThis)
+                    if (auto* slot = self->paramGrid_->getSlot(i))
+                        magda::PluginParameterConfigStore::setUnit(self->deviceWithLiveKnobs(),
+                                                                   slot->getParamIndex(), unit);
+            };
     }
 
     updateParameterPagination();
@@ -1512,12 +1522,14 @@ void DeviceSlotComponent::deviceParameterObserved(const magda::ChainNodePath& de
 
     // Only a confirmed editor gesture: readback includes echoes of host writes,
     // which would hold the lock and starve a real touch.
-    if (source == magda::ObservationSource::EditorGesture)
+    if (source == magda::ObservationSource::EditorGesture) {
+        addTouchedKnob(paramIndex);
         applyLearnModeParameterHighlight(device_, *paramGrid_, paramIndex, normalised,
                                          learnHighlight_, [this]() {
                                              updateParameterSlots();
                                              updateParamModulation();
                                          });
+    }
 
     // A slot the document holds draws its base, which deviceParameterChanged
     // carries; what the plugin reports there is the effective value.
@@ -1576,6 +1588,25 @@ void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& dev
     // ranged in Hz clamps one to the bottom of the range.
     updateCurrentPageParameterSlotValue(device_, *paramGrid_, paramIndex, newValue);
     paramGrid_->refreshEnabledStates(device_, paramGrid_->getCurrentPage());
+}
+
+void DeviceSlotComponent::addTouchedKnob(int paramIndex) {
+    if (isInternalDevice() || !paramGrid_->isLearnMode() ||
+        std::ranges::contains(device_.visibleParameters, paramIndex))
+        return;
+
+    // Off the listener callback, since the save notifies every track listener again.
+    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this), paramIndex] {
+        if (const auto& self = safeThis)
+            magda::PluginParameterConfigStore::addKnob(self->deviceWithLiveKnobs(), paramIndex);
+    });
+}
+
+magda::DeviceInfo DeviceSlotComponent::deviceWithLiveKnobs() const {
+    auto device = device_;
+    if (const auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
+        device.visibleParameters = live->visibleParameters;
+    return device;
 }
 
 void DeviceSlotComponent::showAutomationLaneForParam(int paramIndex) {
@@ -2772,11 +2803,8 @@ void DeviceSlotComponent::setupCustomUILinking() {
 // =============================================================================
 
 int DeviceSlotComponent::getVisibleParamCount() const {
-    // If visibleParameters list is empty, show all parameters
-    if (device_.visibleParameters.empty()) {
-        return static_cast<int>(device_.parameters.size());
-    }
-    return static_cast<int>(device_.visibleParameters.size());
+    return device_.showsEveryParameter() ? static_cast<int>(device_.parameters.size())
+                                         : static_cast<int>(device_.visibleParameters.size());
 }
 
 int DeviceSlotComponent::getDynamicSlotWidth() const {
@@ -2791,12 +2819,13 @@ int DeviceSlotComponent::getDynamicSlotWidth() const {
                (device_.paramsShown ? 0 : traits_.compiledPresentation->leftPanelWidth) -
                (device_.outputShown ? 0 : traits_.compiledPresentation->rightPanelWidth);
     // 64px cells with the grid's 6px gaps and 10px padding: a grid's own columns beside its
-    // faceplate or Faust view, else eight; a faceplate that takes the whole body keeps the eight.
+    // faceplate or Faust view, else the layout's; a faceplate that takes the whole body keeps them.
     constexpr int kCell = 64;
     const bool ownColumns = hasFaceplate() || faustCustomView_ != nullptr;
     const int columns = ownColumns && paramGrid_ != nullptr && paramGrid_->getCellsPerRow() > 0
                             ? paramGrid_->getCellsPerRow()
-                            : PARAMS_PER_ROW;
+                        : paramGrid_ != nullptr ? paramGrid_->getLayout().slotColumns()
+                                                : PARAMS_PER_ROW;
     // The debug device's header carries every button, so it gets room for its name too.
     const int debugExtra = traits_.showsAllControls ? 100 : 0;
     return kCell * columns + 6 * (columns - 1) + 2 * 10 + debugExtra;

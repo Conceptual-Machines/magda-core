@@ -93,23 +93,7 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
             magda::SelectionManager::getInstance().selectParam(devicePath_, paramIndex_);
         }
     };
-    valueSlider_.onRightClicked = [this]() {
-        showParamLinkMenu(this, buildLinkContext(),
-                          {.onModUnlinked = onModUnlinked,
-                           .onRackModUnlinked = onRackModUnlinked,
-                           .onTrackModUnlinked = onTrackModUnlinked,
-                           .onModLinkedWithAmount = onModLinkedWithAmount,
-                           .onMacroLinked = onMacroLinked,
-                           .onMacroLinkedWithAmount = onMacroLinkedWithAmount,
-                           .onMacroUnlinked = onMacroUnlinked,
-                           .onRackMacroLinked = onRackMacroLinked,
-                           .onTrackMacroLinked = onTrackMacroLinked,
-                           .onRackMacroUnlinked = onRackMacroUnlinked,
-                           .onTrackMacroUnlinked = onTrackMacroUnlinked,
-                           .onShowAutomationLane = onShowAutomationLane,
-                           .onMidiLearn = onMidiLearn,
-                           .onMidiClear = onMidiClear});
-    };
+    valueSlider_.onRightClicked = [this]() { showContextMenu(); };
     valueSlider_.setRightClickEditsText(false);
     applyControlStyleToWidgets();
 
@@ -1334,7 +1318,9 @@ void ParamSlotComponent::showContextMenu() {
                        .onTrackMacroUnlinked = onTrackMacroUnlinked,
                        .onShowAutomationLane = onShowAutomationLane,
                        .onMidiLearn = onMidiLearn,
-                       .onMidiClear = onMidiClear});
+                       .onMidiClear = onMidiClear,
+                       .onUnitChosen = onUnitChosen,
+                       .currentUnit = paramInfo_.unit});
 }
 
 void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {

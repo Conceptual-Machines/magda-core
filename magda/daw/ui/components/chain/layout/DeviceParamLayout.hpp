@@ -102,6 +102,10 @@ class DeviceParamLayout {
     virtual int maxColumns() const {
         return 2;
     }
+    /// Columns a slot with no faceplate or view of its own is sized for.
+    virtual int slotColumns() const {
+        return 8;
+    }
     /// Rows a short grid is sized and centred as, given the style's row count; 0 stretches.
     virtual int minRowsForStyle(int /*styleRows*/) const {
         return 0;

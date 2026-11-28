@@ -1305,45 +1305,7 @@ bool DeviceApiLive::setDeviceParameterConfig(const ChainNodePath& devicePath,
         }
     }
 
-    // Start from the device's own parameters so every one has an entry, then
-    // overlay whatever was saved — a legacy file listing three indices must
-    // not shrink the plugin to three configurable parameters.
-    auto config = PluginParameterConfigStore::fromDevice(*device);
-    if (const auto saved = PluginParameterConfigStore::load(uniqueId)) {
-        config.aiPrompt = saved->aiPrompt;
-
-        std::vector<juce::String> currentIds;
-        currentIds.reserve(config.entries.size());
-        for (const auto& entry : config.entries)
-            currentIds.push_back(entry.id);
-
-        // Field by field onto the entry the parameter has now, rather than
-        // replacing it: the fresh entry carries the device's current position
-        // and id, and assigning the saved one over it would put back the
-        // position it was written at and erase an id a legacy file never had —
-        // so a save through here would never migrate the file.
-        const auto positions = PluginParameterConfigStore::entryPositions(*saved, currentIds);
-
-        for (size_t at = 0; at < saved->entries.size(); ++at) {
-            const auto index = positions[at];
-            if (index < 0 || index >= count)
-                continue;
-
-            const auto& from = saved->entries[at];
-            auto& into = config.entries[static_cast<size_t>(index)];
-            into.name = from.name;
-            into.visible = from.visible;
-            into.miniMixer = from.miniMixer;
-            into.aiAgent = from.aiAgent;
-            into.unit = from.unit;
-            into.scale = from.scale;
-            into.rangeMin = from.rangeMin;
-            into.rangeMax = from.rangeMax;
-            into.rangeCenter = from.rangeCenter;
-            into.choices = from.choices;
-            into.valueTable = from.valueTable;
-        }
-    }
+    auto config = PluginParameterConfigStore::editableConfig(*device);
 
     const auto applySelection = [&config](const std::optional<std::vector<int>>& indices,
                                           bool PluginParameterConfigEntry::*flag) {
@@ -1352,7 +1314,16 @@ bool DeviceApiLive::setDeviceParameterConfig(const ChainNodePath& devicePath,
         for (auto& entry : config.entries)
             entry.*flag = std::ranges::contains(*indices, entry.index);
     };
-    applySelection(update.visibleParameters, &PluginParameterConfigEntry::visible);
+    // The list's own order is the knobs' order (#3218).
+    if (const auto& knobs = update.visibleParameters)
+        for (auto& entry : config.entries) {
+            const auto knob = std::ranges::find(*knobs, entry.index);
+            entry.visible = knob != knobs->end();
+            entry.knobOrder =
+                entry.visible
+                    ? std::optional<int>(static_cast<int>(std::distance(knobs->begin(), knob)))
+                    : std::nullopt;
+        }
     applySelection(update.miniMixerParameters, &PluginParameterConfigEntry::miniMixer);
     applySelection(update.aiAgentParameters, &PluginParameterConfigEntry::aiAgent);
     if (update.aiPrompt)

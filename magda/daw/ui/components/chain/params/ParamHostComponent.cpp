@@ -500,16 +500,16 @@ void ParamHostComponent::applyControlStyle() {
     }
     layout_->setControlStyle(style);
 
-    // Plug-ins: 8 columns in Text and Knobs, 6 in Sliders, in as many rows as the height holds up
-    // to the style's 4 or 3 (#3201). Curated native layouts: balanced rows of at most the layout's
-    // columns, sized as those rows, and wider rather than taller than the height holds.
+    // Plug-ins: 4 columns in Text and Knobs, 3 in Sliders, in as many rows as the height holds up
+    // to the style's 4 or 3 (#3201, #3218). Curated native layouts: balanced rows of at most the
+    // layout's columns, sized as those rows, and wider rather than taller than the height holds.
     const bool sliders = style == ParamControlStyle::Sliders;
     const int styleRows = style == ParamControlStyle::Knobs ? 3 : 4;
     const int rows = fittingRows_ > 0 ? std::min(styleRows, fittingRows_) : styleRows;
     const int previousCount = cellCount_;
     const int previousColumns = cellsPerRow_;
     minRows_ = layout_->minRowsForStyle(rows);
-    if (layout_->setShape(sliders ? 6 : 8, rows)) {
+    if (layout_->setShape(sliders ? 3 : 4, rows)) {
         cellCount_ = layout_->cellCount();
         cellsPerRow_ = layout_->cellsPerRow();
     } else if (layout_->reflowsForControlStyle() && cellCount_ > 0) {

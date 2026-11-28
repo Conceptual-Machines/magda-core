@@ -41,6 +41,11 @@ class Edit {
         return copy_ != nullptr;
     }
 
+    /// @p key as the upgrade has it so far.
+    juce::var get(const juce::Identifier& key) const {
+        return copy_ != nullptr ? copy_->getProperty(key) : source_.getProperty(key);
+    }
+
     juce::var result(const juce::var& original) const {
         return changed() ? juce::var(copy_.get()) : original;
     }
@@ -514,6 +519,16 @@ ser::ObjectReader upgradeDevice(const ser::ObjectReader& device) {
                 slots.add(slotAtPosition[static_cast<std::size_t>(position)]);
         }
         edit.set(slotsKey, slots);
+    }
+
+    // An empty selection showed a hosted plugin's every parameter until it came to show none
+    // (#3218), so the load fills in what the project showed.
+    if (!obj->hasProperty("shownParameterSlots")) {
+        const auto* legacy = edit.get("visibleParameterSlots").getArray();
+        if (!internal && (legacy == nullptr || legacy->isEmpty()))
+            edit.set("showEveryParameter", true);
+        else
+            edit.set("shownParameterSlots", edit.get("visibleParameterSlots"));
     }
 
     // Before the declared port, the only fact saved was that the device had one (#2329).

@@ -502,6 +502,11 @@ class DeviceSlotComponent : public NodeComponent,
 
     void showAutomationLaneForParam(int paramIndex);
 
+    /// With Locate on, a hosted plugin's touched parameter gains a knob (#3218).
+    void addTouchedKnob(int paramIndex);
+    /// The slot's device with the model's knobs, which a save since the last update may have moved.
+    magda::DeviceInfo deviceWithLiveKnobs() const;
+
     // Dynamic layout helpers
     int getVisibleParamCount() const;
     int getDynamicSlotWidth() const;

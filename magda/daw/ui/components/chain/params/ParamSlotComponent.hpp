@@ -193,6 +193,8 @@ class ParamSlotComponent : public juce::Component,
     // MIDI Learn callbacks (wired to MidiLearnCoordinator by this component)
     std::function<void(magda::ChainNodePath, int paramIndex, juce::String paramName)> onMidiLearn;
     std::function<void(magda::ChainNodePath, int paramIndex)> onMidiClear;
+    /// Set on a hosted plugin's knob, which offers a Unit submenu (#3218).
+    std::function<void(const juce::String& unit)> onUnitChosen;
 
     // Show the standard param context menu (link to mod/macro, show automation
     // lane, MIDI learn). Public so hosts that overlay this slot on their own

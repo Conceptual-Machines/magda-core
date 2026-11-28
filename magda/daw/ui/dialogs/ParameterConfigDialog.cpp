@@ -5,6 +5,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -933,7 +934,7 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
         info.name = scanned.name;
         info.stableId = scanned.stableId;
         info.defaultValue = scanned.defaultValue;
-        info.isVisible = true;
+        info.isVisible = false;  // A plugin starts with no knobs (#3218).
         info.unit = scanned.unit;
         info.rangeMin = scanned.rangeMin;
         info.rangeMax = scanned.rangeMax;
@@ -1259,6 +1260,10 @@ void ParameterConfigDialog::saveParameterConfiguration() {
         config.controlStyle = daw::ui::controlStyleKey(
             static_cast<daw::ui::ParamControlStyle>(controlStyleCombo_.getSelectedId() - 2));
     config.entries.reserve(parameters_.size());
+    int nextKnob = 0;
+    for (const auto& p : parameters_)
+        if (p.isVisible && p.knobOrder)
+            nextKnob = std::max(nextKnob, *p.knobOrder + 1);
     int visibleCount = 0;
     for (size_t i = 0; i < parameters_.size(); ++i) {
         const auto& p = parameters_[i];
@@ -1269,6 +1274,8 @@ void ParameterConfigDialog::saveParameterConfiguration() {
         // Internal devices intentionally expose no Visible params (only Mini FX),
         // so never persist visibility for them regardless of the default state.
         entry.visible = !isInternalPlugin_ && p.isVisible;
+        if (entry.visible)
+            entry.knobOrder = p.knobOrder ? *p.knobOrder : nextKnob++;
         entry.miniMixer = p.inMiniMixer;
         entry.aiAgent = !isInternalPlugin_ && p.inAiSoundDesigner;
         entry.unit = p.unit;
@@ -1337,6 +1344,7 @@ void ParameterConfigDialog::loadParameterConfiguration() {
             continue;
         auto& p = parameters_[static_cast<size_t>(index)];
         p.isVisible = entry.visible;
+        p.knobOrder = entry.knobOrder;
         p.inMiniMixer = entry.miniMixer;
         p.inAiSoundDesigner = entry.aiAgent;
         if (entry.unit)

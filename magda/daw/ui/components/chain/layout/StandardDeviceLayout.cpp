@@ -10,8 +10,8 @@ namespace magda::daw::ui {
 namespace {
 
 int visibleCountFor(const magda::DeviceInfo& device) {
-    return device.visibleParameters.empty() ? static_cast<int>(device.parameters.size())
-                                            : static_cast<int>(device.visibleParameters.size());
+    return device.showsEveryParameter() ? static_cast<int>(device.parameters.size())
+                                        : static_cast<int>(device.visibleParameters.size());
 }
 
 /// Where @p slot sits in the device's parameter array, or -1.
@@ -24,7 +24,7 @@ int positionOfSlot(const magda::DeviceInfo& device, int slot) {
 }
 
 int paramArrayIndexFor(const magda::DeviceInfo& device, int slotIndex) {
-    if (device.visibleParameters.empty())
+    if (device.showsEveryParameter())
         return slotIndex;
     if (slotIndex < 0 || slotIndex >= static_cast<int>(device.visibleParameters.size()))
         return -1;
