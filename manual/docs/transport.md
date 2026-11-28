@@ -19,13 +19,55 @@ From left to right:
 | **Grid** | Grid division, **AUTO** and **SNAP** |
 | **MEM** | The capture switch, meter and button (see [Capturing what you just heard](recording-comping.md#capturing-what-you-just-heard)) |
 | **QWERTY keyboard** | Plays notes from the computer keyboard |
-| **CPU** | The audio engine's load |
-
-Hover the CPU readout for the audio device, sample rate, buffer size, peak load and dropouts (Xruns).
+| **CPU** | How much of the computer's CPU MAGDA uses (see [CPU Readout](#cpu-readout)) |
 
 ### Narrow Windows
 
 When the window is too narrow for everything, the transport makes room in steps: the MEM meter shrinks to its dot and capture button, the clock beside the playhead goes, the Link chip shrinks to its LED, and SEL and LOOP show only their starts (hover a start to see the end). After that, whole groups leave the bar. A menu button appears at the right end, and the controls that left are in its menu: the QWERTY keyboard (**Virtual MIDI Keyboard**), **Recent Capture** and the CPU load, then **Loop** and **Back to Arrangement**, **Punch In**, **Punch Out** and **Punch Range...**, **Auto Grid** and **Snap**, and **Go Home**, **Previous** and **Next**.
+
+## CPU Readout
+
+The **CPU** readout shows how hard the computer works to play the project. Use it to find out if the project is near the limit that the computer can play without dropouts.
+
+The readout has two parts:
+
+- **The bar** - MAGDA's share of the whole computer, across all its cores. This is the figure that Activity Monitor or Task Manager shows, divided by the number of cores.
+- **The mark** - A thin line across the bar. It shows the slowest block of audio, as a percentage of its deadline. The deadline is the time that the audio device gives MAGDA to make one block: one buffer. The mark stays at its highest value for about 3 seconds, so you can see a short spike.
+
+| Mark colour | The slowest block took |
+|-------------|------------------------|
+| Grey | Less than 70% of its deadline |
+| Orange | 70% to 99% of its deadline |
+| Red | 100% or more. The block was late, and you can hear a dropout. |
+
+Colours are for the default theme. To find the cause of a dropout, look at the mark, not at the bar. One block must be ready within one buffer, so one slow plugin can make a block late. The bar can show 10% on a computer with 8 cores at the same time.
+
+Hover the readout to see the audio device, the sample rate, the buffer size, the CPU load with its peak, the slowest block, and the **Xruns**. An xrun is a dropout: a block that was late, or a dropout that the audio driver reported. The count starts again when the audio device opens. A dropout inside the audio driver is in the count only if the driver reports it.
+
+### CPU Load window
+
+The **CPU Load** window shows where the CPU goes, for each track. To open it, click the **CPU** readout.
+
+- **The summary** - The CPU load, divided into **Realtime thread**, **Render ahead** and **Other**. **Other** is the rest of MAGDA's work, for example the interface. Each figure is a share of the whole computer, as in the transport.
+- **The graph** - The same figures for the last 30 seconds.
+- **The track list** - One row for each track: its share of the CPU, where it renders (**Realtime**, **Ahead** or **Both**) and its number of devices. A row also shows **Armed**, **Monitoring** or **In the editor** when that keeps the track on the realtime thread. See [Rendering ahead](#rendering-ahead).
+
+To see the devices of a track, click its row. Each device shows its share of the CPU and its latency. Click the row again to hide them.
+
+### Rendering ahead
+
+MAGDA renders most tracks before the audio device asks for them, by the **Render-Ahead Time** (20 ms by default). These tracks render on other threads. A block that is slow on one of them has more time than one buffer to be ready. The audio device then plays audio that is already rendered.
+
+A track that you play live renders on the realtime thread, when the audio device asks for it. Its sound must change as soon as you play. A track is live when:
+
+- It is armed for recording, or it monitors its input.
+- One of its clips is open in an editor in the bottom panel: the Piano Roll, the Drum Grid Editor, the chord editor or the Waveform Editor.
+- You selected one of its devices, or a node in its chain.
+- It records into a session slot, plays a session clip that launches without quantization, or sends MIDI to a hardware device.
+
+A selected track header does not make a track live. If the track is live only because of the selection, the track renders ahead again when you select a different track.
+
+To set the time, use **Render-Ahead Time** in [Settings](interface/preferences.md#engine). A longer time gives a slow block more time. A start from stopped waits for the blocks that are already rendered, so play starts later by about the same time. **Off** renders every track on the realtime thread.
 
 ## Navigation & Playback
 

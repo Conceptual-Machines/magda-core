@@ -160,3 +160,36 @@ magda-site-header:not(:defined) {
   --md-primary-bg-color: #ffffff;
   --md-accent-fg-color: #5588aa;
 }
+
+/* Printing, and the PDF that CI prints from /print_page/. */
+@page {
+  margin: 18mm 14mm;
+
+  @bottom-right {
+    font-family: "Inter", sans-serif;
+    font-size: 8pt;
+    color: #76808e;
+  }
+}
+
+@media print {
+  magda-site-header {
+    display: none;
+  }
+
+  .md-typeset h1,
+  .md-typeset h2,
+  .md-typeset h3,
+  .md-typeset h4 {
+    break-after: avoid;
+  }
+
+  .md-typeset img,
+  .md-typeset figure,
+  .md-typeset pre,
+  .md-typeset .mermaid,
+  .md-typeset .admonition,
+  .md-typeset tr {
+    break-inside: avoid;
+  }
+}

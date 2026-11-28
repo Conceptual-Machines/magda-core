@@ -128,6 +128,20 @@ extra:
       link: https://magda.land
       name: MAGDA Website
 
+plugins:
+  - search
+  # Every page in one, at /print_page/, which CI prints to magda-manual.pdf. Must stay last.
+  - print-site:
+      add_to_navigation: false
+      add_cover_page: true
+      add_table_of_contents: true
+      toc_depth: 2
+      enumerate_headings: false
+      add_full_urls: false
+      print_page_title: "MAGDA Manual"
+      exclude:
+        - reference/remote-api-operations.md
+
 hooks:
   - hooks/openrpc.py
 

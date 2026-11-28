@@ -4,6 +4,8 @@ MAGDA (**M**ulti **A**gent **D**igital **A**udio) is a free, open-source digital
 
 MAGDA includes a built-in **AI assistant** — describe what you want in natural language ("add a MIDI track with a bass clip", "transpose the selected notes up an octave") and MAGDA translates your request into actions. See [AI Assistant](panels/ai-assistant.md) to learn more.
 
+To read the manual offline, [download it as a PDF](/magda-manual.pdf).
+
 ## Three Views, One Workflow
 
 MAGDA is organized around three main views, each focused on a different stage of music production. Switch between them with the **Session**, **Arrangement** and **Mix** buttons in the footer bar.

@@ -117,11 +117,6 @@ flowchart TD
     H --> I["Voice-Leading Optimizer<br>Minimize centroid distance<br>from last played chord"]
 
     I --> J["Top-K Suggestions"]
-
-    style A fill:#2d2d2d,stroke:#7c4dff,color:#fff
-    style D fill:#1b5e20,stroke:#4caf50,color:#fff
-    style G fill:#4a148c,stroke:#ce93d8,color:#fff
-    style J fill:#0d47a1,stroke:#42a5f5,color:#fff
 ```
 
 ## Chord Timeline

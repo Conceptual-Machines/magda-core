@@ -83,11 +83,11 @@ Creation dates that were not recorded by older versions appear as **Unknown**.
 
 ### Engine
 
-- **Render playback ahead of the audio device** — Renders playback ahead of the audio device by the **Look-Ahead** time (5 to 200 ms, 20 by default). Off by default.
 - **Keep what you play, so it can be captured afterwards** — Turns on the capture buffer behind **Transport > Recent Capture** (the **MEM** switch in the transport). See [Capturing what you just heard](../recording-comping.md#capturing-what-you-just-heard).
     - **Capture Buffer** — How much is kept, shown with what it costs: 5 minutes by default, up to 4 hours. Anything past the first minute is kept on disk, in the **Capture history** folder under [Paths](#paths).
     - **Capture Length** — The most a capture selects for you, in bars (8 by default).
 - **Unload plugins when freezing, to free their memory** — When you freeze a track, the plugins rendered into its frozen audio are unloaded. On by default. See [Freezing Tracks](../tracks.md#freezing-tracks).
+- **Render-Ahead Time** - How far ahead of the audio device MAGDA renders the tracks that you do not play live: 0 to 100 ms, in steps of 5 ms, 20 ms by default. **Off** (0 ms) renders every track when the audio device asks for it. See [Rendering ahead](../transport.md#rendering-ahead).
 
 ### Layout
 
