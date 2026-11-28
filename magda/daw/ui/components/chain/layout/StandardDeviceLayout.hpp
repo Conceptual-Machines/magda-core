@@ -17,7 +17,8 @@ namespace magda::daw::ui {
  */
 class StandardDeviceLayout final : public DeviceParamLayout {
   public:
-    static constexpr int kCellsPerRow = 8;
+    /// A plug-in's 16 cells, at half the width 32 took (#3218).
+    static constexpr int kCellsPerRow = 4;
     static constexpr int kRows = 4;
     static constexpr int kCellCount = kCellsPerRow * kRows;
 
@@ -29,6 +30,9 @@ class StandardDeviceLayout final : public DeviceParamLayout {
     }
     int maxCellCount() const override {
         return kCellCount;
+    }
+    int slotColumns() const override {
+        return kCellsPerRow;
     }
     bool setShape(int cellsPerRow, int rows) override {
         cellsPerRow_ = juce::jlimit(1, kCellsPerRow, cellsPerRow);

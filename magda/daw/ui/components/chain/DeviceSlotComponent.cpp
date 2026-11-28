@@ -2819,12 +2819,13 @@ int DeviceSlotComponent::getDynamicSlotWidth() const {
                (device_.paramsShown ? 0 : traits_.compiledPresentation->leftPanelWidth) -
                (device_.outputShown ? 0 : traits_.compiledPresentation->rightPanelWidth);
     // 64px cells with the grid's 6px gaps and 10px padding: a grid's own columns beside its
-    // faceplate or Faust view, else eight; a faceplate that takes the whole body keeps the eight.
+    // faceplate or Faust view, else the layout's; a faceplate that takes the whole body keeps them.
     constexpr int kCell = 64;
     const bool ownColumns = hasFaceplate() || faustCustomView_ != nullptr;
     const int columns = ownColumns && paramGrid_ != nullptr && paramGrid_->getCellsPerRow() > 0
                             ? paramGrid_->getCellsPerRow()
-                            : PARAMS_PER_ROW;
+                        : paramGrid_ != nullptr ? paramGrid_->getLayout().slotColumns()
+                                                : PARAMS_PER_ROW;
     // The debug device's header carries every button, so it gets room for its name too.
     const int debugExtra = traits_.showsAllControls ? 100 : 0;
     return kCell * columns + 6 * (columns - 1) + 2 * 10 + debugExtra;
