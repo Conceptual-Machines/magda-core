@@ -71,14 +71,14 @@ void applyDeviceSlotAutomationValueChange(magda::DeviceInfo& device, ParamHostCo
         const int paramsPerPage = paramGrid->getSlotCount();
         const int pageOffset = paramGrid->getCurrentPage() * paramsPerPage;
 
-        // Which slot the grid draws in each cell: the user's selection where
-        // there is one (#2638), the array in order otherwise.
+        // Which slot the grid draws in each cell: the user's selection (#2638), or
+        // the array in order on a device that shows every parameter.
         const auto slotInCell = [&device](int cell) {
             const auto at = [](const auto& list, int index) {
                 return index >= 0 && index < static_cast<int>(list.size());
             };
 
-            if (!device.visibleParameters.empty())
+            if (!device.showsEveryParameter())
                 return at(device.visibleParameters, cell)
                            ? device.visibleParameters[static_cast<size_t>(cell)]
                            : -1;

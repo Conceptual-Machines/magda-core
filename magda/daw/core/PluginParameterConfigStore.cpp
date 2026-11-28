@@ -6,12 +6,16 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <functional>
+#include <iterator>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <ranges>
 #include <string>
 #include <unordered_map>
 
+#include "../engine/AudioEngine.hpp"
 #include "AppPaths.hpp"
 #include "ChainWalk.hpp"
 #include "DeviceInfo.hpp"
@@ -27,33 +31,64 @@ juce::String configIdFor(const DeviceInfo& device) {
     return device.uniqueId.isNotEmpty() ? device.uniqueId : device.pluginId;
 }
 
-bool applyConfigToMatchingDevice(const juce::String& uniqueId, DeviceInfo& device) {
-    if (configIdFor(device) != uniqueId)
-        return false;
-    return applyToDevice(uniqueId, device);
+/// Everything the plugin at @p path reports, or the device's own array when no instance answers.
+std::vector<ParameterInfo> reportedParameters(const DeviceInfo& device, const ChainNodePath& path) {
+    if (device.format != PluginFormat::Internal)
+        if (auto* engine = TrackManager::getInstance().getAudioEngine())
+            if (auto reported = engine->describeDeviceParameters(path).parameters;
+                !reported.empty())
+                return reported;
+    return device.parameters;
 }
 
-bool refreshElementParameterConfig(const juce::String& uniqueId,
+bool applyConfigToMatchingDevice(const juce::String& uniqueId, DeviceInfo& device,
+                                 const ChainNodePath& path) {
+    if (configIdFor(device) != uniqueId)
+        return false;
+    const auto reported = reportedParameters(device, path);
+    return applyToDevice(uniqueId, device, reported);
+}
+
+bool refreshElementParameterConfig(const juce::String& uniqueId, TrackId trackId,
                                    std::vector<ChainElement>& elements) {
     bool changed = false;
     // Pads entered: a device on a Drum Grid pad is configured from the same
     // dialog as any other, and the walk is shared so that adding a container to
     // the model does not leave this one behind (#2204).
-    chain_walk::forEachDevice(elements, {}, chain_walk::Pads::Enter,
-                              [&changed, &uniqueId](DeviceInfo& device, const ChainNodePath&) {
-                                  changed =
-                                      applyConfigToMatchingDevice(uniqueId, device) || changed;
+    chain_walk::forEachDevice(elements, ChainNodePath::trackLevel(trackId), chain_walk::Pads::Enter,
+                              [&changed, &uniqueId](DeviceInfo& device, const ChainNodePath& path) {
+                                  changed = applyConfigToMatchingDevice(uniqueId, device, path) ||
+                                            changed;
                                   return true;
                               });
     return changed;
 }
 
 bool refreshFlatParameterConfig(const juce::String& uniqueId,
-                                std::vector<PostFxChainElement>& elements) {
+                                std::vector<PostFxChainElement>& elements,
+                                const std::function<ChainNodePath(DeviceId)>& pathOf) {
     bool changed = false;
     for (auto& element : elements)
-        changed = applyConfigToMatchingDevice(uniqueId, element.device) || changed;
+        changed =
+            applyConfigToMatchingDevice(uniqueId, element.device, pathOf(element.device.id)) ||
+            changed;
     return changed;
+}
+
+/// Where @p slot sits in @p device's parameter array, or -1.
+int positionOfSlot(const DeviceInfo& device, int slot) {
+    const auto found = std::ranges::find(device.parameters, slot, &ParameterInfo::paramIndex);
+    return found == device.parameters.end()
+               ? -1
+               : static_cast<int>(std::distance(device.parameters.begin(), found));
+}
+
+bool saveAndRefresh(const DeviceInfo& device, const PluginParameterConfig& config) {
+    const auto uniqueId = configIdFor(device);
+    if (!save(uniqueId, config))
+        return false;
+    refreshLiveDevices(uniqueId);
+    return true;
 }
 
 /// The entry describing `device`'s parameter at `index` as it stands now.
@@ -70,6 +105,9 @@ PluginParameterConfigEntry entryFor(const DeviceInfo& device, size_t index) {
     // Off the device, like the prompt: a caller with no saved file to overlay
     // then starts from the truth (#2620).
     entry.visible = selected(device.visibleParameters);
+    if (const auto knob = std::ranges::find(device.visibleParameters, info.paramIndex);
+        knob != device.visibleParameters.end())
+        entry.knobOrder = static_cast<int>(std::distance(device.visibleParameters.begin(), knob));
     entry.miniMixer = selected(device.miniMixerParameters);
     entry.aiAgent = selected(device.aiSoundDesignerParameters);
     entry.unit = info.unit;
@@ -143,6 +181,8 @@ std::optional<PluginParameterConfig> parse(const juce::File& file, const juce::S
             entry.id = paramElem->getStringAttribute("id");
             entry.name = paramElem->getStringAttribute("name");
             entry.visible = paramElem->getBoolAttribute("visible", false);
+            if (paramElem->hasAttribute("order"))
+                entry.knobOrder = paramElem->getIntAttribute("order");
             entry.miniMixer = paramElem->getBoolAttribute("mini", false);
             entry.aiAgent = paramElem->getBoolAttribute("ai", false);
             if (paramElem->hasAttribute("unit"))
@@ -202,6 +242,8 @@ juce::XmlElement toXml(const juce::String& uniqueId, const PluginParameterConfig
             paramElem->setAttribute("id", entry.id);
         paramElem->setAttribute("name", entry.name);
         paramElem->setAttribute("visible", entry.visible);
+        if (entry.visible && entry.knobOrder)
+            paramElem->setAttribute("order", *entry.knobOrder);
         paramElem->setAttribute("mini", entry.miniMixer);
         paramElem->setAttribute("ai", entry.aiAgent);
         if (entry.unit)
@@ -372,7 +414,49 @@ PluginParameterConfig fromDevice(const DeviceInfo& device) {
     return config;
 }
 
-bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device) {
+PluginParameterConfig editableConfig(const DeviceInfo& device) {
+    auto config = fromDevice(device);
+    const auto saved = load(configIdFor(device));
+    if (!saved)
+        return config;
+
+    config.aiPrompt = saved->aiPrompt;
+
+    std::vector<juce::String> currentIds;
+    currentIds.reserve(config.entries.size());
+    for (const auto& entry : config.entries)
+        currentIds.push_back(entry.id);
+
+    // Field by field onto the entry the parameter has now: the fresh entry carries the
+    // device's current position and id, which a legacy file may lack.
+    const auto positions = entryPositions(*saved, currentIds);
+    const auto count = static_cast<int>(config.entries.size());
+
+    for (size_t at = 0; at < saved->entries.size(); ++at) {
+        const auto index = positions[at];
+        if (index < 0 || index >= count)
+            continue;
+
+        const auto& from = saved->entries[at];
+        auto& into = config.entries[static_cast<size_t>(index)];
+        into.name = from.name;
+        into.visible = from.visible;
+        into.knobOrder = from.knobOrder;
+        into.miniMixer = from.miniMixer;
+        into.aiAgent = from.aiAgent;
+        into.unit = from.unit;
+        into.scale = from.scale;
+        into.rangeMin = from.rangeMin;
+        into.rangeMax = from.rangeMax;
+        into.rangeCenter = from.rangeCenter;
+        into.choices = from.choices;
+        into.valueTable = from.valueTable;
+    }
+    return config;
+}
+
+bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device,
+                   std::span<const ParameterInfo> reported) {
     const auto config = load(uniqueId);
     if (!config)
         return false;
@@ -385,43 +469,61 @@ bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device) {
 
     // An entry is matched by stable id, and its selection stored as the slot
     // of the parameter it lands on (#2638).
-    const auto count = static_cast<int>(device.parameters.size());
+    const auto count = static_cast<int>(reported.size());
 
     std::vector<juce::String> currentIds;
-    currentIds.reserve(device.parameters.size());
-    for (const auto& parameter : device.parameters)
+    currentIds.reserve(reported.size());
+    for (const auto& parameter : reported)
         currentIds.push_back(parameter.stableId);
 
     const auto positions = entryPositions(*config, currentIds);
+
+    struct Knob {
+        int order;
+        int slot;
+    };
+    std::vector<Knob> knobs;
 
     for (size_t at = 0; at < config->entries.size(); ++at) {
         const auto& entry = config->entries[at];
         const auto index = positions[at];
         if (index < 0 || index >= count)
             continue;
-        auto& parameter = device.parameters[static_cast<size_t>(index)];
+        const auto slot = reported[static_cast<size_t>(index)].paramIndex;
 
         if (entry.visible)
-            device.visibleParameters.push_back(parameter.paramIndex);
+            knobs.push_back({entry.knobOrder.value_or(std::numeric_limits<int>::max()), slot});
         if (entry.miniMixer)
-            device.miniMixerParameters.push_back(parameter.paramIndex);
+            device.miniMixerParameters.push_back(slot);
         if (entry.aiAgent)
-            device.aiSoundDesignerParameters.push_back(parameter.paramIndex);
+            device.aiSoundDesignerParameters.push_back(slot);
 
+        auto* parameter = device.findParameterByIndex(slot);
+        if (parameter == nullptr)
+            continue;
         if (entry.unit)
-            parameter.unit = *entry.unit;
+            parameter->unit = *entry.unit;
         if (entry.scale)
-            parameter.scale = *entry.scale;
+            parameter->scale = *entry.scale;
         if (entry.rangeMin)
-            parameter.minValue = *entry.rangeMin;
+            parameter->minValue = *entry.rangeMin;
         if (entry.rangeMax)
-            parameter.maxValue = *entry.rangeMax;
+            parameter->maxValue = *entry.rangeMax;
         if (entry.choices)
-            parameter.choices = *entry.choices;
+            parameter->choices = *entry.choices;
         if (entry.valueTable)
-            parameter.valueTable = *entry.valueTable;
+            parameter->valueTable = *entry.valueTable;
     }
+
+    std::ranges::stable_sort(knobs, {}, &Knob::order);
+    for (const auto& knob : knobs)
+        device.visibleParameters.push_back(knob.slot);
     return true;
+}
+
+bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device) {
+    const auto reported = device.parameters;
+    return applyToDevice(uniqueId, device, reported);
 }
 
 bool applyToDevice(DeviceInfo& device) {
@@ -452,13 +554,54 @@ void refreshLiveDevices(const juce::String& uniqueId) {
         if (track == nullptr)
             continue;
 
-        bool changed = refreshElementParameterConfig(uniqueId, track->chain.fxChainElements);
-        changed = refreshFlatParameterConfig(uniqueId, track->chain.postFxChainElements) || changed;
+        bool changed =
+            refreshElementParameterConfig(uniqueId, trackId, track->chain.fxChainElements);
+        changed = refreshFlatParameterConfig(uniqueId, track->chain.postFxChainElements,
+                                             [trackId](DeviceId id) {
+                                                 return ChainNodePath::postFxDevice(trackId, id);
+                                             }) ||
+                  changed;
         changed =
-            refreshFlatParameterConfig(uniqueId, track->chain.mixerAnalysisElements) || changed;
+            refreshFlatParameterConfig(uniqueId, track->chain.mixerAnalysisElements,
+                                       [trackId](DeviceId id) {
+                                           return ChainNodePath::mixerAnalysisDevice(trackId, id);
+                                       }) ||
+            changed;
         if (changed)
             tm.notifyTrackDevicesChanged(trackId);
     }
+}
+
+bool addKnob(const DeviceInfo& device, int slot) {
+    const auto position = positionOfSlot(device, slot);
+    if (device.format == PluginFormat::Internal || position < 0 ||
+        std::ranges::contains(device.visibleParameters, slot))
+        return false;
+
+    // The knobs on screen are the order to keep, whatever the file held.
+    auto knobs = device.visibleParameters;
+    knobs.push_back(slot);
+
+    auto config = editableConfig(device);
+    for (size_t at = 0; at < config.entries.size(); ++at) {
+        const auto knob = std::ranges::find(knobs, device.parameters[at].paramIndex);
+        auto& entry = config.entries[at];
+        entry.visible = knob != knobs.end();
+        entry.knobOrder =
+            entry.visible ? std::optional<int>(static_cast<int>(std::distance(knobs.begin(), knob)))
+                          : std::nullopt;
+    }
+    return saveAndRefresh(device, config);
+}
+
+bool setUnit(const DeviceInfo& device, int slot, const juce::String& unit) {
+    const auto position = positionOfSlot(device, slot);
+    if (device.format == PluginFormat::Internal || position < 0)
+        return false;
+
+    auto config = editableConfig(device);
+    config.entries[static_cast<size_t>(position)].unit = unit;
+    return saveAndRefresh(device, config);
 }
 
 }  // namespace magda::PluginParameterConfigStore

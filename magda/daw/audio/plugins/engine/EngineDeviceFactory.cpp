@@ -252,6 +252,10 @@ ExternalDeviceResult adaptExternalPluginInstance(
 
     // Before the device is built, which copies these records.
     magda::PluginParameterConfigStore::applyToDevice(resolvedDevice);
+    if (std::exchange(resolvedDevice.showEveryParameterOnLoad, false) &&
+        resolvedDevice.visibleParameters.empty())
+        for (const auto& parameter : resolvedDevice.parameters)
+            resolvedDevice.visibleParameters.push_back(parameter.paramIndex);
 
     auto restored = magda::snapshotHostParameters(*instance);
 

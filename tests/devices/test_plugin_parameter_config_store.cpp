@@ -554,3 +554,89 @@ TEST_CASE("A partial config update keeps the selections of a device with no conf
 
     tm.clearAllTracks();
 }
+
+TEST_CASE("A hosted plugin with no selection shows no knobs", "[param-config-store][3218]") {
+    auto hosted = makeExternalDevice();
+    CHECK_FALSE(hosted.showsEveryParameter());
+
+    magda::DeviceInfo internal;
+    internal.format = magda::PluginFormat::Internal;
+    CHECK(internal.showsEveryParameter());
+    internal.visibleParameters = {1};
+    CHECK_FALSE(internal.showsEveryParameter());
+}
+
+TEST_CASE("A touched parameter's knob goes after the others and is saved for the plugin",
+          "[param-config-store][3218]") {
+    TempDataDir temp;
+    magda::TrackManager::getInstance().clearAllTracks();
+
+    auto device = makeExternalDevice();
+    REQUIRE(store::addKnob(device, 2));
+
+    auto loaded = makeExternalDevice();
+    REQUIRE(store::applyToDevice(loaded));
+    CHECK(loaded.visibleParameters == std::vector<int>{2});
+
+    REQUIRE(store::addKnob(loaded, 0));
+    CHECK_FALSE(store::addKnob(loaded, 2));
+
+    auto reloaded = makeExternalDevice();
+    REQUIRE(store::applyToDevice(reloaded));
+    CHECK(reloaded.visibleParameters == std::vector<int>{2, 0});
+
+    // The order survives the file being read back from scratch.
+    const auto config = store::load("VST3-Surge-XT-1a2b3c4d");
+    REQUIRE(config.has_value());
+    CHECK(config->entries[2].knobOrder == 0);
+    CHECK(config->entries[0].knobOrder == 1);
+    CHECK_FALSE(config->entries[1].knobOrder.has_value());
+}
+
+TEST_CASE("An internal device is not given knobs by touch", "[param-config-store][3218]") {
+    TempDataDir temp;
+    auto device = makeExternalDevice();
+    device.format = magda::PluginFormat::Internal;
+    CHECK_FALSE(store::addKnob(device, 1));
+    CHECK_FALSE(store::load("VST3-Surge-XT-1a2b3c4d").has_value());
+}
+
+TEST_CASE("Selections resolve against everything the plugin reports",
+          "[param-config-store][3218]") {
+    // A hosted device's own array holds only the parameters something addresses (#2629).
+    TempDataDir temp;
+    auto config = store::fromDevice(makeExternalDevice());
+    config.entries[0].visible = true;
+    config.entries[2].visible = true;
+    config.entries[2].unit = "kHz";
+    config.entries[1].unit = "ms";
+    REQUIRE(store::save("VST3-Surge-XT-1a2b3c4d", config));
+
+    const auto reported = makeExternalDevice().parameters;
+    auto model = makeExternalDevice();
+    model.parameters.erase(model.parameters.begin(), model.parameters.begin() + 2);
+
+    REQUIRE(store::applyToDevice("VST3-Surge-XT-1a2b3c4d", model, reported));
+    CHECK(model.visibleParameters == std::vector<int>{0, 2});
+    REQUIRE(model.parameters.size() == 1);
+    CHECK(model.parameters[0].unit == "kHz");
+}
+
+TEST_CASE("A unit chosen on a knob is saved for the plugin", "[param-config-store][3218]") {
+    TempDataDir temp;
+    magda::TrackManager::getInstance().clearAllTracks();
+
+    auto device = makeExternalDevice();
+    device.visibleParameters = {1};
+    REQUIRE(store::setUnit(device, 1, "ms"));
+
+    auto loaded = makeExternalDevice();
+    REQUIRE(store::applyToDevice(loaded));
+    CHECK(loaded.parameters[1].unit == "ms");
+    CHECK(loaded.visibleParameters == std::vector<int>{1});
+
+    REQUIRE(store::setUnit(loaded, 1, {}));
+    auto cleared = makeExternalDevice();
+    REQUIRE(store::applyToDevice(cleared));
+    CHECK(cleared.parameters[1].unit.isEmpty());
+}

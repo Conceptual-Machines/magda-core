@@ -1444,7 +1444,7 @@ TEST_CASE("An older project's parameter selections are read as positions",
     auto savedJson = ProjectSerializer::serializeDeviceInfo(saved);
     auto* json = savedJson.getDynamicObject();
     for (const char* key :
-         {"visibleParameterSlots", "miniMixerParameterSlots", "aiSoundDesignerParameterSlots"})
+         {"shownParameterSlots", "miniMixerParameterSlots", "aiSoundDesignerParameterSlots"})
         json->removeProperty(key);
     json->setProperty("visibleParameters", juce::var(juce::Array<juce::var>{1, 3}));
     json->setProperty("miniMixerParameters", juce::var(juce::Array<juce::var>{0}));
@@ -1457,6 +1457,59 @@ TEST_CASE("An older project's parameter selections are read as positions",
     CHECK(restored.visibleParameters == std::vector<int>{3, 5});
     CHECK(restored.miniMixerParameters == std::vector<int>{2});
     CHECK(restored.aiSoundDesignerParameters.empty());
+}
+
+TEST_CASE("An older project's hosted plugin with no selection shows every parameter",
+          "[project][serialization][3218]") {
+    using magda::DeviceInfo;
+    using magda::ProjectSerializer;
+
+    // An empty selection showed every parameter until it came to show none.
+    const auto legacy = [](magda::PluginFormat format, juce::Array<juce::var> slots) {
+        DeviceInfo saved;
+        saved.name = "Plugin";
+        saved.pluginId = "com.example.plugin";
+        saved.format = format;
+        auto json = ProjectSerializer::serializeDeviceInfo(saved);
+        auto* object = json.getDynamicObject();
+        object->removeProperty("shownParameterSlots");
+        object->setProperty("visibleParameterSlots", juce::var(slots));
+        DeviceInfo restored;
+        REQUIRE(ProjectSerializer::deserializeDeviceInfo(json, restored));
+        return restored;
+    };
+
+    const auto empty = legacy(magda::PluginFormat::VST3, {});
+    CHECK(empty.showEveryParameterOnLoad);
+    CHECK(empty.visibleParameters.empty());
+
+    const auto chosen = legacy(magda::PluginFormat::VST3, {3, 5});
+    CHECK_FALSE(chosen.showEveryParameterOnLoad);
+    CHECK(chosen.visibleParameters == std::vector<int>{3, 5});
+
+    CHECK_FALSE(legacy(magda::PluginFormat::Internal, {}).showEveryParameterOnLoad);
+
+    // Saved again before the plugin loaded, it still owes the plugin every parameter.
+    DeviceInfo again;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(ProjectSerializer::serializeDeviceInfo(empty),
+                                                     again));
+    CHECK(again.showEveryParameterOnLoad);
+}
+
+TEST_CASE("A hosted plugin saved with no knobs loads with none", "[project][serialization][3218]") {
+    using magda::DeviceInfo;
+    using magda::ProjectSerializer;
+
+    DeviceInfo device;
+    device.name = "Plugin";
+    device.pluginId = "com.example.plugin";
+    device.format = magda::PluginFormat::VST3;
+
+    DeviceInfo restored;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(ProjectSerializer::serializeDeviceInfo(device),
+                                                     restored));
+    CHECK_FALSE(restored.showEveryParameterOnLoad);
+    CHECK(restored.visibleParameters.empty());
 }
 
 TEST_CASE("Audio clip serialization separates source facts from interpretation",

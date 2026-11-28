@@ -402,9 +402,13 @@ struct DeviceInfo {
     // and polls the device for its reading.
     std::vector<MeterInfo> meters;
 
-    // User-selected visible parameters (indices into plugin parameter list)
-    // If empty, show first N parameters; otherwise show these specific indices
+    /// The parameter slots shown as knobs, in order. Empty shows every parameter on an
+    /// internal device and none on a hosted plugin (#3218); see showsEveryParameter().
     std::vector<int> visibleParameters;
+
+    /// Read from a project saved while an empty selection showed a hosted plugin's every
+    /// parameter: its load fills visibleParameters with them. Not saved (#3218).
+    bool showEveryParameterOnLoad = false;
 
     // User-selected parameters surfaced in the mixer mini-chain row (indices into
     // the plugin parameter list). If empty, the mini row falls back to the first
@@ -533,6 +537,11 @@ struct DeviceInfo {
     }
     const ParameterInfo* findParameterByIndex(int paramIndex) const {
         return const_cast<DeviceInfo*>(this)->findParameterByIndex(paramIndex);
+    }
+
+    /// Whether the parameter panel shows every parameter rather than visibleParameters.
+    bool showsEveryParameter() const {
+        return format == PluginFormat::Internal && visibleParameters.empty();
     }
 
     // Parameter names positioned at their own paramIndex, so a link picker can

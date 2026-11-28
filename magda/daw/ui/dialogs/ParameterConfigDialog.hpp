@@ -8,6 +8,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "core/DeviceInfo.hpp"
@@ -29,6 +30,8 @@ struct MockParameterInfo {
     juce::String stableId;
     float defaultValue = 0.5f;
     bool isVisible = true;
+    /// The knob's place as saved; a row ticked here goes after the saved ones (#3218).
+    std::optional<int> knobOrder;
     juce::String unit;  // Hz, dB, ms, %, semitones, custom
     float rangeMin = 0.0f;
     float rangeMax = 1.0f;

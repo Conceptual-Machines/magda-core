@@ -3,12 +3,61 @@
 
 #include "params/ParamLinkMenu.hpp"
 
+#include <array>
+
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
 #include "params/ModulationBakeAction.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+
+constexpr int kUnitNone = 7000;
+constexpr int kUnitFirst = 7001;
+constexpr int kUnitCustom = 7099;
+
+using magda::TechnicalTextToken;
+constexpr std::array kUnits{TechnicalTextToken::Hertz,        TechnicalTextToken::Kilohertz,
+                            TechnicalTextToken::Decibels,     TechnicalTextToken::Percent,
+                            TechnicalTextToken::Milliseconds, TechnicalTextToken::Seconds,
+                            TechnicalTextToken::Semitones,    TechnicalTextToken::Cents};
+
+juce::PopupMenu unitMenu(const juce::String& current) {
+    juce::PopupMenu units;
+    units.addItem(kUnitNone, "None", true, current.isEmpty());
+    bool listed = current.isEmpty();
+    for (size_t i = 0; i < kUnits.size(); ++i) {
+        const auto unit = magda::technicalText(kUnits[i]);
+        listed = listed || unit == current;
+        units.addItem(kUnitFirst + static_cast<int>(i), unit, true, unit == current);
+    }
+    units.addSeparator();
+    units.addItem(kUnitCustom, listed ? juce::String("Custom...") : "Custom (" + current + ")...",
+                  true, !listed);
+    return units;
+}
+
+void askForCustomUnit(const juce::String& current,
+                      std::function<void(const juce::String&)> chosen) {
+    auto* aw = new magda::MagdaAlertWindow(
+        "Parameter Unit", "Enter the unit this parameter shows:", juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor("unit", current, "Unit:");
+    aw->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    aw->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    aw->enterModalState(
+        true, juce::ModalCallbackFunction::create([aw, chosen = std::move(chosen)](int result) {
+            const auto unit = aw->getTextEditorContents("unit").trim();
+            delete aw;
+            if (result == 1)
+                chosen(unit);
+        }));
+}
+
+}  // namespace
 
 void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
                        const ParamLinkMenuCallbacks& callbacks) {
@@ -173,6 +222,11 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
         menu.addItem(5002, "Bake Modulation to Automation Clip", !bakeable.empty() && canBakeClip);
     }
 
+    if (callbacks.onUnitChosen) {
+        menu.addSeparator();
+        menu.addSubMenu("Unit", unitMenu(callbacks.currentUnit));
+    }
+
     // MIDI section
     menu.addSeparator();
     {
@@ -283,6 +337,14 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
         } else if (result == 6002) {
             if (cbs.onMidiEdit)
                 cbs.onMidiEdit(devicePath, paramIdx);
+        } else if (result == kUnitNone && cbs.onUnitChosen) {
+            cbs.onUnitChosen({});
+        } else if (result >= kUnitFirst && result < kUnitFirst + static_cast<int>(kUnits.size()) &&
+                   cbs.onUnitChosen) {
+            cbs.onUnitChosen(
+                magda::technicalText(kUnits[static_cast<size_t>(result - kUnitFirst)]));
+        } else if (result == kUnitCustom && cbs.onUnitChosen) {
+            askForCustomUnit(cbs.currentUnit, cbs.onUnitChosen);
         }
 
         if (safeAnchor != nullptr)
