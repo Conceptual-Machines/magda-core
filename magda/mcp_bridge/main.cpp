@@ -657,11 +657,30 @@ class Bridge {
                 client->stop();
             }
         }
-        std::scoped_lock lock(threadsMutex_);
-        for (auto& [thread, finished] : threads_)
-            if (thread.joinable())
-                thread.join();
-        threads_.clear();
+        {
+            std::scoped_lock lock(threadsMutex_);
+            for (auto& [thread, finished] : threads_)
+                if (thread.joinable())
+                    thread.join();
+            threads_.clear();
+        }
+        endSession();
+    }
+
+    /// Frees this host's slot now rather than after the server's idle timeout,
+    /// which a run of short-lived hosts otherwise exhausts (#3462).
+    void endSession() {
+        const auto session = currentSession();
+        const auto endpoint = currentEndpoint(false);
+        if (session.empty() || !endpoint)
+            return;
+
+        httplib::Client client(endpoint->origin);
+        client.set_connection_timeout(1, 0);
+        client.set_read_timeout(2, 0);
+        client.Delete(endpoint->path,
+                      httplib::Headers{{"Authorization", "Bearer " + endpoint->token},
+                                       {"Mcp-Session-Id", session}});
     }
 
     mutable std::mutex endpointMutex_;

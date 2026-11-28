@@ -191,6 +191,9 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 include(cmake/SubmodulePatches.cmake)
 magda_apply_submodule_patch(${CMAKE_CURRENT_SOURCE_DIR}/third_party/JUCE
                             ${CMAKE_CURRENT_SOURCE_DIR}/patches/juce-memory-font-no-clone.patch)
+# 9.0.6 drains one shared LV2 Worker response queue from every instance's render thread (#3462).
+magda_apply_submodule_patch(${CMAKE_CURRENT_SOURCE_DIR}/third_party/JUCE
+                            ${CMAKE_CURRENT_SOURCE_DIR}/patches/juce-lv2-instance-worker-responses.patch)
 add_subdirectory(third_party/JUCE)
 
 # ARA SDK 2.3.0, the release JUCE 9 requires (its BREAKING_CHANGES.md) (#1579). Headers only.

@@ -282,6 +282,28 @@ TEST_CASE("The bridge carries a legacy session across requests", "[remote][mcp-b
     dataDir.deleteRecursively();
 }
 
+TEST_CASE("A bridge whose host closes stdin ends its legacy session", "[remote][mcp-bridge]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    RemoteMcpServer server(service, serverOptions());
+    REQUIRE(server.start());
+
+    juce::TemporaryFile scratch;
+    const auto dataDir = scratch.getFile().getSiblingFile("magda-bridge-end-session");
+    writeRecord(dataDir, server.boundPort(), kToken);
+
+    BridgeProcess bridge(dataDir);
+    bridge.send(request(1, "initialize", object({{"protocolVersion", "2025-11-25"}})));
+    REQUIRE(bridge.receive().getDynamicObject() != nullptr);
+    REQUIRE(server.sessionCount() == 1);
+
+    // Left open, the slot stays taken until the idle timeout (#3462).
+    bridge.close();
+    REQUIRE(server.sessionCount() == 0);
+    dataDir.deleteRecursively();
+}
+
 TEST_CASE("The bridge survives MAGDA restarting under it", "[remote][mcp-bridge]") {
     MessageThreadRelaxation relax;
     MockMagdaApi api;
