@@ -4,6 +4,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <cmath>
 #include <deque>
 #include <map>
 #include <memory>
@@ -2544,4 +2545,131 @@ TEST_CASE("An instrument's slot trims and meters the instrument alone", "[engine
     CHECK(harness.outputSample(0) == approx(0.5f + 0.125f));
 
     CHECK(harness.takeMeterForDevice(8) == approx(0.125f));
+}
+
+namespace {
+
+/// Track 1 into a master whose chain halves it, and track 9 auditioned beside it (#3081).
+Harness auditionHarness(TrackInfo audition = makeTrack(9)) {
+    auto master = makeMaster();
+    master.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+    CompileOptions options;
+    options.auditionTracks = {audition.id};
+    return Harness({makeTrack(1), audition}, master, options);
+}
+
+}  // namespace
+
+TEST_CASE("The output select hears the master path until told otherwise",
+          "[engine][exec][output-select][3081]") {
+    auto harness = auditionHarness();
+    ConstantSource mix(1.0f);
+    ConstantSource reference(0.2f);
+    GainDevice masterChain(0.5f);
+    harness.bindings.clipAudio[1] = &mix;
+    harness.bindings.clipAudio[9] = &reference;
+    harness.bindings.devices[DeviceKey{7}] = &masterChain;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    CHECK(harness.outputSample(0) == approx(0.5f));
+    CHECK(harness.outputSample(1) == approx(0.5f));
+    CHECK(harness.takeMeterFor(OpRole::OutputMeter, MASTER_TRACK_ID) == approx(0.5f));
+}
+
+TEST_CASE("An audition source skips the master chain and fader, and a switch fades to it",
+          "[engine][exec][output-select][3081]") {
+    auto harness = auditionHarness();
+    harness.master.volume = 0.25f;
+    ConstantSource mix(1.0f);
+    ConstantSource reference(0.2f);
+    GainDevice masterChain(0.5f);
+    harness.bindings.clipAudio[1] = &mix;
+    harness.bindings.clipAudio[9] = &reference;
+    harness.bindings.devices[DeviceKey{7}] = &masterChain;
+    harness.prepareCleanly();
+    harness.render();
+    const auto master = harness.outputSample();
+    REQUIRE(master < 0.5f);
+
+    magda::engine::selectHeardInput(harness.plan, 1, harness.values);
+    const auto fadeSamples =
+        static_cast<int>(std::lround(magda::engine::kOutputSelectFadeSeconds * 44100.0));
+    const auto stream = renderStream(harness, fadeSamples / kBlockSize + 2);
+
+    CHECK(stream.front() == approx(master));
+    const auto middle = static_cast<std::size_t>(fadeSamples / 2);
+    CHECK(stream[middle] == Catch::Approx((master + 0.2f) * std::sqrt(0.5f)).margin(1e-3));
+    CHECK(stream.back() == approx(0.2f));
+
+    harness.takeMeterFor(OpRole::TrackMeter, MASTER_TRACK_ID);
+    harness.takeMeterFor(OpRole::OutputMeter, MASTER_TRACK_ID);
+    harness.render();
+    CHECK(harness.takeMeterFor(OpRole::TrackMeter, MASTER_TRACK_ID) == approx(master));
+    CHECK(harness.takeMeterFor(OpRole::OutputMeter, MASTER_TRACK_ID) == approx(0.2f));
+}
+
+TEST_CASE("An audition source arrives with the master chain's latency",
+          "[engine][exec][output-select][pdc][3081]") {
+    auto harness = auditionHarness();
+    ImpulseSource mix(0.5f);
+    ImpulseSource reference(0.25f);
+    LatentDevice masterChain(48);
+    harness.bindings.clipAudio[1] = &mix;
+    harness.bindings.clipAudio[9] = &reference;
+    harness.bindings.devices[DeviceKey{7}] = &masterChain;
+    harness.prepareCleanly();
+
+    // The fade runs out before the impulse, so what arrives is the audition source alone.
+    magda::engine::selectHeardInput(harness.plan, 1, harness.values);
+    for (int block = 0; block < 15; ++block)
+        harness.render(kBlockSize, static_cast<std::int64_t>(block - 15) * kBlockSize);
+
+    const auto sounding = soundingSamples(renderStream(harness, 3));
+    REQUIRE(sounding.size() == 1);
+    CHECK(sounding[0].first == 48);
+    CHECK(sounding[0].second == approx(0.25f));
+}
+
+TEST_CASE("The master tap hears the master path whatever the select lets through",
+          "[engine][exec][output-select][3081]") {
+    auto harness = auditionHarness();
+    ConstantSource mix(1.0f);
+    ConstantSource reference(0.2f);
+    GainDevice masterChain(0.5f);
+    harness.bindings.clipAudio[1] = &mix;
+    harness.bindings.clipAudio[9] = &reference;
+    harness.bindings.devices[DeviceKey{7}] = &masterChain;
+    harness.prepareCleanly();
+
+    juce::AudioBuffer<float> tap(2, kBlockSize);
+    harness.executor.setMasterTap(&tap);
+    magda::engine::selectHeardInput(harness.plan, 1, harness.values);
+    renderStream(harness, 20);
+    tap.clear();
+    harness.render();
+
+    CHECK(harness.outputSample() == approx(0.2f));
+    CHECK(tap.getSample(0, 0) == approx(0.5f));
+}
+
+TEST_CASE("A soloed track does not silence an audition source",
+          "[engine][exec][output-select][3081]") {
+    auto audition = makeTrack(9);
+    audition.soloSafe = true;
+    auto harness = auditionHarness(audition);
+    harness.tracks[0].soloed = true;
+    ConstantSource mix(1.0f);
+    ConstantSource reference(0.2f);
+    GainDevice masterChain(0.5f);
+    harness.bindings.clipAudio[1] = &mix;
+    harness.bindings.clipAudio[9] = &reference;
+    harness.bindings.devices[DeviceKey{7}] = &masterChain;
+    harness.prepareCleanly();
+
+    magda::engine::selectHeardInput(harness.plan, 1, harness.values);
+    const auto stream = renderStream(harness, 20);
+
+    CHECK(stream.back() == approx(0.2f));
 }

@@ -146,6 +146,10 @@ enum class OpKind : std::uint8_t {
     ModSource,     ///< a track's signal as the modulation system reads it
     Output,        ///< hardware output
 
+    /// The master path or one audition source, chosen by value and crossfaded on a switch
+    /// (#3081). Input 0 is the master; it runs at the callback, so a switch is heard at once.
+    OutputSelect,
+
     // A hardware insert, which is these two with the outside world between them
     // (#2245). Not a device with special cases: the plan already has ops for
     // things that consume a signal and things that produce one.
@@ -175,6 +179,9 @@ enum class OpKind : std::uint8_t {
     /// A multiband rack's input split into its bands, one audio output per band, low to high.
     BandSplit,
 };
+
+/// The most audition sources an OutputSelect carries beside the master path (#3081).
+constexpr std::size_t kMaxAuditionSources = 8;
 
 /// The most outputs a MidiZoneSplit has: its executor routes a note by a 64-bit port mask.
 constexpr std::size_t kMaxZoneRoutes = 64;
@@ -216,6 +223,8 @@ enum class OpRole : std::uint8_t {
     SendTap,              ///< one send slot
     ModulationTap,        ///< one track's signal, read by the modifiers listening to it
     HardwareOutput,       ///< one track or master hardware output
+    OutputSelect,         ///< the master's output select (#3081)
+    OutputMeter,          ///< the level of what the output select lets through
     InsertSend,           ///< one insert's send
     InsertReturn,         ///< one insert's return
     TrackMidiOut,         ///< a track's MIDI to its hardware MIDI Out, an InsertSend (#3048)
@@ -241,11 +250,12 @@ enum class OpRole : std::uint8_t {
     // and OpKey::index says which slot. Two ops of the same kind never share a
     // location, so this is unique wherever the compiler emits it, which
     // validatePlan's key check is what actually guarantees.
-    MixInputDelay,       ///< aligns one input of a MixAudio
-    MergeInputDelay,     ///< aligns one input of a MergeMidi
-    DeviceInputDelay,    ///< aligns one input slot of a Device
-    FaderInputDelay,     ///< aligns one input slot of a Fader
-    SubtractInputDelay,  ///< aligns one input slot of a Subtract
+    MixInputDelay,           ///< aligns one input of a MixAudio
+    MergeInputDelay,         ///< aligns one input of a MergeMidi
+    DeviceInputDelay,        ///< aligns one input slot of a Device
+    FaderInputDelay,         ///< aligns one input slot of a Fader
+    SubtractInputDelay,      ///< aligns one input slot of a Subtract
+    OutputSelectInputDelay,  ///< aligns one input slot of an OutputSelect
 
     // A fade sits on one edge, like a delay, so its identity is the op it feeds
     // plus the slot it fills. Unlike a delay it has no role of its own to say
@@ -413,6 +423,12 @@ struct OpKey {
 inline OpKey trackMeterKey(TrackId trackId) {
     return OpKey{trackId,           INVALID_RACK_ID,    INVALID_CHAIN_ID,
                  INVALID_DEVICE_ID, OpRole::TrackMeter, 0};
+}
+
+/// The key of the Meter op on what the output select lets through (#3081).
+inline OpKey outputMeterKey() {
+    return OpKey{MASTER_TRACK_ID,   INVALID_RACK_ID,     INVALID_CHAIN_ID,
+                 INVALID_DEVICE_ID, OpRole::OutputMeter, 0};
 }
 
 /// The key of @p trackId's live audio input meter, ahead of its monitor gate.

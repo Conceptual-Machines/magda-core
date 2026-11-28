@@ -57,6 +57,7 @@
 #include "../../project/ProjectManager.hpp"
 #include "../PhaseSource.hpp"
 #include "AraTrackEditing.hpp"
+#include "AuditionSources.hpp"
 #include "EngineInsertCapture.hpp"
 #include "EngineOfflineRender.hpp"
 #include "EngineProject.hpp"
@@ -591,6 +592,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             publishMeter(track.id, track.recordArmed || track.monitorsInput());
 
         publishMeter(MASTER_TRACK_ID, false);
+
+        if (outputMeter_ != nullptr) {
+            auto* tap = session_->meterTap(engine::outputMeterKey());
+            const auto levels = tap != nullptr ? tap->read() : engine::LevelTap::Levels{};
+            outputMeter_(tap != nullptr, levels.peak[0], levels.peak[1]);
+        }
     }
 
     void publishMeter(TrackId trackId, bool monitorsInput) {
@@ -794,6 +801,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         options.monitorTracks = true;
         options.hardwareOutputs = hardwareOutputs_;
         options.tracksMissingDevices = tracksHoldingUnregisteredDevices(tracks, master);
+        options.auditionTracks = auditionTrackIds();
         if (sessionRendersAhead_) {
             options.sessionTracks = sessionTracks();
             options.playedInstruments = playedInstruments();
@@ -2554,6 +2562,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 masterInput_
                     ? std::vector<engine::ClipLane>{masterInputLane(*masterInput_, tempoMap())}
                     : lanesAsPlayed(clipLanesFor(tracks), tracks, frozen_, tempoMap());
+            for (std::size_t slot = 0; slot < auditions_.size(); ++slot)
+                if (auditions_[slot])
+                    lanes.push_back(auditionLane(slot, *auditions_[slot], tempoMap()));
             for (auto& lane : lanes) {
                 // Live handles own sample-exact section boundaries; model mode only reports
                 // them (#2725).
@@ -2663,18 +2674,48 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// What live playback compiles: the model, with each frozen track playing its file, or only
     /// the master input while one is set (#3081).
     std::vector<TrackInfo> playedTracks() const {
-        if (masterInput_)
-            return {masterInputTrack()};
-        return tracksAsPlayed(TrackManager::getInstance().getTracks(), frozen_);
+        auto tracks = masterInput_
+                          ? std::vector<TrackInfo>{masterInputTrack()}
+                          : tracksAsPlayed(TrackManager::getInstance().getTracks(), frozen_);
+        appendAuditionTracks(tracks);
+        return tracks;
     }
 
-    /// What values and runtime ids resolve against: the model, plus the master input's track,
-    /// which the model does not hold.
+    /// What values and runtime ids resolve against: the model, plus the master input's and the
+    /// audition sources' tracks, which the model does not hold.
     std::vector<TrackInfo> valueModel() const {
         auto tracks = TrackManager::getInstance().getTracks();
         if (masterInput_)
             tracks.push_back(masterInputTrack());
+        appendAuditionTracks(tracks);
         return tracks;
+    }
+
+    void appendAuditionTracks(std::vector<TrackInfo>& tracks) const {
+        for (std::size_t slot = 0; slot < auditions_.size(); ++slot)
+            if (auditions_[slot])
+                tracks.push_back(auditionTrack(slot, *auditions_[slot]));
+    }
+
+    /// The audition tracks in slot order, which is how the output select numbers its inputs.
+    std::vector<TrackId> auditionTrackIds() const {
+        std::vector<TrackId> ids;
+        for (std::size_t slot = 0; slot < auditions_.size(); ++slot)
+            if (auditions_[slot])
+                ids.push_back(auditionTrackId(slot));
+        return ids;
+    }
+
+    /// The output select's input for what is heard: 0 the master, else the heard slot's place
+    /// among the sources set.
+    int heardInput() const {
+        if (!heardSlot_ || !auditions_[*heardSlot_])
+            return 0;
+        int input = 1;
+        for (std::size_t slot = 0; slot < *heardSlot_; ++slot)
+            if (auditions_[slot])
+                ++input;
+        return input;
     }
 
     /// Whether a track froze, thawed or lost its file since the last reading.
@@ -2929,6 +2970,47 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         masterInput_.reset();
         wantPlan();
         wantClips();
+    }
+
+    bool setAuditionSource(std::size_t slot, const juce::File& file, float gainDecibels,
+                           double offsetBeats) {
+        if (slot >= auditions_.size())
+            return false;
+        auto source = pooledAuditionSource(file, gainDecibels, offsetBeats);
+        if (!source)
+            return false;
+
+        auto& current = auditions_[slot];
+        const auto wasSet = current.has_value();
+        const auto sameFile = wasSet && current->source == source->source;
+        const auto samePlace = sameFile && current->offsetBeats == source->offsetBeats;
+        const auto sameGain = sameFile && current->gainDecibels == source->gainDecibels;
+        current = std::move(source);
+
+        if (!sameFile)
+            wantPlan();
+        else if (!sameGain)
+            wantValues(Shape::Unchanged);
+        if (!samePlace)
+            wantClips();
+        return true;
+    }
+
+    void clearAuditionSource(std::size_t slot) {
+        if (slot >= auditions_.size() || !auditions_[slot])
+            return;
+        auditions_[slot].reset();
+        wantPlan();
+        wantClips();
+    }
+
+    void hearAuditionSource(std::optional<std::size_t> slot) {
+        if (slot && *slot >= auditions_.size())
+            slot.reset();
+        if (slot == heardSlot_)
+            return;
+        heardSlot_ = slot;
+        wantValues(Shape::Unchanged);
     }
 
     /// Everything the model has asked for since the last one. A plan publish
@@ -3808,8 +3890,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                            const TrackInfo& master,
                                            engine::PlanValues& values) const {
         const auto& automation = AutomationManager::getInstance();
-        return engine::resolvePlanValues(plan, tracks, master, values, automation.getLanes(),
-                                         automation.getClips());
+        auto messages = engine::resolvePlanValues(plan, tracks, master, values,
+                                                  automation.getLanes(), automation.getClips());
+        engine::selectHeardInput(plan, heardInput(), values);
+        return messages;
     }
 
     DeviceInfo* modelDevice(engine::DeviceKey key) {
@@ -4447,6 +4531,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// What the next plan publish lets go of, each already readable from the model (#2067).
     std::set<engine::DeviceKey> devicesToUnload_;
     std::optional<MasterInput> masterInput_;
+    AuditionSlots auditions_;
+    /// The audition slot heard in place of the master path, or none for the master (#3081).
+    std::optional<std::size_t> heardSlot_;
 
     double bpm_ = 120.0;
     /// What bpm_ is scaled by while a phase source's drift is being caught up (#3188).
@@ -4521,6 +4608,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /// Where the levels go. Null until a caller asks (#2570).
     EngineHost::MeterSink meters_;
+    EngineHost::OutputMeterSink outputMeter_;
 
     /// The app's store for the per-slot levels, emptied at a project
     /// boundary. Null until a caller hands one over (#2570).
@@ -4634,6 +4722,23 @@ void EngineHost::refreshHardwareInputs() {
 
 void EngineHost::meterInto(MeterSink sink) {
     impl_->meters_ = std::move(sink);
+}
+
+void EngineHost::meterOutputInto(OutputMeterSink sink) {
+    impl_->outputMeter_ = std::move(sink);
+}
+
+bool EngineHost::setAuditionSource(std::size_t slot, const juce::File& file, float gainDecibels,
+                                   double offsetBeats) {
+    return impl_->setAuditionSource(slot, file, gainDecibels, offsetBeats);
+}
+
+void EngineHost::clearAuditionSource(std::size_t slot) {
+    impl_->clearAuditionSource(slot);
+}
+
+void EngineHost::hearAuditionSource(std::optional<std::size_t> slot) {
+    impl_->hearAuditionSource(slot);
 }
 
 void EngineHost::meterDevicesInto(DeviceMeters& devices) {

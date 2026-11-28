@@ -594,6 +594,22 @@ class AudioEngine : public AudioEngineListener {
         return false;
     }
 
+    /**
+     * @brief Play @p file in audition @p slot, beside the master path (#3081). Message thread.
+     *
+     * It skips the master chain and fader, plays at @p gainDecibels from @p offsetBeats, and is
+     * latency-aligned with the master. Nothing is saved with the project. False when the engine
+     * cannot, the slot is past the eighth, or the file does not resolve.
+     */
+    virtual bool setAuditionSource(int /*slot*/, const juce::File& /*file*/, float /*gainDecibels*/,
+                                   double /*offsetBeats*/) {
+        return false;
+    }
+    virtual void clearAuditionSource(int /*slot*/) {}
+
+    /// Hear audition @p slot in place of the master path, crossfaded; -1 hears the master.
+    virtual void hearAuditionSource(int /*slot*/) {}
+
     /** @brief Take a finished freeze render as what @p trackId plays, and mark it frozen. */
     virtual void adoptTrackFreeze(TrackId /*trackId*/, const OfflineRenderRequest& /*request*/) {}
 

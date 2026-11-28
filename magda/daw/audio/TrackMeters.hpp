@@ -54,6 +54,9 @@ struct TrackMeters {
     std::atomic<float> masterPeakR{0.0f};
     std::atomic<bool> masterPublished{false};
     std::atomic<juce::uint32> masterPublishedAtMs{0};
+    std::atomic<float> outputPeakL{0.0f};
+    std::atomic<float> outputPeakR{0.0f};
+    std::atomic<bool> outputPublished{false};
     MidiActivityMonitor midiActivity;
 
     void setRemotePeak(TrackId id, const MeterData& data) {
@@ -71,6 +74,7 @@ struct TrackMeters {
         for (auto& level : remoteLatest)
             level.available.store(false, std::memory_order_release);
         clearMasterPeak();
+        clearOutputPeak();
     }
 
     /// The master strip's level. MASTER_TRACK_ID is negative, so it can't live
@@ -95,6 +99,26 @@ struct TrackMeters {
     }
     void clearMasterPeak() {
         masterPublished.store(false, std::memory_order_release);
+    }
+
+    /// What the output select lets through, master or audition source (#3081). Published only
+    /// while one is compiled.
+    void setOutputPeak(float peakL, float peakR) {
+        outputPeakL.store(peakL, std::memory_order_relaxed);
+        outputPeakR.store(peakR, std::memory_order_relaxed);
+        outputPublished.store(true, std::memory_order_release);
+    }
+    float getOutputPeakL() const {
+        return outputPeakL.load(std::memory_order_relaxed);
+    }
+    float getOutputPeakR() const {
+        return outputPeakR.load(std::memory_order_relaxed);
+    }
+    bool hasOutputPeak() const {
+        return outputPublished.load(std::memory_order_acquire);
+    }
+    void clearOutputPeak() {
+        outputPublished.store(false, std::memory_order_release);
     }
 };
 

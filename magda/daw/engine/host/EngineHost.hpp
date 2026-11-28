@@ -147,6 +147,19 @@ class EngineHost {
     void clearMasterInput();
     bool hasMasterInput() const;
 
+    /**
+     * @brief Play @p file in @p slot beside the master path, from @p offsetBeats (#3081).
+     *
+     * It skips the master chain and fader and plays at @p gainDecibels. False, and nothing
+     * changes, when the slot is past kMaxAuditionSources or the file does not resolve.
+     */
+    bool setAuditionSource(std::size_t slot, const juce::File& file, float gainDecibels,
+                           double offsetBeats);
+    void clearAuditionSource(std::size_t slot);
+
+    /// Hear @p slot in place of the master path, or the master for none. Message thread.
+    void hearAuditionSource(std::optional<std::size_t> slot);
+
     /// Supply the wave-device names behind persisted output routes.
     void setHardwareOutputProvider(HardwareChannelProvider provider);
 
@@ -168,6 +181,11 @@ class EngineHost {
      */
     using MeterSink = std::function<void(TrackId trackId, float peakL, float peakR)>;
     void meterInto(MeterSink sink);
+
+    /// Where the level of what is heard goes (#3081), with whether an output select is compiled
+    /// to measure it. Same rate and thread as @ref meterInto.
+    using OutputMeterSink = std::function<void(bool measured, float peakL, float peakR)>;
+    void meterOutputInto(OutputMeterSink sink);
 
     /**
      * @brief Where the per-slot device levels go (#2570).

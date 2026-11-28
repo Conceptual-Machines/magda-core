@@ -311,6 +311,8 @@ bool Resolver::isAudible(const TrackInfo& track) const {
     // track's solo silences this one, and only then does self-mute apply.
     if (isInheritedMute(track))
         return false;
+    if (track.soloSafe)
+        return !track.muted;
     // Indirect, not just this track's own flag. Soloing a group solos nothing
     // directly: its children feed it, and it is that edge that keeps them
     // audible while everything else is silenced.
@@ -575,6 +577,9 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         // still ducks the compressor keying off it.
         case OpRole::ModulationTap:
         case OpRole::HardwareOutput:
+        // What is heard is the host's to say, after the model is resolved (selectHeardInput).
+        case OpRole::OutputSelect:
+        case OpRole::OutputMeter:
         case OpRole::MidiOutChannel:
         case OpRole::InsertMidiChannel:
         // Delay and crossfade roles never reach here: they return above.
@@ -583,6 +588,7 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::DeviceInputDelay:
         case OpRole::FaderInputDelay:
         case OpRole::SubtractInputDelay:
+        case OpRole::OutputSelectInputDelay:
         case OpRole::EdgeCrossfade:
         case OpRole::Handoff:
             break;
@@ -619,6 +625,18 @@ void applyLinearPanLaw(float gain, float pan, float& left, float& right) {
     const auto panned = pan * gain;
     left = gain - panned;
     right = gain + panned;
+}
+
+void selectHeardInput(const RenderPlan& plan, int input, PlanValues& values) {
+    if (values.ops.size() != plan.ops.size())
+        return;
+    for (std::size_t i = 0; i < plan.ops.size(); ++i) {
+        const auto& op = plan.ops[i];
+        if (op.kind != OpKind::OutputSelect)
+            continue;
+        const auto heard = input >= 0 && input < static_cast<int>(op.inputs.size()) ? input : 0;
+        values.ops[i].heardInput = static_cast<std::uint8_t>(heard);
+    }
 }
 
 void resolveRequiredOps(const RenderPlan& plan, PlanValues& values) {

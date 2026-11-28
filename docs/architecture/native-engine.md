@@ -231,7 +231,17 @@ dependency the plan does not connect. The rule is stated once, in `plan/RackNest
 
 The op vocabulary is deliberately small: `ClipAudio`, `ClipMidi`, `AudioInput`, `MidiInput`,
 `Device`, `MixAudio`, `MergeMidi`, `Subtract`, `Delay`, `Crossfade`, `Gain`, `Fader`, `SendTap`,
-`Meter`, `ModSource`, `Output`.
+`Meter`, `ModSource`, `Output`, `OutputSelect`.
+
+**The output select chooses what reaches the master's hardware output** (#3081). It is compiled
+only while the host plays audition sources: files on tracks of their own that skip the master
+chain and fader. Its first input is the master path; the others are the audition sources, each
+aligned to the master chain's latency by the usual input delays. Which one is heard is a value,
+so switching recompiles nothing, and the select runs at the callback, so a switch is heard at the
+next block. A switch crossfades at constant power over 15 ms. An output meter after it reads what
+is heard. The master meter and the master tap stay on the master path. The host's own tracks
+(the master input and the audition sources) are solo-safe: soloing a track in the project does
+not silence them.
 
 **A device's sidechain is a slot fed from a modelled source** (#2329). The `Device` op's three
 inputs are `[audio, MIDI, sidechain]`, and `SidechainConfig` says more than which track the key
