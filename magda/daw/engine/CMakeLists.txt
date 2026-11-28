@@ -49,6 +49,7 @@ target_sources(magda_daw_app PRIVATE
         host/LiveMidiQueue.cpp
         host/LiveMidiRouting.cpp
         host/LiveMidiSources.cpp
+        host/AuditionSources.cpp
         host/MasterInputSource.cpp
         host/OfflineRenderModel.cpp
         host/SlotLauncher.cpp
@@ -64,6 +65,7 @@ target_sources(magda_daw_app PRIVATE
         host/EngineProject.hpp
         host/EngineRuntimeFactory.hpp
         host/EngineTrace.hpp
+        host/AuditionSources.hpp
         host/MasterInputSource.hpp
         host/ExternalPluginLoader.hpp
         host/HardwareInputMap.hpp

@@ -34,6 +34,7 @@ int arityOf(OpKind kind) {
             return 2;  // the processed signal, the dry signal it is measured against
         case OpKind::MixAudio:
         case OpKind::MergeMidi:
+        case OpKind::OutputSelect:
             return -1;  // variadic
         case OpKind::Delay:
         case OpKind::Gain:
@@ -115,6 +116,8 @@ const char* toString(OpKind kind) {
             return "MidiZoneSplit";
         case OpKind::BandSplit:
             return "BandSplit";
+        case OpKind::OutputSelect:
+            return "OutputSelect";
     }
     return "?";
 }
@@ -197,6 +200,10 @@ const char* toString(OpRole role) {
             return "inputRouteGate";
         case OpRole::HardwareOutput:
             return "hardwareOutput";
+        case OpRole::OutputSelect:
+            return "outputSelect";
+        case OpRole::OutputMeter:
+            return "outputMeter";
         case OpRole::MixInputDelay:
             return "mixInputDelay";
         case OpRole::MergeInputDelay:
@@ -207,6 +214,8 @@ const char* toString(OpRole role) {
             return "faderInputDelay";
         case OpRole::SubtractInputDelay:
             return "subtractInputDelay";
+        case OpRole::OutputSelectInputDelay:
+            return "outputSelectInputDelay";
         case OpRole::EdgeCrossfade:
             return "edgeCrossfade";
         case OpRole::Handoff:
@@ -291,6 +300,7 @@ bool isInputDelayRole(OpRole role) {
         case OpRole::DeviceInputDelay:
         case OpRole::FaderInputDelay:
         case OpRole::SubtractInputDelay:
+        case OpRole::OutputSelectInputDelay:
             return true;
         default:
             return false;
@@ -615,6 +625,17 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
                 problems.push_back(label + "is a crossfade whose key index does not decode: " +
                                    std::to_string(op.key.index));
         }
+
+        if ((op.kind == OpKind::OutputSelect) != (op.key.role == OpRole::OutputSelect))
+            problems.push_back(label + (op.kind == OpKind::OutputSelect
+                                            ? "is an output select but is not keyed as one"
+                                            : "carries the output select role but is not one"));
+        else if (op.kind == OpKind::OutputSelect &&
+                 (op.inputs.empty() || op.inputs.size() > kMaxAuditionSources + 1 ||
+                  op.outputs.size() != 1))
+            problems.push_back(label + "an output select reads the master and up to " +
+                               std::to_string(kMaxAuditionSources) +
+                               " audition sources into one port");
 
         // Out-of-range inputs are already reported above; skip them here so a
         // malformed plan cannot walk off the op vector.

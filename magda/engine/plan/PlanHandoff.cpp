@@ -27,7 +27,8 @@ OpKey locationOf(OpKey key) {
 
 bool runsAtCallback(const PlanOp& op) {
     return op.liveness == LivenessDomain::Live || op.kind == OpKind::Output ||
-           op.kind == OpKind::InsertSend;
+           op.kind == OpKind::InsertSend || op.kind == OpKind::OutputSelect ||
+           op.key.role == OpRole::OutputMeter;
 }
 
 RenderPlan insertHandoffs(const RenderPlan& plan) {

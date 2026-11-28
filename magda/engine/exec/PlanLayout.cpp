@@ -105,6 +105,8 @@ std::optional<std::size_t> inPlaceInputOf(const PlanOp& op) {
         case OpKind::BandSplit:
         case OpKind::ModSource:
         case OpKind::Output:
+        // It reads two inputs while a switch fades between them.
+        case OpKind::OutputSelect:
         // An insert's send writes nothing, and its return writes what came back
         // rather than what it was handed, so neither has an input to write over.
         case OpKind::InsertSend:

@@ -339,6 +339,53 @@ void CrossfadeRamp::process(juce::dsp::AudioBlock<float> dest, juce::dsp::AudioB
     remaining_.store(left - fading, std::memory_order_relaxed);
 }
 
+void OutputSelectFade::prepare(int lengthSamples) {
+    length_ = std::max(1, lengthSamples);
+    remaining_ = 0;
+    heard_ = 0;
+    from_ = 0;
+}
+
+void OutputSelectFade::retarget(int wanted, int inputs) {
+    if (heard_ >= inputs || from_ >= inputs) {
+        heard_ = from_ = 0;
+        remaining_ = 0;
+    }
+    if (remaining_ > 0 || wanted == heard_ || wanted < 0 || wanted >= inputs)
+        return;
+    from_ = heard_;
+    heard_ = wanted;
+    remaining_ = length_;
+}
+
+void OutputSelectFade::process(juce::dsp::AudioBlock<float> dest,
+                               juce::dsp::AudioBlock<float> oldSide,
+                               juce::dsp::AudioBlock<float> newSide, int numSamples) {
+    const auto fading = std::max(0, std::min(remaining_, numSamples));
+    const auto position = length_ - remaining_;
+    const auto numChannels = std::min(dest.getNumChannels(),
+                                      std::min(oldSide.getNumChannels(), newSide.getNumChannels()));
+
+    for (std::size_t channel = 0; channel < numChannels; ++channel) {
+        auto* out = dest.getChannelPointer(channel);
+        const auto* before = oldSide.getChannelPointer(channel);
+        const auto* after = newSide.getChannelPointer(channel);
+        for (int sample = 0; sample < fading; ++sample) {
+            const auto angle = juce::MathConstants<float>::halfPi *
+                               static_cast<float>(position + sample) / static_cast<float>(length_);
+            out[sample] = (before[sample] * std::cos(angle)) + (after[sample] * std::sin(angle));
+        }
+        if (fading < numSamples)
+            juce::FloatVectorOperations::copy(out + fading, after + fading, numSamples - fading);
+    }
+
+    remaining_ -= fading;
+}
+
+const std::shared_ptr<OutputSelectFade>& PlanExecutor::outputSelectFor(OpId op) const {
+    return outputSelectForOp_[static_cast<std::size_t>(op)];
+}
+
 const std::shared_ptr<AudioDelayLine>& PlanExecutor::audioDelayFor(OpId op) const {
     static const std::shared_ptr<AudioDelayLine> none;
     const auto line = audioDelayForOp_[static_cast<std::size_t>(op)];
@@ -388,6 +435,8 @@ void PlanExecutor::reset() {
     carriedCrossfades_ = 0;
     crossfadeForOp_.clear();
     crossfades_.clear();
+    outputSelectForOp_.clear();
+    tapsMasterAtSelect_ = false;
     carriedFeedbackCarries_ = 0;
     feedbackForOp_.clear();
     feedbackCarries_.clear();
@@ -1223,6 +1272,25 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         crossfades_.push_back(std::move(ramp));
     }
 
+    const auto selectFadeSamples =
+        std::max(1, static_cast<int>(std::lround(kOutputSelectFadeSeconds * context_.sampleRate)));
+    outputSelectForOp_.assign(numOps, nullptr);
+    tapsMasterAtSelect_ = false;
+    for (std::size_t i = 0; i < numOps; ++i) {
+        if (plan.ops[i].kind != OpKind::OutputSelect)
+            continue;
+        tapsMasterAtSelect_ = true;
+        if (const auto from = carriedFrom(i); from != INVALID_OP_ID)
+            if (const auto& adopted = previous->outputSelectFor(from);
+                adopted != nullptr && adopted->hasConfiguration(selectFadeSamples)) {
+                outputSelectForOp_[i] = adopted;
+                continue;
+            }
+        auto fade = std::make_shared<OutputSelectFade>();
+        fade->prepare(selectFadeSamples);
+        outputSelectForOp_[i] = std::move(fade);
+    }
+
     // Both halves of one cut route share a carry, paired by the track that
     // reads it and the signal its key names. Adopted across a recompile the way
     // a delay line is: a loop that is still sounding should not restart from
@@ -2042,6 +2110,18 @@ OpValue PlanExecutor::mixerValueFor(std::size_t op, const OpValue& published) co
     }
 
     return value;
+}
+
+void PlanExecutor::tapMaster(juce::dsp::AudioBlock<float> in, int numSamples) {
+    if (masterTap_ == nullptr || in.getNumChannels() == 0)
+        return;
+    const auto last = in.getNumChannels() - 1;
+    const auto samples = std::min(numSamples, masterTap_->getNumSamples());
+    for (auto channel = 0; channel < masterTap_->getNumChannels(); ++channel)
+        masterTap_->addFrom(
+            channel, 0,
+            in.getChannelPointer(std::min<std::size_t>(static_cast<std::size_t>(channel), last)),
+            samples);
 }
 
 void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& block,
@@ -2879,15 +2959,31 @@ void PlanExecutor::renderOpUntimed(OpId id, const OpValue& published, const Bloc
                 output.addFrom(op.hardwareOutput.rightChannel, 0, in.getChannelPointer(1),
                                numSamples);
             }
-            if (masterTap_ != nullptr && isMasterOutput(op) && in.getNumChannels() > 0) {
-                const auto last = in.getNumChannels() - 1;
-                const auto samples = std::min(numSamples, masterTap_->getNumSamples());
-                for (auto channel = 0; channel < masterTap_->getNumChannels(); ++channel)
-                    masterTap_->addFrom(channel, 0,
-                                        in.getChannelPointer(std::min<std::size_t>(
-                                            static_cast<std::size_t>(channel), last)),
-                                        samples);
+            if (isMasterOutput(op) && !tapsMasterAtSelect_)
+                tapMaster(in, numSamples);
+            break;
+        }
+
+        case OpKind::OutputSelect: {
+            auto out = audioOut(id, 0, numSamples);
+            const auto inputs = static_cast<int>(op.inputs.size());
+            if (inputs == 0 || !op.inputs[0].valid()) {
+                out.clear();
+                break;
             }
+            tapMaster(audioIn(op.inputs[0], numSamples), numSamples);
+
+            auto& fade = *outputSelectForOp_[i];
+            fade.retarget(value.heardInput, inputs);
+            const auto heard =
+                audioIn(op.inputs[static_cast<std::size_t>(fade.heard())], numSamples);
+            if (fade.fading())
+                fade.process(
+                    out,
+                    audioIn(op.inputs[static_cast<std::size_t>(fade.fadingFrom())], numSamples),
+                    heard, numSamples);
+            else
+                out.copyFrom(heard);
             break;
         }
     }

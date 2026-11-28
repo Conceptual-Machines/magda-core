@@ -90,6 +90,9 @@ struct TrackInfo {
     float manualPan = 0.0f;
     bool muted = false;
     bool soloed = false;
+    /// Heard whatever else is soloed. The host's own tracks (master input, audition sources) are;
+    /// not saved (#3081).
+    bool soloSafe = false;
     bool recordArmed = false;
     InputMonitorMode inputMonitor = InputMonitorMode::Off;
     bool frozen = false;  // Track is frozen (rendered to audio, plugins disabled)
@@ -183,6 +186,7 @@ struct TrackInfo {
             manualPan = other.manualPan;
             muted = other.muted;
             soloed = other.soloed;
+            soloSafe = other.soloSafe;
             recordArmed = other.recordArmed;
             inputMonitor = other.inputMonitor;
             frozen = other.frozen;

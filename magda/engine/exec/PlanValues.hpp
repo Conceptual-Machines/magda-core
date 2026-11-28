@@ -74,6 +74,9 @@ struct OpValue {
     /// conservative default for absent, stale and hand-built value tables.
     bool required = true;
 
+    /// The input an OutputSelect lets through: 0 the master, n the nth audition source (#3081).
+    std::uint8_t heardInput = 0;
+
     /// A BandSplit's crossovers, low to high. Values rather than topology, so dragging one
     /// recompiles nothing; split into arrays to keep every other op's value small.
     std::uint8_t crossoverCount = 0;
@@ -152,6 +155,12 @@ std::vector<std::string> resolvePlanValues(const RenderPlan& plan,
                                            const TrackInfo& master, PlanValues& values,
                                            std::span<const magda::AutomationLaneInfo> lanes = {},
                                            std::span<const magda::AutomationClipInfo> clips = {});
+
+/**
+ * @brief Let @p input of the plan's output select be heard: 0 the master, n the nth audition
+ *        source (#3081). Off the audio thread; a plan without a select is left alone.
+ */
+void selectHeardInput(const RenderPlan& plan, int input, PlanValues& values);
 
 /**
  * @brief Mark pure ops that no observable or stateful op needs.
