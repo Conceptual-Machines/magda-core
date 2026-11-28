@@ -147,6 +147,10 @@ hooks:
 
 extra_css:
   - stylesheets/extra.css
+  - stylesheets/drawings/views.css
+  - stylesheets/drawings/chain.css
+  - stylesheets/drawings/editors.css
+  - stylesheets/drawings/chords.css
 
 extra_javascript:
   - javascripts/site-header.js
@@ -163,6 +167,13 @@ markdown_extensions:
       alternate_style: true
   - pymdownx.keys
   - attr_list
+  # The app's own icons, inline so they take the text colour: :footer-icon-mix-boldm:
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+      options:
+        custom_icons:
+          - ../assets/icons
   - md_in_html
   - toc:
       permalink: true

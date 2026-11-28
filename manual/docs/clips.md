@@ -243,8 +243,6 @@ Showing it is a view setting, not an undo step. While it is shown, the clip's wa
 
 A MIDI clip can carry a time bend: a curve that moves when its notes play, without changing the notes as written. Grooves are ready-made bends. Open it in the Inspector's **Time Bend** section, or with the Time Bend button in the [Piano Roll](panels/piano-roll.md) toolbar.
 
-![Groove Inspector](assets/images/panels/groove-inspector.png){ width="300" }
-
 Above the curve:
 
 - **GROOVE** loads a groove at full strength, from the Swing, Push Swing, Pull Swing, Push Snare, Pull Snare, Timing and Random families, or your own under **Custom**. **AMOUNT** sets how much of it you hear, and **None** turns it off.
@@ -255,8 +253,6 @@ See [Time Bend](time-bend.md) for editing the curve itself.
 ### Creating Grooves with AI
 
 You can create custom grooves using the `/groove` slash command in the AI Assistant:
-
-![Groove via AI](assets/images/panels/groove-ai.png){ width="400" }
 
 ```
 /groove funky 16th

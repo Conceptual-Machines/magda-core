@@ -1,6 +1,22 @@
 # Piano Roll
 
-![Piano Roll](../assets/images/panels/piano-roll.png)
+<div class="magda-ui me-editor" markdown="span">
+<span class="me-toolbar">
+<span>[:midi_editor-v1-me-piano-roll:](#toolbar){ .me-btn .me-on title="Piano Roll" }[:midi_editor-v1-me-drum-grid:](drum-grid-editor.md){ .me-btn title="Drum Grid" } [:midi_editor-v1-me-layer-clips:](#overlay-tracks-ghost-notes){ .me-btn title="Layer clips" }</span>
+<span class="me-gap"></span>
+<span class="me-tools">[:midi_editor-v1-me-pointer:](#edit-tools){ .me-btn .me-on title="Pointer" }[:midi_editor-v1-me-pencil:](#edit-tools){ .me-btn title="Pencil" }[:midi_editor-v1-me-slice:](#edit-tools){ .me-btn title="Slice" }[:midi_editor-v1-me-glue:](#edit-tools){ .me-btn title="Glue" }[:midi_editor-v1-me-erase:](#edit-tools){ .me-btn title="Erase" }</span>
+<span>[:midi_editor-v1-me-time-bend:](#time-bend){ .me-btn title="Time Bend" } [No key](#scale-highlighting){ .me-chip .me-key }</span>
+<span class="me-gap"></span>
+<span>[:midi_editor-v1-me-loop:](#toolbar){ .me-btn title="Loop" } [1/8](#toolbar){ .me-chip }<span class="me-chip me-purple">AUTO</span><span class="me-chip me-purple">SNAP</span> [ABS](#toolbar){ .me-btn } [:material-power:](#toolbar){ .me-btn .me-power title="Power" } [:midi_editor-v1-me-maximise:](#toolbar){ .me-btn title="Maximise" }</span>
+</span>
+<span class="me-rail">[:midi_editor-v1-me-chord-track:](#chord-timeline){ .me-btn title="Chord track" }[:midi_editor-v1-me-monitor:](#auditioning-notes){ .me-btn title="Monitor" }[:midi_editor-v1-me-fold:](#fold){ .me-btn title="Fold" }</span>
+<span class="me-ruler"><span><b>13</b></span><span>13.3</span><span><b>14</b></span><span>14.3</span><span><b>15</b></span><span>15.3</span><span><b>16</b></span><span>16.3</span><span><b>17</b></span><span>17.3</span><span><b>18</b></span><span>18.3</span></span>
+<span class="me-keys"><span style="--y:0">C2</span><span style="--y:12">C1</span><span style="--y:24">C0</span></span>
+<span class="me-grid"></span>
+<span class="me-lanehead"><span>[:midi_editor-v1-me-velocity:](#control-lanes){ .me-btn .me-on title="Velocity" }[:midi_editor-v1-me-cc:](#control-lanes){ .me-btn title="CC and pitchbend" }[:midi_editor-v1-me-mpe:](#pitch-glides-mpe){ .me-btn title="MPE" }</span><small>VEL &middot; 0-127</small></span>
+<span class="me-lane"></span>
+<span class="me-notes"><i style="--x:0;--y:18;--w:1.5;--v:118"></i><i style="--x:1.5;--y:18;--w:0.5;--v:92"></i><i style="--x:3;--y:18;--w:2;--v:104"></i><i style="--x:4;--y:8;--w:1;--v:100"></i><i style="--x:6;--y:8;--w:1;--v:112"></i><i style="--x:7;--y:20;--w:1.5;--v:90"></i><i style="--x:8;--y:14;--w:1;--v:110"></i><i style="--x:9.5;--y:20;--w:1.5;--v:84"></i><i style="--x:11;--y:14;--w:1;--v:104"></i><i style="--x:12;--y:11;--w:1;--v:122"></i><i style="--x:13;--y:17;--w:2;--v:98"></i><i style="--x:15;--y:17;--w:0.5;--v:86"></i><i style="--x:16;--y:10;--w:1;--v:116"></i><i style="--x:17;--y:2;--w:1;--v:102"></i><i style="--x:18;--y:12;--w:1;--v:94"></i><i style="--x:19;--y:17;--w:2;--v:88"></i><i style="--x:21;--y:2;--w:1;--v:120"></i><i style="--x:22;--y:19;--w:1.5;--v:100"></i><i style="--x:23.5;--y:19;--w:0.5;--v:82"></i><i style="--x:24;--y:12;--w:1;--v:96"></i><i style="--x:25;--y:14;--w:1;--v:110"></i><i style="--x:26;--y:19;--w:2;--v:90"></i><i style="--x:28;--y:15;--w:1;--v:124"></i><i style="--x:29;--y:17;--w:2;--v:100"></i><i style="--x:31;--y:17;--w:0.5;--v:84"></i><i style="--x:32;--y:11;--w:1;--v:104"></i><i style="--x:33;--y:8;--w:1;--v:96"></i><i style="--x:34;--y:20;--w:1.5;--v:92"></i><i style="--x:35.5;--y:20;--w:0.5;--v:80"></i><i style="--x:36;--y:12;--w:1;--v:112"></i><i style="--x:37;--y:20;--w:1.5;--v:98"></i><i style="--x:38;--y:11;--w:1;--v:106"></i><i style="--x:39;--y:17;--w:1.5;--v:88"></i><i style="--x:40.5;--y:17;--w:0.5;--v:82"></i><i style="--x:42;--y:8;--w:1;--v:118"></i><i style="--x:43;--y:17;--w:1.5;--v:96"></i><i style="--x:45;--y:2;--w:1;--v:120"></i><i style="--x:46;--y:13;--w:1;--v:90"></i><i style="--x:47;--y:17;--w:1;--v:100"></i><b class="me-playhead" style="--x:13"></b></span>
+</div>
 
 Displayed in the bottom panel when a MIDI clip is selected. Provides a grid for editing notes:
 

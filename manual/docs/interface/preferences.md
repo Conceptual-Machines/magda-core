@@ -170,7 +170,7 @@ You can also describe a theme in plain language. In the [AI Assistant](../panels
 ### Controls
 
 - **Track colour** — How track headers show the track's colour: **Spine**, a stripe on the outer edge, or **Full bar**, the header's top bar.
-- **Mute / solo** — Draw the track header's mute and solo buttons as **Icons** or as **Letters (M / S)**.
+- **Mute / solo** — Draw the mute and solo buttons as **Icons** or as **Letters (M / S)**.
 
 ### New-Project Track Palette
 

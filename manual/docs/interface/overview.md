@@ -1,12 +1,40 @@
 # Interface Overview
 
-MAGDA's window is divided into fixed regions that stay consistent across all three views (Live, Arrange, Mix).
-
-![Arrangement View](../assets/images/arrangement/arrangement-view.png)
+MAGDA's window is divided into fixed regions that stay consistent across all three views: Session, Arrangement and Mix.
 
 ## Window Layout
 
-![Window Layout](../assets/images/interface/window-layout.png)
+<div class="magda-ui magda-window" markdown>
+<div class="mw-region mw-transport" markdown="span">
+<span class="mw-icons">:transport-rewind::transport-prev::transport-next::transport-play::transport-stop::transport-record::transport-loop:</span>
+<span class="mw-lcd">120.00&ensp;4/4</span>
+[Transport](#transport-bar){ .mw-label }
+<span class="mw-chip">CPU</span>
+</div>
+<div class="mw-region mw-left" markdown="span">
+[Left Panel](#left-panel){ .mw-label }
+<span class="mw-sub">Inspector / AI Chat</span>
+</div>
+<div class="mw-region mw-center" markdown="span">
+[Central View](#central-view){ .mw-label }
+<span class="mw-sub">Session, Arrangement or Mixer</span>
+</div>
+<div class="mw-region mw-right" markdown="span">
+[Right Panel](#right-panel){ .mw-label }
+<span class="mw-sub">Plugins / Samples</span>
+</div>
+<div class="mw-region mw-bottom" markdown="span">
+[Bottom Panel](#bottom-panel){ .mw-label }
+<span class="mw-sub">Editors and the Track Chain</span>
+</div>
+<div class="mw-region mw-footer" markdown="span">
+<span class="mw-info">Info line</span>
+<span class="mw-icons mw-views">:footer-icon-session-boldm::footer-icon-arrangement-boldm::footer-icon-mix-boldm:</span>
+[Footer](#footer){ .mw-label }
+</div>
+</div>
+
+Click a region to read about it.
 
 ## Transport Bar
 
@@ -23,9 +51,9 @@ The left panel has two tabs:
 
 The central area displays one of three views depending on the active mode:
 
-- ![Session](../assets/images/icons/Session.svg){ width="18" } **Session View** — Grid-based clip launcher for real-time performance. See [Session View](../session-view.md).
-- ![Arrangement](../assets/images/icons/Arrangement.svg){ width="18" } **Arrangement View** — Traditional timeline for composing and editing. See [Arrangement View](../arrangement-view.md).
-- ![Mix](../assets/images/icons/Mix.svg){ width="18" } **Mixer View** — Channel-strip mixer for balancing and routing. See [Mixer View](../mixer-view.md).
+- :footer-icon-session-boldm: **Session View** — Grid-based clip launcher for real-time performance. See [Session View](../session-view.md).
+- :footer-icon-arrangement-boldm: **Arrangement View** — Traditional timeline for composing and editing. See [Arrangement View](../arrangement-view.md).
+- :footer-icon-mix-boldm: **Mixer View** — Channel-strip mixer for balancing and routing. See [Mixer View](../mixer-view.md).
 
 Switch between views with the mode buttons in the footer, with ++f1++ / ++f2++ / ++f3++, or step through them with ++tab++ and ++shift+tab++.
 
@@ -59,7 +87,7 @@ See [Editors](../panels/editors.md) for details. ++cmd+shift+p++ (++ctrl+shift+p
 The footer bar at the bottom of the window contains, from left to right:
 
 - **Info line** — Names the control under the mouse with its help text. For a control that runs a command, such as the transport and view buttons, it also shows the command's name and its shortcut. Turn it off with **Show info line in the footer** in [Settings > General](preferences.md#behavior).
-- **Live** / **Arrange** / **Mix** mode buttons — Switch between the three main views.
+- **Session** / **Arrangement** / **Mix** view buttons — Switch between the three main views.
 - **Ableton Link** — While [Ableton Link](connections.md#ableton-link) is on, a pill with the number of peers. Click it to open its settings.
 - **Controllers** — A pill for each controller that is switched on, or for the loaded Lua script, with a green dot while its MIDI input is connected. Click one to open [Settings > Controllers](controllers.md).
 - **Local models** — Icons for the local LLM and the Sample Analyzer. The tooltip names each one's state, and clicking opens [Settings > AI](ai-settings.md#local-models).

@@ -1,0 +1,940 @@
+/* Drawings for the chain pages; the palette is .magda-ui in extra.css. */
+
+.md-typeset .mc {
+  --mc-field: #12161c;
+  --mc-cell: #181d24;
+  --mc-meter: linear-gradient(to top, #43a35e 0 72%, #b4b04f 72%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+  padding: 0.4em;
+  /* Rows don't wrap: on a narrow page the whole drawing scales down instead. */
+  font-size: min(0.56rem, calc((100vw - 32px) / 62));
+  white-space: nowrap;
+}
+
+/* The app icons are recoloured at runtime; here they take the text colour. */
+.md-typeset .mc .twemoji {
+  flex: none;
+  height: 1.3em;
+  vertical-align: middle;
+}
+
+.md-typeset .mc .twemoji svg {
+  width: 1.3em;
+  max-height: none;
+}
+
+.md-typeset .mc .twemoji svg [stroke] {
+  stroke: currentcolor;
+}
+
+.md-typeset .mc .twemoji svg [fill]:not([fill="none"]) {
+  fill: currentcolor;
+}
+
+.md-typeset .mc a {
+  text-decoration: none;
+}
+
+.md-typeset .mc a:hover {
+  color: var(--mw-accent);
+}
+
+/* Rows of controls: headers, toolbars, tab strips. */
+.md-typeset .mc .mc-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  min-width: 0;
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mc .mc-push {
+  margin-left: auto;
+}
+
+.md-typeset .mc .mc-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 0.35em 0.1em;
+  background: var(--mw-stroke);
+}
+
+.md-typeset .mc .mc-name {
+  color: var(--mw-text);
+  font-weight: 700;
+}
+
+.md-typeset .mc .mc-dim {
+  color: var(--mw-dim);
+}
+
+.md-typeset .mc .mc-mono {
+  font-family: var(--md-code-font-family);
+}
+
+.md-typeset .mc .mc-caps {
+  font-family: var(--md-code-font-family);
+  font-size: 0.85em;
+  letter-spacing: 0.12em;
+}
+
+.md-typeset .mc .mc-preset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  min-width: 5.5em;
+  padding: 0.25em 0.5em;
+  border-radius: 4px;
+  background: var(--mw-surface);
+  color: var(--mw-text);
+}
+
+.md-typeset .mc .mc-preset .twemoji svg {
+  width: 1em;
+}
+
+.md-typeset .mc .mc-chip {
+  padding: 0.25em 0.55em;
+  border-radius: 4px;
+  background: var(--mw-surface);
+  color: var(--mw-text);
+}
+
+.md-typeset .mc .mc-field {
+  padding: 0.25em 0.6em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 4px;
+  background: var(--mc-field);
+  color: var(--mw-text);
+}
+
+.md-typeset .mc .mc-led {
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  border-radius: 50%;
+  background: var(--mw-stroke);
+}
+
+/* An engaged toggle: tinted chip in the button's own colour. */
+.md-typeset .mc .mc-on {
+  padding: 0.15em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--mw-accent) 28%, transparent);
+  color: #8fb4e0;
+}
+
+.md-typeset .mc .mc-power {
+  padding: 0.3em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--mw-positive) 18%, transparent);
+  color: var(--mw-positive);
+}
+
+.md-typeset .mc .mc-tabs {
+  display: flex;
+  gap: 1.2em;
+  border-bottom: 1px solid var(--mw-stroke);
+  color: var(--mw-dim);
+}
+
+.md-typeset .mc .mc-tabs > * {
+  padding: 0.2em 0.1em 0.35em;
+}
+
+.md-typeset .mc .mc-tabs .mc-sel {
+  border-bottom: 2px solid #8fb4e0;
+  color: var(--mw-text);
+}
+
+/* The track chain: a header over a row of devices. */
+.md-typeset .mc-chain {
+  background: var(--mw-bg);
+}
+
+.md-typeset .mc .mc-tchdr {
+  flex-wrap: wrap;
+  padding: 0.3em 0.5em;
+  border-radius: 4px;
+  background: var(--mw-transport);
+}
+
+.md-typeset .mc .mc-devices {
+  display: flex;
+  gap: 0.4em;
+  align-items: stretch;
+}
+
+/* A device: header over sidebar and body, side strip down the right. */
+.md-typeset .mc .mc-dev {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto 1fr;
+  grid-template-areas: "hdr hdr strip" "side body strip";
+  flex: none;
+  min-width: 0;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 6px;
+  background: var(--mw-panel);
+}
+
+.md-typeset .mc .mc-grow {
+  flex: 1 1 0;
+}
+
+.md-typeset .mc .mc-dhdr {
+  grid-area: hdr;
+  padding: 0.35em 0.5em;
+  border-bottom: 1px solid var(--mw-stroke);
+}
+
+.md-typeset .mc .mc-dside {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.5em 0.35em;
+  border-right: 1px solid var(--mw-stroke);
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mc .mc-dbody {
+  grid-area: body;
+  display: flex;
+  gap: 0.6em;
+  min-width: 0;
+  padding: 0.5em;
+}
+
+.md-typeset .mc .mc-strip {
+  grid-area: strip;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45em;
+  padding: 0.4em 0.45em;
+  border-left: 1px solid var(--mw-stroke);
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mc .mc-mix {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.15em 0.35em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 4px;
+  color: var(--mw-text);
+  font-size: 1.1em;
+}
+
+.md-typeset .mc .mc-mix .mc-caps {
+  color: var(--mw-dim);
+  font-size: 0.65em;
+}
+
+/* Peak meter, two channels, with the gain fader's thumb across it. */
+.md-typeset .mc .mc-meter {
+  position: relative;
+  display: flex;
+  flex: 1;
+  gap: 0.2em;
+  min-height: 5em;
+}
+
+.md-typeset .mc .mc-meter i {
+  width: 0.45em;
+  background: var(--mc-meter) bottom / 100% var(--mc-level, 70%) no-repeat, var(--mc-field);
+}
+
+.md-typeset .mc .mc-meter::after {
+  content: "";
+  position: absolute;
+  left: -0.15em;
+  right: -0.15em;
+  top: 25%;
+  height: 0.2em;
+  border-radius: 1px;
+  background: #c9cfd4;
+}
+
+.md-typeset .mc .mc-delta {
+  color: var(--mw-dim);
+  font-weight: 700;
+}
+
+/* A parameter cell: name over value. */
+.md-typeset .mc .mc-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  min-width: 5.2em;
+  padding: 0.45em 0.6em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 5px;
+  background: var(--mc-cell);
+  color: var(--mw-dim);
+}
+
+.md-typeset .mc .mc-cell b {
+  color: var(--mw-text);
+  font-size: 1.25em;
+}
+
+.md-typeset .mc .mc-cells {
+  display: grid;
+  grid-template-columns: repeat(var(--mc-cols, 3), auto);
+  gap: 0.35em;
+  align-content: start;
+}
+
+.md-typeset .mc .mc-col {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 0.5em;
+}
+
+.md-typeset .mc .mc-graph {
+  position: relative;
+  flex: 1 1 6em;
+  min-width: 4em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 4px;
+  background: var(--mc-field);
+}
+
+.md-typeset .mc .mc-graph svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.md-typeset .mc .mc-add {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.6em;
+  border: 1px dashed var(--mw-stroke);
+  border-radius: 6px;
+  color: var(--mw-dim);
+  font-size: 1.2em;
+}
+
+.md-typeset .mc .mc-fold .twemoji {
+  transform: rotate(180deg);
+}
+
+/* A rack: header over sidebar and chain list, the selected chain beside them. */
+.md-typeset .mc .mc-rack {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto 1fr;
+  grid-template-areas: "hdr hdr chain strip" "side list chain strip";
+  border: 1px solid var(--mw-stroke);
+  border-radius: 6px;
+  background: var(--mw-panel);
+}
+
+.md-typeset .mc .mc-rack > .mc-dside {
+  border-bottom-left-radius: 6px;
+}
+
+.md-typeset .mc .mc-rlist {
+  grid-area: list;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  padding: 0.4em 0.6em 0.5em;
+  border-right: 1px solid var(--mw-stroke);
+}
+
+.md-typeset .mc .mc-rlist .mc-tabs {
+  justify-content: space-between;
+  padding: 0 1.5em;
+}
+
+.md-typeset .mc .mc-rchain {
+  grid-area: chain;
+  display: flex;
+  gap: 0.4em;
+  padding: 0.4em;
+  background: var(--mw-bg);
+}
+
+.md-typeset .mc .mc-crow {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.45em 0.6em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 5px;
+  background: var(--mc-cell);
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mc .mc-crow.mc-sel {
+  border-color: #3d5a78;
+  box-shadow: inset 2px 0 0 #8fb4e0;
+}
+
+.md-typeset .mc .mc-crow .mc-name {
+  width: 4.2em;
+  font-size: 1.15em;
+}
+
+.md-typeset .mc .mc-dot {
+  width: 0.75em;
+  height: 0.75em;
+  border-radius: 50%;
+  background: var(--mc-c, var(--mw-dim));
+}
+
+.md-typeset .mc .mc-vol {
+  padding: 0.3em 0.6em;
+  border-radius: 3px;
+  background: linear-gradient(to right, #3a5270 0 75%, var(--mc-field) 75%);
+  color: var(--mw-text);
+  font-family: var(--md-code-font-family);
+}
+
+.md-typeset .mc .mc-pan {
+  padding: 0.3em 1.4em;
+  border-radius: 3px;
+  background: var(--mc-field);
+  color: var(--mw-dim);
+  font-family: var(--md-code-font-family);
+}
+
+.md-typeset .mc .mc-crow .mc-power {
+  padding: 0.25em;
+}
+
+.md-typeset .mc .mc-foot {
+  margin-top: auto;
+  padding: 0.15em 0.55em;
+}
+
+/* Macro and modulator panels: card grids, each followed by its editor. */
+.md-typeset .mc .mc-panels {
+  display: flex;
+  font-size: 0.93em;
+  flex-wrap: wrap;
+  gap: 1px;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 6px;
+  background: var(--mw-stroke);
+  overflow: hidden;
+}
+
+.md-typeset .mc .mc-panels > .mc-dhdr {
+  flex-basis: 100%;
+  border: 0;
+  background: var(--mw-panel);
+}
+
+.md-typeset .mc .mc-panel {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 0.45em;
+  padding: 0.5em;
+  background: var(--mw-panel);
+}
+
+.md-typeset .mc .mc-ptitle {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  min-height: 1.6em;
+}
+
+.md-typeset .mc .mc-macro {
+  color: var(--mw-modulation);
+}
+
+.md-typeset .mc .mc-mod {
+  color: var(--mw-attention);
+}
+
+.md-typeset .mc .mc-grid4 {
+  display: grid;
+  grid-template-columns: repeat(4, 4.5em);
+  gap: 0.4em;
+}
+
+.md-typeset .mc .mc-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2em;
+  min-height: 5.4em;
+  padding: 0.35em 0.4em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 5px;
+  background: var(--mc-cell);
+  color: var(--mw-secondary);
+}
+
+.md-typeset .mc .mc-card .mc-row {
+  align-self: stretch;
+  justify-content: center;
+  gap: 0.3em;
+}
+
+.md-typeset .mc .mc-card .twemoji svg {
+  width: 1.1em;
+}
+
+.md-typeset .mc .mc-knob {
+  width: 2.6em;
+  height: 2.6em;
+}
+
+.md-typeset .mc .mc-val {
+  padding: 0 0.3em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 3px;
+  background: var(--mc-field);
+  color: var(--mw-text);
+}
+
+.md-typeset .mc .mc-mcard.mc-sel {
+  border-color: #5b5fa8;
+  background: #1c2130;
+}
+
+.md-typeset .mc .mc-modcard {
+  align-items: stretch;
+}
+
+.md-typeset .mc .mc-modcard.mc-sel {
+  box-shadow: inset 2px 0 0 var(--mw-attention);
+  background: #1c232c;
+}
+
+.md-typeset .mc .mc-modcard.mc-linking {
+  background: color-mix(in srgb, var(--mw-attention) 15%, var(--mc-cell));
+}
+
+.md-typeset .mc .mc-tag {
+  align-self: flex-end;
+  color: var(--mw-dim);
+  font-family: var(--md-code-font-family);
+  font-size: 0.75em;
+  letter-spacing: 0.06em;
+}
+
+.md-typeset .mc .mc-thumb {
+  position: relative;
+  height: 1.7em;
+}
+
+.md-typeset .mc .mc-thumb svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.md-typeset .mc .mc-mdot {
+  position: absolute;
+  width: 0.45em;
+  height: 0.45em;
+  margin: -0.225em 0 0 -0.225em;
+  border-radius: 50%;
+  background: var(--mw-attention);
+}
+
+.md-typeset .mc .mc-modcard .mc-row {
+  justify-content: flex-start;
+}
+
+.md-typeset .mc .mc-time {
+  overflow: hidden;
+  color: var(--mw-text);
+  font-family: var(--md-code-font-family);
+  text-overflow: ellipsis;
+}
+
+.md-typeset .mc .mc-empty {
+  white-space: normal;
+  text-align: center;
+  border-style: dashed;
+  background: transparent;
+  color: var(--mw-dim);
+}
+
+.md-typeset .mc .mc-on-att {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--mw-attention) 22%, transparent);
+  color: var(--mw-attention);
+}
+
+.md-typeset .mc .mc-on-mac {
+  padding: 0.15em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--mw-modulation) 25%, transparent);
+  color: #a4a4f0;
+}
+
+.md-typeset .mc .mc-on-mod {
+  padding: 0.15em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--mw-attention) 22%, transparent);
+  color: var(--mw-attention);
+}
+
+/* Editors beside the card grids. */
+.md-typeset .mc .mc-editor {
+  flex: 1 1 10em;
+  min-width: 9.5em;
+}
+
+.md-typeset .mc .mc-editor .mc-tabs {
+  gap: 0.8em;
+}
+
+.md-typeset .mc .mc-editor .mc-caps {
+  letter-spacing: 0.06em;
+}
+
+.md-typeset .mc .mc-small {
+  justify-content: space-between;
+  font-size: 0.78em;
+}
+
+.md-typeset .mc .mc-editor .mc-tabs .mc-sel {
+  border-color: var(--mw-attention);
+}
+
+.md-typeset .mc .mc-medit .mc-ptitle {
+  justify-content: center;
+  margin: -0.5em -0.5em 0;
+  background: var(--mc-field);
+}
+
+.md-typeset .mc .mc-lrow {
+  display: flex;
+  gap: 0.6em;
+  padding: 0.3em 0.4em;
+  background: var(--mc-cell);
+  color: var(--mw-text);
+}
+
+.md-typeset .mc .mc-pairs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3em;
+}
+
+.md-typeset .mc .mc-pairs > *,
+.md-typeset .mc .mc-box {
+  padding: 0.3em 0.4em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 4px;
+  background: var(--mc-field);
+  color: var(--mw-text);
+  font-weight: 700;
+  text-align: center;
+}
+
+.md-typeset .mc .mc-display {
+  position: relative;
+  display: block;
+  height: 4.6em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 4px;
+  background: var(--mc-field);
+}
+
+.md-typeset .mc .mc-display svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.md-typeset .mc .mc-display .mc-tag {
+  position: absolute;
+  top: 0.3em;
+  right: 0.4em;
+  color: var(--mw-attention);
+}
+
+/* Link mode: the banner in the track chain header, amount bars and the amount slider. */
+.md-typeset .mc .mc-cells > a {
+  display: flex;
+}
+
+.md-typeset .mc .mc-cells > a > * {
+  flex: 1;
+}
+
+.md-typeset .mc .mc-grow-panel {
+  flex: 1 1 auto;
+}
+
+.md-typeset .mc .mc-banner {
+  flex: 1;
+  color: var(--mw-attention);
+  font-weight: 700;
+  font-size: 1.15em;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.md-typeset .mc .mc-cell {
+  position: relative;
+}
+
+.md-typeset .mc .mc-amt {
+  position: absolute;
+  bottom: 0.35em;
+  height: 0.2em;
+  border-radius: 1px;
+  background: var(--mw-attention);
+}
+
+.md-typeset .mc .mc-slider {
+  justify-content: center;
+  border-color: var(--mw-attention);
+}
+
+.md-typeset .mc .mc-slider .mc-row {
+  width: 100%;
+  gap: 0.4em;
+}
+
+.md-typeset .mc .mc-strack {
+  flex: 1;
+  min-width: 3em;
+  height: 0.5em;
+  border-radius: 2px;
+  background: linear-gradient(to right, color-mix(in srgb, var(--mw-attention) 50%, transparent) 0 var(--mc-v), var(--mw-surface) var(--mc-v));
+}
+
+.md-typeset .mc .mc-sval {
+  padding: 0.1em 0.3em;
+  border: 1px solid var(--mw-stroke);
+  border-radius: 3px;
+  background: var(--mc-field);
+  color: var(--mw-text);
+}
+
+/* Curve points: filled points, hollow curvature handles. */
+.md-typeset .mc .mc-curve {
+  height: 7em;
+}
+
+.md-typeset .mc .mc-curve i {
+  position: absolute;
+  width: 0.6em;
+  height: 0.6em;
+  margin: -0.3em 0 0 -0.3em;
+  border-radius: 50%;
+  background: var(--mw-attention);
+}
+
+.md-typeset .mc .mc-curve .mc-handle {
+  width: 0.75em;
+  height: 0.75em;
+  margin: -0.375em 0 0 -0.375em;
+  border: 2px solid var(--mw-text);
+  background: var(--mc-field);
+}
+
+.md-typeset .mc .mc-panel > a {
+  display: flex;
+  flex-direction: column;
+}
+
+.md-typeset .mc.mc-fit {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.md-typeset .mc.mc-fit .mc-panels {
+  display: grid;
+  grid-template-columns: auto 14em;
+}
+
+.md-typeset .mc.mc-fit .mc-panels > .mc-dhdr {
+  grid-row: 1;
+  grid-column: 1 / -1;
+}
+
+/* An Arrangement track with one automation lane under it. */
+.md-typeset .mc .mc-arr {
+  display: grid;
+  grid-template-columns: 13em minmax(0, 1fr);
+  grid-template-rows: 1.8em 6.8em 6.4em;
+  gap: 1px;
+  background: var(--mw-stroke);
+}
+
+.md-typeset .mc .mc-corner,
+.md-typeset .mc .mc-thdr,
+.md-typeset .mc .mc-lhdr {
+  background: var(--mw-panel);
+}
+
+.md-typeset .mc .mc-ruler {
+  position: relative;
+  background: var(--mw-bg);
+  color: var(--mw-secondary);
+  font-weight: 700;
+}
+
+.md-typeset .mc .mc-ruler span {
+  position: absolute;
+  bottom: 0.25em;
+  padding-left: 0.3em;
+  border-left: 1px solid var(--mw-dim);
+}
+
+.md-typeset .mc .mc-thdr,
+.md-typeset .mc .mc-lhdr {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+  padding: 0 0.5em 0.4em;
+}
+
+.md-typeset .mc .mc-lhdr {
+  justify-content: space-between;
+  padding-top: 0.4em;
+  background: #191814;
+  color: var(--mw-text);
+}
+
+.md-typeset .mc .mc-tname {
+  display: flex;
+  align-items: center;
+  margin: 0 -0.5em;
+  padding: 0.35em 0.6em;
+  background: #7c6fc4;
+  color: #fff;
+  font-weight: 600;
+}
+
+.md-typeset .mc .mc-tname .mc-led {
+  background: #c9c4ec;
+}
+
+.md-typeset .mc .mc-thdr b {
+  padding: 0.15em 0.45em;
+  border-radius: 3px;
+  background: var(--mw-surface);
+  color: var(--mw-text);
+}
+
+.md-typeset .mc .mc-del {
+  color: #c06a9a;
+}
+
+.md-typeset .mc .mc-scale {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  color: var(--mw-dim);
+  font-size: 0.8em;
+}
+
+.md-typeset .mc .mc-lhdr .mc-row:last-child {
+  align-items: flex-end;
+}
+
+.md-typeset .mc .mc-tlane,
+.md-typeset .mc .mc-alane {
+  position: relative;
+  background: var(--mw-bg);
+}
+
+.md-typeset .mc .mc-alane {
+  background: #14161a;
+}
+
+.md-typeset .mc .mc-alane a,
+.md-typeset .mc .mc-alane svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.md-typeset .mc .mc-alane i {
+  position: absolute;
+  width: 0.55em;
+  height: 0.55em;
+  margin: -0.275em 0 0 -0.275em;
+  border-radius: 50%;
+  background: var(--mw-attention);
+}
+
+.md-typeset .mc .mc-clip {
+  position: absolute;
+  top: 0.2em;
+  bottom: 0.2em;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #7c6fc4;
+  border-radius: 3px;
+  background: #2e2a4a;
+}
+
+.md-typeset .mc .mc-cname {
+  padding: 0.15em 0.4em;
+  background: #7c6fc4;
+  color: #fff;
+}
+
+.md-typeset .mc .mc-clip svg {
+  flex: 1;
+  width: 100%;
+  margin: 0.3em 0;
+}
+
+/* The lane-mode toggle is drawn by the app: two bars in a tinted square. */
+.md-typeset .mc .mc-mode {
+  display: inline-block;
+  width: 1.5em;
+  height: 1.5em;
+  border-radius: 3px;
+  background:
+    linear-gradient(to right, transparent 0.4em, #8fb4e0 0.4em 0.62em, transparent 0.62em 0.88em, #8fb4e0 0.88em 1.1em, transparent 1.1em) center / 100% 0.8em no-repeat,
+    color-mix(in srgb, var(--mw-accent) 35%, transparent);
+  vertical-align: middle;
+}
+
+/* Controller coverage dots on macro cards, parameter cells and device headers. */
+.md-typeset .mc .mc-bind {
+  position: absolute;
+  top: 0.45em;
+  right: 0.45em;
+  width: 0.55em;
+  height: 0.55em;
+  border-radius: 50%;
+  background: var(--mc-c);
+}
+
+.md-typeset .mc .mc-hdot {
+  display: inline-block;
+  width: 0.55em;
+  height: 0.55em;
+  margin-left: 0.45em;
+  border-radius: 50%;
+  background: var(--mc-c);
+  vertical-align: middle;
+}
+
+.md-typeset .mc.mc-fit .mc-panels > .mc-panel > a {
+  display: block;
+}

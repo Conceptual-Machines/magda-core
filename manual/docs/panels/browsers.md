@@ -6,8 +6,6 @@ The two browsers share one search term. Type in either and the other follows, an
 
 ## Plugin Browser
 
-![Plugin Browser](../assets/images/panels/plugin-browser.png)
-
 The Plugin Browser shows all available audio plugins organized in a tree view.
 
 ### Navigation
@@ -39,8 +37,6 @@ On macOS, when a plugin is installed as both VST3 and AU, the browser shows only
 If a newly installed plugin doesn't appear, rescan your plugin folders in **Settings > Plugins**. See [Plugin Settings](../interface/plugin-settings.md#scanning).
 
 ## Media Explorer
-
-![Sample Browser](../assets/images/panels/sample-browser.png)
 
 The Media Explorer lets you browse files on your system and preview audio before importing.
 

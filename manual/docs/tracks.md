@@ -2,7 +2,15 @@
 
 Tracks are the fundamental building blocks in MAGDA. They appear in all three views — as columns in Session View, rows in Arrangement View, and channel strips in Mixer View.
 
-![Track Header](assets/images/tracks/track-header.png)
+<div class="magda-ui mv mv-track" markdown="span">
+<span class="mv-name mv-bass">Bass<span class="mv-dot"></span></span>
+<span class="mv-legend">[Track name](#adding-and-managing-tracks) &middot; MIDI activity</span>
+<span class="mv-ctrls"><span class="mv-field mv-vol" style="--v:66%">-2.5</span><span class="mv-field">C</span></span>
+<span class="mv-vmeter" style="--m:62%"></span>
+<span class="mv-legend">[Volume fader](#track-controls) &middot; [Pan](#track-controls) &middot; [Meter](#track-controls)</span>
+<span class="mv-ctrls">:general-master_on::general-solo::general-track_record::general-monitor_off::automation-automation:</span>
+<span class="mv-legend">[Mute](#track-controls) &middot; [Solo](#track-controls) &middot; [Record arm](#track-controls) &middot; [Input monitor](#input-monitoring) &middot; [Automation](#track-controls)</span>
+</div>
 
 ## Hybrid Track System
 
@@ -27,17 +35,18 @@ The chord track sits at the top of the Arrangement View and at the far left of S
 Every track provides the following controls. They render identically in the track header and the track [Inspector](panels/inspector.md), and reflow responsively to the width available rather than to fixed height presets, so no control is ever hidden.
 
 - **Volume fader** — Adjust the track's output level
-- **Pan knob** — Position in the stereo field
-- **Mute** (M) — Silence the track. Shortcut: select the track and press ++m++
-- **Solo** (S) — Solo the track. Shortcut: select the track and press ++shift+s++
-- **Record arm** (R) — Arm the track for recording
+- **Pan** — Position in the stereo field. The value field shows the position (for example *C*, *20L* or *35R*). Drag it to change the value, and double-click it to reset to centre
+- **Mute** (speaker) — Silence the track. Shortcut: select the track and press ++m++
+- **Solo** (ring) — Solo the track. Shortcut: select the track and press ++shift+s++
+- **Record arm** (dot) — Arm the track for recording
 - **Input monitor** — Monitor the live input signal through the track (see [Input Monitoring](#input-monitoring))
 - **Automation** — Toggle automation read/write for the track
 - **Sends** - Level to each aux / return the track feeds
 - **Routing** - Input and output routing for the track (see [Track-to-Track Routing](#track-to-track-routing))
 - **Meter** - Peak level meter for the track
+- **MIDI activity light** - A dot in the track header that flashes when the track receives a MIDI note
 
-The **Automation** button lights purple when the track holds automation.
+The **Automation** button lights purple when the track holds automation. To show mute and solo as the letters M and S, set **Mute / solo** to **Letters (M / S)** in [Settings > Appearance](interface/preferences.md#controls).
 
 Tracks that don't take input show fewer controls. An aux track has no record arm, input monitor, routing or sends; the chord track has only its volume and its chord preview; a separator has none.
 
@@ -91,28 +100,19 @@ Self-routing and feedback loops are detected and blocked. Routings are saved wit
 
 Each of the three views — Session, Arrangement, and Mixer — maintains its own independent track visibility and layout. This means you can show a different set of tracks in each view.
 
-![Track Manager](assets/images/tracks/track-manager.png){ width="300" }
+To choose which tracks each view shows, open the **Track Manager** from the **View** menu. It has one column of checkboxes for each view: **Live** (the Session View), **Arrange** and **Mix**. Click a checkbox to show or hide the track in that view.
 
-Open the Track Manager from the **View** menu to configure track visibility per view. Each column (Live, Arrange, Mix) has independent checkboxes — toggle them to control which tracks appear in each view.
+Each view also keeps these settings for each track:
 
-Per-view track settings include:
-
-- **Visible** — Whether the track appears in this view
-- **Locked** — Prevent editing the track in this view
-- **Collapsed** — For group tracks: collapse or expand children
-- **Height** — Track row height (Arrangement View)
+- **Folded** - Whether the children of a group track are folded. Fold a group with the chevron in its header.
+- **Height** - The height of the track's row in the Arrangement View.
 
 ### Example: Multi-Output Workflow
 
 A common use case is keeping the Arrangement View clean while having full control in the Mixer. With a multi-output instrument like Addictive Drums, you can hide the individual output tracks from the Arrangement and show only the MIDI track you compose on:
 
-**Arrangement View** — Only the group and the instrument's MIDI track are visible, keeping the timeline uncluttered:
-
-![Arrangement View](assets/images/tracks/arrange-view-manager.png)
-
-**Mixer View** — All output tracks are visible for independent level, pan, and effects control per drum voice:
-
-![Mixer View](assets/images/tracks/mixer-view-manager.png)
+- **Arrangement View** - Show only the group and the instrument's MIDI track. The timeline stays short.
+- **Mixer View** - Show all the output tracks. Each drum voice gets its own level, pan and effects.
 
 ## Adding and Managing Tracks
 

@@ -2,26 +2,36 @@
 
 The Arrangement View is a traditional DAW timeline for composing, recording, and editing. Switch to it by clicking the **Arrangement** button in the footer bar.
 
-![Arrangement View](assets/images/arrangement/arrangement-view.png)
+<div class="magda-ui mv mv-arr" markdown="span">
+[:toolbar-zoom_out_map::toolbar-fit_width::toolbar-fit_loop::toolbar-location::toolbar-clock::midi_editor-v1-me-pointer::material-plus:<span class="mv-io">:general-input-output:</span>](#toolbar){ .mv-corner title="Toolbar" }
+[<span class="mv-bar mv-strong" style="--x:5.1%">13</span><span class="mv-bar" style="--x:16.47%">14</span><span class="mv-bar" style="--x:27.84%">15</span><span class="mv-bar" style="--x:39.21%">16</span><span class="mv-bar mv-strong" style="--x:50.58%">17</span><span class="mv-bar" style="--x:61.95%">18</span><span class="mv-bar" style="--x:73.32%">19</span><span class="mv-bar" style="--x:84.69%">20</span><span class="mv-bar mv-strong" style="--x:96.06%">21</span><span class="mv-loopbar"></span><span class="mv-phead"></span>](#timeline-ruler){ .mv-ruler title="Timeline ruler" }
+[:toolbar-track_height_compact::toolbar-track_height_medium::toolbar-track_height_large:](#toolbar){ .mv-side title="Track heights" }
+<span class="mv-heads">
+<span class="mv-th mv-drums">[:general-chevron_right:Drums<span class="mv-dot"></span>](tracks.md){ .mv-name }[<span class="mv-field mv-vol">-1.4</span><span class="mv-field">C</span>:general-master_on::general-solo::general-track_record::general-monitor_off::automation-automation:](tracks.md#track-controls){ .mv-ctrls }<span class="mv-vmeter" style="--m:78%"></span></span>
+<span class="mv-th mv-bass">[Bass<span class="mv-dot"></span>](tracks.md){ .mv-name }[<span class="mv-field mv-vol">-2.5</span><span class="mv-field">C</span>:general-master_on::general-solo::general-track_record::general-monitor_off::automation-automation:](tracks.md#track-controls){ .mv-ctrls }<span class="mv-vmeter" style="--m:62%"></span></span>
+<span class="mv-th mv-keys">[Keys<span class="mv-dot"></span>](tracks.md){ .mv-name }[<span class="mv-field mv-vol">-4.4</span><span class="mv-field">L20</span>:general-master_on::general-solo::general-track_record::general-monitor_off::automation-automation:](tracks.md#track-controls){ .mv-ctrls }<span class="mv-vmeter" style="--m:40%"></span></span>
+<span class="mv-th mv-pluck">[Pluck<span class="mv-dot"></span>](tracks.md){ .mv-name }[<span class="mv-field mv-vol">-5.2</span><span class="mv-field">R35</span>:general-master_on::general-solo::general-track_record::general-monitor_off::automation-automation:](tracks.md#track-controls){ .mv-ctrls }<span class="mv-vmeter" style="--m:18%"></span></span>
+<span class="mv-th mv-pad">[Pad<span class="mv-dot"></span>](tracks.md){ .mv-name }[<span class="mv-field mv-vol">-6.0</span><span class="mv-field">L10</span>:general-master_on::general-solo::general-track_record::general-monitor_off::automation-automation:](tracks.md#track-controls){ .mv-ctrls }<span class="mv-vmeter" style="--m:25%"></span></span>
+<span class="mv-th mv-arp">[Arp<span class="mv-dot"></span>](tracks.md){ .mv-name }[<span class="mv-field mv-vol">-6.0</span><span class="mv-field">R25</span>:general-master_on::general-solo::general-track_record::general-monitor_off::automation-automation:](tracks.md#track-controls){ .mv-ctrls }<span class="mv-vmeter" style="--m:30%"></span></span>
+</span>
+<span class="mv-lanes">
+[<span class="mv-clip mv-cont mv-p-drums" style="--w:5.1%"></span><span class="mv-clip mv-p-drums" style="--w:91%"><b>Chorus</b></span>](#working-with-clips){ .mv-lane .mv-drums }
+[<span class="mv-clip mv-cont mv-p-bass" style="--w:5.1%"></span><span class="mv-clip mv-p-bass" style="--w:91%"><b>Chorus</b></span>](#working-with-clips){ .mv-lane .mv-bass }
+[<span class="mv-clip mv-cont mv-p-keys" style="--w:5.1%"></span><span class="mv-clip mv-p-keys" style="--w:91%"><b>Chorus</b></span>](#working-with-clips){ .mv-lane .mv-keys }
+[<span class="mv-clip mv-cont mv-p-pluck" style="--w:5.1%"></span><span class="mv-clip mv-p-pluck" style="--w:91%"><b>Chorus</b></span>](#working-with-clips){ .mv-lane .mv-pluck }
+[<span class="mv-clip mv-cont mv-p-pad" style="--w:5.1%"></span><span class="mv-clip mv-p-pad" style="--w:91%"><b>Chorus</b></span><span class="mv-clip mv-p-pad" style="--w:3.9%"><b>Break</b></span>](#working-with-clips){ .mv-lane .mv-pad }
+[<span class="mv-clip mv-cont mv-p-arp" style="--w:5.1%"></span><span class="mv-clip mv-p-arp" style="--w:91%"><b>Chorus</b></span><span class="mv-clip mv-p-arp" style="--w:3.9%"><b>Break</b></span>](#working-with-clips){ .mv-lane .mv-arp }
+[](#playhead){ .mv-playhead title="Playhead" }
+</span>
+<span class="mv-side"></span>
+[<span>Reverb</span>:general-master_on::general-solo:<span class="mv-field mv-vol" style="--v:60%">-3.1</span><span class="mv-field">C</span><span class="mv-vmeter" style="--m:55%"></span>](#layout){ .mv-auxhead }<span class="mv-auxlane"></span><span class="mv-side"></span>
+[<span>Delay</span>:general-master_on::general-solo:<span class="mv-field mv-vol" style="--v:60%">-3.1</span><span class="mv-field">C</span><span class="mv-vmeter" style="--m:50%"></span>](#layout){ .mv-auxhead }<span class="mv-auxlane"></span><span class="mv-side"></span>
+[<span class="mv-field mv-vol" style="--v:72%">0.0</span><span class="mv-btn">:general-master_on:</span><span class="mv-hmeter" style="--m:62%"></span><span class="mv-btn">:automation-automation:</span>](#master-track){ .mv-masterhead title="Master track" }
+[<span class="mv-ticks"><span>1</span><span>33</span><span>65</span><span>97</span><span>129</span><span>161</span><span>193</span><span>225</span><span>257</span><span>289</span><span>321</span><span>353</span><span>385</span><span>417</span><span>449</span><span>481</span><span>513</span></span><span class="mv-mini"></span><span class="mv-marks"></span><span class="mv-view"></span>](#song-navigator){ .mv-nav title="Song navigator" }
+[:toolbar-track_height_compact::toolbar-track_height_medium::toolbar-track_height_large:](#master-track){ .mv-side title="Master heights" }
+</div>
 
 ## Layout
-
-```
-┌──────────┬─────────────────────────────────────┐
-│ Toolbar  │ Timeline ruler (bars / beats / time)│
-├──────────┼─────────────────────────────────────┤
-│ Track    │                                     │
-│ Headers  │   Track Content (clips on           │
-│          │   the timeline)                     │
-│  Name    │                                     │
-│  Color   │         ▼ Playhead                  │
-│  M S R   │                                     │
-├──────────┼─────────────────────────────────────┤
-│ Aux      │   Aux track content                 │
-├──────────┼─────────────────────────────────────┤
-│ Master   │   Song navigator                    │
-└──────────┴─────────────────────────────────────┘
-```
 
 - **Toolbar** (top left) — The corner above the track headers (see [Toolbar](#toolbar)).
 - **Track headers** (left) — Track name, color, mute/solo controls. Resizable width.
@@ -33,13 +43,13 @@ The Arrangement View is a traditional DAW timeline for composing, recording, and
 
 ## Toolbar
 
-The corner above the track headers holds one row of buttons:
+The corner above the track headers holds one row of buttons, in this order:
 
-- **Edit tool** — shows the current tool; click it to pick another (see [Edit Tools](#edit-tools))
-- **Add track**
+- **Zoom to fit timeline**, **Zoom to selection** and **Zoom to loop region** — on a narrow header these drop out, Zoom to loop region first
 - **Show / hide marker lane** (see [Markers](#markers))
 - **Show / hide seconds ruler** (see [Timeline Ruler](#timeline-ruler))
-- **Zoom to selection**, **Zoom to fit timeline** and **Zoom to loop region** — on a narrow header these drop out, Zoom to loop region first
+- **Edit tool** — shows the current tool; click it to pick another (see [Edit Tools](#edit-tools))
+- **Add track**
 - **Toggle I/O routing** — at the outer edge, over the I/O column it shows
 
 The three track-height buttons sit above the vertical scrollbar, beside the ruler, drawn as three small dots (compact), two dots (medium) and one large dot (large). Each sets every track to that height. Right-click any of them to edit the three heights.
@@ -112,7 +122,11 @@ When a marker scrolls off the left edge, its name stays pinned at the edge of th
 
 The song navigator is a minimap in the master content strip showing the whole arrangement at a glance: a compressed overview of the track clips, the timeline markers as vertical lines, the playhead, and a viewport rectangle marking the part of the song currently visible in the main view.
 
-![Song Navigator](assets/images/arrangement/song-navigator.png)
+<div class="magda-ui mv mv-arr mv-navonly" markdown="span">
+[<span class="mv-field mv-vol" style="--v:72%">0.0</span><span class="mv-btn">:general-master_on:</span><span class="mv-hmeter" style="--m:62%"></span><span class="mv-btn">:automation-automation:</span>](#master-track){ .mv-masterhead title="Master track" }
+<span class="mv-nav" title="Song navigator"><span class="mv-ticks"><span style="--x:0%">1</span><span style="--x:10%">5</span><span style="--x:20%">9</span><span style="--x:30%">13</span><span style="--x:40%">17</span><span style="--x:50%">21</span><span style="--x:60%">25</span><span style="--x:70%">29</span><span style="--x:80%">33</span><span style="--x:90%">37</span></span><span class="mv-rows"><span class="mv-drums" style="--s:10%;--e:90%"></span><span class="mv-bass" style="--s:10%;--e:90%"></span><span class="mv-keys" style="--s:0%;--e:90%"></span><span class="mv-pluck" style="--s:10%;--e:70%"></span><span class="mv-pad" style="--s:0%;--e:100%"></span><span class="mv-arp" style="--s:30%;--e:100%"></span><span class="mv-lead" style="--s:30%;--e:90%"></span></span><span class="mv-markers"><span style="--x:10%"></span><span style="--x:30%"></span><span style="--x:50%"></span><span style="--x:70%"></span><span style="--x:90%"></span></span><span class="mv-ph"></span><span class="mv-view"></span></span>
+[:toolbar-track_height_compact::toolbar-track_height_medium::toolbar-track_height_large:](#master-track){ .mv-side title="Master heights" }
+</div>
 
 - **Click** anywhere in the minimap to jump the view there.
 - **Drag the viewport rectangle** to pan the arrangement.

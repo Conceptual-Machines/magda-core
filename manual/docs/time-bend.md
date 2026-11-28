@@ -108,7 +108,29 @@ Above the editor sit **GROOVE** (see [Grooves](#grooves)) and **BAKE**. **BAKE**
 
 ### Piano Roll
 
-![Time Bend popup in the Piano Roll](assets/images/panels/piano-roll-time-bend.png)
+<div class="magda-ui me-editor me-bend" markdown="span">
+<span class="me-toolbar">
+<span>[:midi_editor-v1-me-piano-roll:](panels/piano-roll.md){ .me-btn .me-on title="Piano Roll" }[:midi_editor-v1-me-drum-grid:](panels/drum-grid-editor.md){ .me-btn title="Drum Grid" } [:midi_editor-v1-me-layer-clips:](panels/piano-roll.md#overlay-tracks-ghost-notes){ .me-btn title="Layer clips" }</span>
+<span class="me-gap"></span>
+<span class="me-tools">[:midi_editor-v1-me-pointer:](panels/piano-roll.md#edit-tools){ .me-btn .me-on title="Pointer" }[:midi_editor-v1-me-pencil:](panels/piano-roll.md#edit-tools){ .me-btn title="Pencil" }[:midi_editor-v1-me-slice:](panels/piano-roll.md#edit-tools){ .me-btn title="Slice" }[:midi_editor-v1-me-glue:](panels/piano-roll.md#edit-tools){ .me-btn title="Glue" }[:midi_editor-v1-me-erase:](panels/piano-roll.md#edit-tools){ .me-btn title="Erase" }</span>
+<span>[:midi_editor-v1-me-time-bend:](#midi-clips){ .me-btn .me-lit title="Show the clip's time bend" } [No key](panels/piano-roll.md#scale-highlighting){ .me-chip .me-key }</span>
+<span class="me-gap"></span>
+<span>[:midi_editor-v1-me-loop:](panels/piano-roll.md#toolbar){ .me-btn title="Loop" } [1/8](panels/piano-roll.md#toolbar){ .me-chip }<span class="me-chip me-purple">AUTO</span><span class="me-chip me-purple">SNAP</span> [ABS](panels/piano-roll.md#toolbar){ .me-btn } [:material-power:](panels/piano-roll.md#toolbar){ .me-btn .me-power title="Power" } [:midi_editor-v1-me-maximise:](panels/piano-roll.md#toolbar){ .me-btn title="Maximise" }</span>
+</span>
+<span class="me-rail">[:midi_editor-v1-me-chord-track:](panels/piano-roll.md#chord-timeline){ .me-btn title="Chord track" }[:midi_editor-v1-me-monitor:](panels/piano-roll.md#auditioning-notes){ .me-btn title="Monitor" }[:midi_editor-v1-me-fold:](panels/piano-roll.md#fold){ .me-btn title="Fold" }</span>
+<span class="me-ruler"><span><b>1</b></span><span>1.3</span><span><b>2</b></span><span>2.3</span><span><b>3</b></span><span>3.3</span><span><b>4</b></span><span>4.3</span></span>
+<span class="me-keys"><span style="--y:0">C2</span><span style="--y:12">C1</span><span style="--y:24">C0</span></span>
+<span class="me-grid"></span>
+<span class="me-lanehead"><span>[:midi_editor-v1-me-velocity:](panels/piano-roll.md#control-lanes){ .me-btn .me-on title="Velocity" }[:midi_editor-v1-me-cc:](panels/piano-roll.md#control-lanes){ .me-btn title="CC and pitchbend" }[:midi_editor-v1-me-mpe:](panels/piano-roll.md#pitch-glides-mpe){ .me-btn title="MPE" }</span><small>VEL &middot; 0-127</small></span>
+<span class="me-lane"></span>
+<span class="me-notes"><i class="me-ghost" style="--x:0;--y:12;--w:1.5"></i><i class="me-ghost" style="--x:2;--y:8;--w:1.5"></i><i class="me-ghost" style="--x:4;--y:5;--w:1.5"></i><i class="me-ghost" style="--x:6;--y:1;--w:1.5"></i><i class="me-ghost" style="--x:8;--y:15;--w:1.5"></i><i class="me-ghost" style="--x:10;--y:12;--w:1.5"></i><i class="me-ghost" style="--x:12;--y:8;--w:1.5"></i><i class="me-ghost" style="--x:14;--y:5;--w:1.5"></i><i class="me-ghost" style="--x:16;--y:19;--w:1.5"></i><i class="me-ghost" style="--x:18;--y:15;--w:1.5"></i><i class="me-ghost" style="--x:20;--y:12;--w:1.5"></i><i class="me-ghost" style="--x:22;--y:8;--w:1.5"></i><i class="me-ghost" style="--x:24;--y:17;--w:1.5"></i><i class="me-ghost" style="--x:26;--y:13;--w:1.5"></i><i class="me-ghost" style="--x:28;--y:10;--w:1.5"></i><i class="me-ghost" style="--x:30;--y:5;--w:1.5"></i><i style="--x:0.00;--y:12;--w:1.5;--v:118"></i><i style="--x:1.07;--y:8;--w:1.5;--v:96"></i><i style="--x:2.34;--y:5;--w:1.5;--v:104"></i><i style="--x:4.00;--y:1;--w:1.5;--v:90"></i><i style="--x:8.00;--y:15;--w:1.5;--v:118"></i><i style="--x:9.07;--y:12;--w:1.5;--v:96"></i><i style="--x:10.34;--y:8;--w:1.5;--v:104"></i><i style="--x:12.00;--y:5;--w:1.5;--v:90"></i><i style="--x:16.00;--y:19;--w:1.5;--v:118"></i><i style="--x:17.07;--y:15;--w:1.5;--v:96"></i><i style="--x:18.34;--y:12;--w:1.5;--v:104"></i><i style="--x:20.00;--y:8;--w:1.5;--v:90"></i><i style="--x:24.00;--y:17;--w:1.5;--v:118"></i><i style="--x:25.07;--y:13;--w:1.5;--v:96"></i><i style="--x:26.34;--y:10;--w:1.5;--v:104"></i><i style="--x:28.00;--y:5;--w:1.5;--v:90"></i></span>
+<span class="me-tb">
+<span>[GROOVE](#grooves){ .me-chip }<span class="me-gap"></span>[BAKE](#midi-clips){ .me-chip }</span>
+<span class="me-row">[:material-power:](#the-editor){ .me-btn title="Play through the bend" }[TIME](#the-editor){ .me-btn .me-on }[DYNAMICS](#dynamics){ .me-btn }[SHAPE](#shapes){ .me-btn }<span class="me-gap"></span><span class="me-grp">[SPAN](#span-and-cycles){ .me-cap }<span class="me-btn me-on">1</span><span class="me-btn">2</span><span class="me-btn">4</span></span><span class="me-grp">[1/16](#the-editor){ .me-btn }[SNAP](#the-editor){ .me-btn .me-on }</span></span>
+<span class="me-row">[AMOUNT](#the-editor){ .me-cap }<span class="me-val">100%</span>[CYCLES](#span-and-cycles){ .me-cap }<span class="me-val">1x</span></span>
+[<svg viewBox="0 0 160 110"><rect x="5" y="5" width="150" height="100" fill="#14171c"/><g stroke="#ffffff1f" stroke-width="0.6"><path d="M42.5 5V105"/><path d="M80 5V105"/><path d="M117.5 5V105"/><path d="M5 55H155"/></g><path d="M5 105L155 5" stroke="#ffffff55" stroke-width="0.6" stroke-dasharray="2 2" fill="none"/><path d="M5 105Q80 5 155 5V105Z" fill="#5588aa22"/><path d="M5 105Q80 5 155 5" stroke="#5f93ba" stroke-width="2.2" fill="none"/><circle cx="80" cy="30" r="2.6" fill="#14171c" stroke="#e8edf1" stroke-width="0.9"/><circle cx="5" cy="105" r="3.2" fill="#ff8822"/><circle cx="155" cy="5" r="3.2" fill="#ff8822"/></svg>](#drawing-the-curve){ .me-curve }
+</span>
+</div>
 
 In the [Piano Roll](panels/piano-roll.md), the written notes are dimmed while a bend is in force, and each note is also drawn where it plays. The drawing follows the curve as you drag it.
 

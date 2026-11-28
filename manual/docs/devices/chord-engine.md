@@ -18,14 +18,45 @@ The suggestions column has two tabs, chosen with the icons at its top: **K&S** (
 
 ## K&S Tab
 
-![Chord Engine — K&S Tab](../assets/images/devices/chord-engine-ks.png)
+<div class="magda-ui mq mq-device" markdown="span">
+<span class="mq-main">
+<span class="mq-head"><span class="mq-name">Chord Engine</span><span class="mq-led"></span></span>
+<span class="mq-ce">
+<span class="mq-col">
+<span class="mq-sec">[<span class="mq-cap">Chord</span>](#chord-detection)<span class="mq-btn">C</span></span>
+<span class="mq-chordbox"><span class="mq-chordtitle"><span class="mq-chordname">C4 maj</span><span class="mq-badge">I</span><span class="mq-voicing">C E G</span></span><span class="mq-keys"><span class="on"></span><span></span><span class="on"></span><span></span><span class="on"></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><i style="left:4.9%"></i><i style="left:12.0%"></i><i style="left:26.3%"></i><i style="left:33.4%"></i><i style="left:40.6%"></i><i style="left:54.9%"></i><i style="left:62.0%"></i><i style="left:76.3%"></i><i style="left:83.4%"></i><i style="left:90.6%"></i></span></span>
+<span class="mq-status">MIDI in &middot; play a chord or pick one</span>
+<span class="mq-sec">[<span class="mq-cap">History</span>](#chord-detection):general-delete:</span>
+<span class="mq-hist"><span class="mq-chip">G3 maj<small>V</small></span>&rarr;<span class="mq-chip">C4 maj<small>I</small></span></span>
+</span>
+<span class="mq-col">
+<span class="mq-tabs">[<span class="mq-tab on">:ai-psychology:</span>](#ks-tab)[<span class="mq-tab">:ai-ai-sound-designer:</span>](#ai-tab)<span class="mq-sub">after C4 maj</span><span class="mq-legend mq-sub"><span class="mq-fn mq-t">tonic</span><span class="mq-fn mq-p">pre-dominant</span><span class="mq-fn mq-d">dominant</span></span></span>
+<span class="mq-group">[<span class="mq-cap">Diatonic</span>](#suggestion-generation) <span class="mq-sub">in key</span></span>
+<span class="mq-tiles"><span class="mq-tile mq-p">F maj7<small>IV7</small></span><span class="mq-tile mq-d">G maj7<small>V7</small></span><span class="mq-tile mq-t">A min7<small>vi7</small></span><span class="mq-tile mq-p">D min<small>ii</small></span><span class="mq-tile mq-t">E min<small>iii</small></span><span class="mq-tile mq-p">F maj<small>IV</small></span><span class="mq-tile mq-d">G maj<small>V</small></span><span class="mq-tile mq-d">B dim<small>vii</small></span></span>
+<span class="mq-group">[<span class="mq-cap">Beyond the key</span>](#suggestion-generation) <span class="mq-sub">secondary, borrowed &amp; substitutes</span></span>
+<span class="mq-tiles"><span class="mq-tile mq-d">A 7<small>V/x</small></span><span class="mq-tile mq-d">B 7<small>V/x</small></span><span class="mq-tile mq-d">C 7<small>V/x</small></span><span class="mq-tile mq-d">D 7<small>V/x</small></span></span>
+</span>
+<span class="mq-col">
+<span class="mq-sec">[<span class="mq-cap">Key</span>](#key-detection)</span>
+<span class="mq-keyrow"><span class="mq-keybox">C major</span><span class="mq-iconbtn">:browser-browser:</span></span>
+<span class="mq-sec" style="margin-top:0.8em">[<span class="mq-cap">Scales</span>](#scale-detection)</span>
+<span class="mq-scale">C Major (Ionian)</span>
+<span class="mq-scale">C Mixolydian</span>
+<span class="mq-scale">C Lydian</span>
+<span class="mq-scale">G Major (Ionian)</span>
+</span>
+</span>
+<span class="mq-foot">[<span class="mq-cap">Novelty</span>](#footer-controls)<span class="mq-sub">safe</span><span class="mq-slider"></span><span class="mq-sub">wild</span><span class="mq-mono">30%</span><span class="mq-vsep"></span>[<span class="mq-cap">Extensions</span>](#footer-controls)<span class="mq-seg"><span class="on">7th</span><span>9th</span><span>11th</span><span>13th</span><span>Alt</span></span>[<span class="mq-filter">:general-funnel:</span>](#footer-controls){ .mq-push }</span>
+</span>
+<span class="mq-side"><span class="mq-power">:general-power:</span><span class="mq-noteview"></span></span>
+</div>
 
 The K&S tab uses the Krumhansl-Schmuckler algorithm to detect the key from your playing and generate chord suggestions from music theory rules. The interface has three columns:
 
 | Column | Content |
 |--------|---------|
 | **Chord** (left) | The chord you are playing, with its degree in the detected key and a keyboard lighting its voicing, then the **History** of recent chords |
-| **Suggestions** (centre) | Suggestion tiles in two groups, **Diatonic** (in key) and **Beyond the key** (secondary, borrowed and substitute chords). Each tile shows its Roman numeral degree and a dot for its harmonic function: tonic, pre-dominant or dominant. |
+| **Suggestions** (centre) | Suggestion tiles in two groups, **Diatonic** (in key) and **Beyond the key** (secondary, borrowed and substitute chords). Each tile shows its Roman numeral degree and a dot for its harmonic function: tonic, pre-dominant or dominant. A secondary dominant tile shows **V/x** in place of the degree. |
 | **Key / Scales** (right) | Detected key, a button to browse scales, and the matching scales |
 
 Press any chord tile, in the suggestions or the history, to hear it through the track's instrument; drag it onto the Piano Roll to place it (see [Placing Chords](#placing-chords)). The **C** button in the Chord header switches note names between letters (C), solfège (Do) and both (C/Do).
@@ -74,8 +105,6 @@ Recently played chords are filtered out so suggestions always point forward.
 
 ## AI Tab
 
-![Chord Engine — AI Mode](../assets/images/devices/chord-engine-ai.png)
-
 In AI mode, a language model generates full chord progressions based on a text description. Type a prompt describing the style, mood, or harmonic flavour you want, and the AI returns a sequence of chords.
 
 ### Using AI Suggestions
@@ -121,7 +150,17 @@ flowchart TD
 
 ## Chord Timeline
 
-![Chord Timeline in Piano Roll](../assets/images/devices/chord-engine-pianoroll.png)
+<div class="magda-ui mq mq-roll" markdown="span">
+<span class="mq-rail">[<span class="mq-railbtn on">:midi_editor-v1-me-chord-track:</span>](#chord-timeline)<span class="mq-railbtn">:midi_editor-v1-me-monitor:</span><span class="mq-railbtn">:midi_editor-icon-fold-boldm:</span></span>
+<span class="mq-rollbody">
+<span class="mq-rh">[<span class="mq-cap">Chords</span>](#chord-timeline)[:general-refresh:](#detecting-chords)</span>
+<span class="mq-lane">[<span class="mq-cb" style="left:0.00%;width:calc(25.00% - 3px)">C4 maj<small>I &bull;&bull;&bull;</small></span>](#note-tracking)[<span class="mq-cb" style="left:25.00%;width:calc(25.00% - 3px)">A3 min<small>vi &bull;&bull;&bull;</small></span>](#note-tracking)[<span class="mq-cb" style="left:50.00%;width:calc(25.00% - 3px)">F3 maj<small>IV &bull;&bull;&bull;</small></span>](#note-tracking)[<span class="mq-cb" style="left:75.00%;width:calc(25.00% - 3px)">G3 maj<small>V &bull;&bull;&bull;</small></span>](#note-tracking)</span>
+<span class="mq-rh"></span>
+<span class="mq-ruler"><span class="bar" style="left:0.00%">1</span><span style="left:12.50%">1.3</span><span class="bar" style="left:25.00%">2</span><span style="left:37.50%">2.3</span><span class="bar" style="left:50.00%">3</span><span style="left:62.50%">3.3</span><span class="bar" style="left:75.00%">4</span><span style="left:87.50%">4.3</span></span>
+<span class="mq-pkeys" style="--rows:18"><span class="w"></span><span class="b"></span><span class="w"></span><span class="b"></span><span class="w"></span><span class="w"></span><span class="b"></span><span class="w"></span><span class="b"></span><span class="w">C4</span><span class="w"></span><span class="b"></span><span class="w"></span><span class="b"></span><span class="w"></span><span class="b"></span><span class="w"></span><span class="w"></span></span>
+<span class="mq-grid" style="--rows:18"><span class="mq-rows"><span class="w"></span><span class="b"></span><span class="w"></span><span class="b"></span><span class="w"></span><span class="w"></span><span class="b"></span><span class="w"></span><span class="b"></span><span class="w"></span><span class="w"></span><span class="b"></span><span class="w"></span><span class="b"></span><span class="w"></span><span class="b"></span><span class="w"></span><span class="w"></span></span>[<span class="mq-pn" style="left:0.00%;width:calc(25.00% - 2px);top:calc(9 * var(--row))"></span>](#placing-chords)[<span class="mq-pn" style="left:0.00%;width:calc(25.00% - 2px);top:calc(5 * var(--row))"></span>](#placing-chords)[<span class="mq-pn" style="left:0.00%;width:calc(25.00% - 2px);top:calc(2 * var(--row))"></span>](#placing-chords)[<span class="mq-pn" style="left:25.00%;width:calc(25.00% - 2px);top:calc(12 * var(--row))"></span>](#placing-chords)[<span class="mq-pn" style="left:25.00%;width:calc(25.00% - 2px);top:calc(9 * var(--row))"></span>](#placing-chords)[<span class="mq-pn" style="left:25.00%;width:calc(25.00% - 2px);top:calc(5 * var(--row))"></span>](#placing-chords)[<span class="mq-pn" style="left:50.00%;width:calc(25.00% - 2px);top:calc(16 * var(--row))"></span>](#placing-chords)[<span class="mq-pn" style="left:50.00%;width:calc(25.00% - 2px);top:calc(12 * var(--row))"></span>](#placing-chords)[<span class="mq-pn" style="left:50.00%;width:calc(25.00% - 2px);top:calc(9 * var(--row))"></span>](#placing-chords)[<span class="mq-pn" style="left:75.00%;width:calc(25.00% - 2px);top:calc(14 * var(--row))"></span>](#placing-chords)[<span class="mq-pn" style="left:75.00%;width:calc(25.00% - 2px);top:calc(10 * var(--row))"></span>](#placing-chords)[<span class="mq-pn" style="left:75.00%;width:calc(25.00% - 2px);top:calc(7 * var(--row))"></span>](#placing-chords)</span>
+</span>
+</div>
 
 When a Chord Engine is present on a track, the Piano Roll shows a **chord row** above the note grid. This row displays chord annotations that are linked to their MIDI notes. The **Chord track** button in the Piano Roll's rail shows or hides it, and the clip remembers your choice.
 

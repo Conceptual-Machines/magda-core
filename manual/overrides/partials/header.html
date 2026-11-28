@@ -10,6 +10,9 @@
   </label>
   {#- A <header>, because Material finds the search button with "header [for=__search]" #}
   <header slot="extra" class="magda-header__search" role="none">
+    <a class="md-header__button md-icon magda-header__pdf" href="{{ 'magda-manual.pdf' | url }}" title="Download the manual as a PDF" aria-label="Download the manual as a PDF" download>
+      {% include ".icons/material/file-pdf-box.svg" %}
+    </a>
     {% if "material/search" in config.plugins %}
       <label class="md-header__button md-icon" for="__search">
         {% include ".icons/material/magnify.svg" %}

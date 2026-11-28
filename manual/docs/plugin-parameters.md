@@ -14,8 +14,6 @@ You can override or extend the inferred configuration in the dialog described be
 
 Open the dialog from the [Plugin Browser](panels/browsers.md#plugin-browser): right-click a plugin and choose **Configure Parameters…**.
 
-![Configure Parameters dialog for the Vital synth, showing the Parameter / Visible / Unit / Range columns and the Select All, Deselect All, Detect, AI Detect, and Reset buttons.](assets/images/devices/configure-parameters.png)
-
 The dialog shows one row per parameter with the following columns:
 
 | Column | Description |
@@ -53,8 +51,6 @@ The results populate the dialog so you can review them before applying — tweak
 ## Locating a Parameter
 
 Big plugins can have hundreds of parameters spread across many pages in the device slot. Finding the one you want is tedious. The **Locate** button lets you point at a control in the plugin's own window and have MAGDA jump straight to its slot.
-
-![MAGDA's device slot for Vital next to the plugin's own window — Locate jumps the slot to whichever parameter you move in the plugin GUI.](assets/images/devices/learn-mode.png)
 
 On any plugin device slot in the [FX chain](fx-chain.md):
 

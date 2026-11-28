@@ -4,14 +4,12 @@ The Inspector panel is on the right side of the window. It displays context-sens
 
 Its sections fold: click a section's title to fold or unfold it. A folded section stays folded as you select other items, until you restart MAGDA. The **FX**, **Latency**, **Mods** and **Macros** sections start folded each time you open MAGDA. When an inspector is taller than the panel, the panel scrolls.
 
-![Inspector — Audio Clip](../assets/images/panels/inspector-audio.png)
-
 ## Track Inspector
 
 Displayed when a track is selected. From the top:
 
 - **Name** — Click to rename. The track colour shows as a spine beside the name, or fills the name field when **Track colour** is set to **Full bar** in **Settings > Appearance**. Click the spine, or right-click the name, to choose a colour. A track with no colour has no spine. The switch at the right enables or disables the track
-- **Mix** — Volume and pan, **M** (mute), **S** (solo), **R** (record arm), input monitoring, and the automation button, which lights when the track has automation
+- **Mix** — Volume and pan, **Mute** (speaker), **Solo** (ring), **Record arm** (dot), input monitoring, and the automation button, which lights when the track has automation
 - **Automated** — Appears when the track has automation and lists the automated parameters. The automation button folds it away
 - **Routing** — Audio and MIDI input and output selectors
 - **FX** — The track's FX chain, one row per device (a rack shows as one row). Click a row's dot to bypass the device; click its chevron to unfold up to three of its parameters, chosen in the **Mini FX** column of the [Configure Parameters dialog](../plugin-parameters.md). Third-party plugins have a button that opens their window. The section header shows the track's total latency

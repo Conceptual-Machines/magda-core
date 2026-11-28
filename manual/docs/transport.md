@@ -2,7 +2,18 @@
 
 The transport bar sits at the top of the window and is available in all views. It is a single row, with each group of controls in its own well.
 
-![Transport Bar](assets/images/transport/transport-bar.png)
+<div class="magda-ui magda-transport" markdown="span">
+<span class="mt-buttons">[:transport-rewind::transport-prev::transport-next:](#navigation-playback) [:transport-play::transport-stop::transport-record::transport-automation_write:](#navigation-playback) [:transport-loop::resume-resume:](#loop)</span>
+<span class="mt-well mt-small">[:transport-punchin::transport-punchout:](#punch-inout)</span>
+<span class="mt-well">[<span class="mt-chip mt-led">Link</span>](#ableton-link) [<span class="mt-tempo">122.00</span>](#tempo) [<span class="mt-countin"></span>](#metronome-count-in) [<span class="mt-sig">4/4</span>](#time-signature) <span class="mt-small">[:material-metronome:](#metronome-count-in)</span></span>
+<span class="mt-well">[<span class="mt-playhead">14&thinsp;&bull;&thinsp;2&thinsp;&bull;&thinsp;264</span>](#position-displays) <span class="mt-time">0:26.775</span></span>
+<span class="mt-well">[<span class="mt-caption">SEL</span>](#position-displays) <span class="mt-time">1&thinsp;&bull;&thinsp;1&thinsp;&bull;&thinsp;000 &rarr; 1&thinsp;&bull;&thinsp;1&thinsp;&bull;&thinsp;000</span></span>
+<span class="mt-well">[<span class="mt-caption mt-green">LOOP</span>](#loop) <span class="mt-time mt-green">1&thinsp;&bull;&thinsp;1&thinsp;&bull;&thinsp;000 &rarr; 5&thinsp;&bull;&thinsp;1&thinsp;&bull;&thinsp;000</span></span>
+<span class="mt-well">[<span class="mt-chip">2/1</span>](#grid-snap) <span class="mt-chip mt-on">AUTO</span><span class="mt-chip mt-on">SNAP</span></span>
+<span class="mt-well mt-small">[<span class="mt-caption mt-led">MEM</span>](#capture-mem) <span class="mt-meter"></span> <span class="mt-time">off</span> :transport-capture:</span>
+<span class="mt-well mt-small">[:transport-midi_qwerty:](#qwerty-midi-keyboard)</span>
+<span class="mt-well">[<span class="mt-cpu"><span class="mt-caption">CPU</span> <span class="mt-time">14%</span></span>](#cpu-readout)</span>
+</div>
 
 ## Layout
 
@@ -117,8 +128,6 @@ The tempo (BPM) is displayed in the transport bar. You can change it by:
 - Double-clicking it and typing a new value
 
 ## Time Signature
-
-![Time Signature](assets/images/transport/time-signature.png){ width="120" }
 
 The time signature sits to the right of the tempo. You can change it by:
 

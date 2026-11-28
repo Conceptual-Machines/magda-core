@@ -2,8 +2,6 @@
 
 Macros are user-defined control knobs that provide quick, unified access to multiple device parameters.
 
-![Macro Panel](../assets/images/modulation/macro-panel.png)
-
 ## Layout
 
 Each track, rack, and device has **16 macro knobs** organized across **2 pages** (8 knobs per page). Page through them with the arrows in the macro panel's header; click **+** there to add another page, and right-click the header to **Remove last page**.
@@ -43,9 +41,7 @@ A macro can also target a modulator's **Rate** instead of a device parameter —
 1. Right-click the macro and pick the modulator from **Link to Parameter... → Modulators**, or
 2. Use link mode and click the modulator's Rate slider as the target.
 
-![Macro 1 mapped to LFO 1 Rate](../assets/images/modulation/macro-to-mod.png)
-
-In the screenshot, **Macro 1** at 0.20 is dialling **LFO 1**'s Rate down. As the macro turns, the LFO speed follows. Combine with traditional parameter links and a single knob can sweep filter cutoff, reduce reverb send, *and* slow the LFO that's wobbling the pitch — all at once.
+As the macro turns, the LFO speed follows. Combine with traditional parameter links and a single knob can sweep filter cutoff, reduce reverb send, *and* slow the LFO that's wobbling the pitch — all at once.
 
 On a rack, a macro can also drive the rack's **Chain Select** control, listed in the same menu.
 

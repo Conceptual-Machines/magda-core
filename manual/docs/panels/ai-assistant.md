@@ -2,7 +2,22 @@
 
 MAGDA includes a built-in AI chat assistant that lets you control the DAW using natural language. The same console runs [DSL](../reference/dsl.md) code directly with the `/dsl` command.
 
-![AI Assistant](../assets/images/panels/ai-assistant.png){ width="400" }
+<div class="magda-ui mq mq-chat" markdown="span">
+<span class="mq-chead"><span class="mq-mark">MAGDA</span>[<span class="mq-model">Advanced &middot; per-agent :general-chevron_down:</span>](#setup)[:general-delete::general-copy:](#overview){ .mq-push }</span>
+<span class="mq-conv">
+[YOU &rarr; <em>Track 1</em>](#selection-context){ .mq-you }
+<span class="mq-bubble">Add a MIDI track with a bass clip</span>
+<span class="mq-who">MAGDA</span>
+<span class="mq-reply">Created track 'Bass'<br>Set track: colour=#ff9c36<br>Created MIDI clip at bar 1, 4 bars<br>[2.4s agent, 2.6s total]</span>
+[YOU &rarr; <em>Bass</em>](#selection-context){ .mq-you }
+<span class="mq-bubble">Set the tempo to 120 BPM</span>
+<span class="mq-who">MAGDA</span>
+<span class="mq-reply">Set tempo to 120.00 BPM<br>[1.1s agent, 1.2s total]</span>
+</span>
+[<span class="mq-prompt"></span>](#making-requests)
+<span class="mq-ctrl">[<span class="mq-target">on <b>Bass</b> :general-chevron_down:</span>](#selection-context)<span class="mq-hint"><kbd>&#8679;&#8629;</kbd>newline</span>[<span class="mq-hint"><kbd>@</kbd>plugin</span>](#plugin-and-parameter-aliases)[<span class="mq-hint"><kbd>/</kbd>command</span>](#slash-commands)<span class="mq-send">:general-enter:</span></span>
+<span class="mq-ptabs"><span>:panels-icon-inspector-boldm:</span>[<span class="on">:panels-icon-console-boldm:</span>](#overview)</span>
+</div>
 
 ## Overview
 
@@ -177,8 +192,6 @@ Which model powers `/theme` is set by the **Theme** row of the [Advanced setup](
 ## Per-Device AI Panel
 
 Sound design happens in the device chain. Every device with an AI agent behind it shows an **AI** icon in its header — click it to open a docked panel attached to that device.
-
-![A synth with the AI panel docked on its left, showing a prompt echo, the model's preset description, an apply status, and a yellow "starting point only" disclaimer.](../assets/images/panels/4osc-ai-panel.png)
 
 The panel has three rows:
 
